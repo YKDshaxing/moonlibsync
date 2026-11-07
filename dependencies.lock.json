@@ -1,0 +1,34 @@
+{
+  "format": 1,
+  "mechanism": "Project verification manifest; moon does not generate a resolution lockfile in this toolchain.",
+  "packages": {
+    "moonbitstack/mooncrypt": {
+      "version": "0.4.5",
+      "sha256": "0f92531d4eb54449df999efba856802759c0737dc17de22884caa0cd7897f5bb",
+      "license": "Apache-2.0",
+      "deps": {
+        "moonbitstack/moonbase": "0.4.2",
+        "moonbitstack/moondate": "0.1.0",
+        "moonbitstack/moonrand": "0.1.0"
+      }
+    },
+    "moonbitstack/moonbase": {
+      "version": "0.4.2",
+      "sha256": "6dcdd67b5d560ab6ead572dabd29ccb715770dd7278ede56ae369607258e8bea",
+      "license": "Apache-2.0",
+      "deps": {}
+    },
+    "moonbitstack/moondate": {
+      "version": "0.1.0",
+      "sha256": "6eb270f866f17668d3494a321d048112e5a60208fc92df0bf86a2bb3d9c565d5",
+      "license": "Apache-2.0",
+      "deps": {}
+    },
+    "moonbitstack/moonrand": {
+      "version": "0.1.0",
+      "sha256": "dca800751da31069b590ec74bc44f7d45fdddfd5f78d434da9ad82fc9c605d43",
+      "license": "Apache-2.0",
+      "deps": {}
+    }
+  }
+}

@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+///|
+/// Draft configuration only: no algorithm or allocation budget is enforced yet.
+/// Byte fields count bytes; records and instructions count items; work units are
+/// reserved for a future matching-work definition. Int64 inputs are validated
+/// against the common signed 32-bit collection ceiling, without narrowing casts.
+pub(all) struct Limits {
+  max_old_bytes : Int64
+  max_new_bytes : Int64
+  max_signature_bytes : Int64
+  max_signature_records : Int64
+  max_block_bytes : Int64
+  max_delta_bytes : Int64
+  max_output_bytes : Int64
+  max_instructions : Int64
+  max_match_work : Int64
+}
+
+///|
+/// Initial policy draft, not a claim of implemented resource enforcement.
+pub fn Limits::default() -> Limits {
+  {
+    max_old_bytes: 67108864L,
+    max_new_bytes: 67108864L,
+    max_signature_bytes: 16777216L,
+    max_signature_records: 1000000L,
+    max_block_bytes: 1048576L,
+    max_delta_bytes: 83886080L,
+    max_output_bytes: 67108864L,
+    max_instructions: 1000000L,
+    max_match_work: 268435456L,
+  }
+}
+
+///|
+fn validate_limit(
+  name : String,
+  value : Int64,
+  minimum : Int64,
+) -> Unit raise SyncError {
+  if value < minimum || value > 2147483647L {
+    raise InvalidOptions(name)
+  }
+}
+
+///|
+/// All fields accept 0..2^31-1, except block bytes which accept 1..2^31-1.
+/// This validates values only; cross-field relationships await the algorithms.
+pub fn Limits::validate(self : Limits) -> Unit raise SyncError {
+  validate_limit("max_old_bytes", self.max_old_bytes, 0L)
+  validate_limit("max_new_bytes", self.max_new_bytes, 0L)
+  validate_limit("max_signature_bytes", self.max_signature_bytes, 0L)
+  validate_limit("max_signature_records", self.max_signature_records, 0L)
+  validate_limit("max_block_bytes", self.max_block_bytes, 1L)
+  validate_limit("max_delta_bytes", self.max_delta_bytes, 0L)
+  validate_limit("max_output_bytes", self.max_output_bytes, 0L)
+  validate_limit("max_instructions", self.max_instructions, 0L)
+  validate_limit("max_match_work", self.max_match_work, 0L)
+}

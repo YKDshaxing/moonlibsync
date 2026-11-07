@@ -1,0 +1,40 @@
+name: Commit 1 foundations
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundations:
+    name: ${{ matrix.os }} / fixed toolchain
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+      - name: Install hash-locked MoonBit and matching core
+        run: python scripts/install_toolchain.py
+      - name: Select isolated toolchain
+        shell: pwsh
+        run: |
+          "MOON_HOME=$PWD/.toolchain/selected" >> $env:GITHUB_ENV
+          "$PWD/.toolchain/selected/bin" >> $env:GITHUB_PATH
+      - name: Format, interfaces, dependencies, three targets and probes
+        run: python scripts/check.py
+      - name: PowerShell external-process exit handling
+        shell: pwsh
+        run: ./scripts/native_probe.ps1
+      - name: Reject tracked interface changes
+        run: git diff --exit-code -- '*.mbti'

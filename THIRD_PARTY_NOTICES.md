@@ -1,0 +1,18 @@
+# 第三方声明
+
+本项目原创文件的 LGPL-2.1-or-later 声明不适用于第三方作品及其许可文本。下载的源码和工具链保存在忽略目录中；以下是已采用的依赖和实际调用范围。
+
+| 作品 | 版本 | 原始声明 | 用途 |
+| --- | --- | --- | --- |
+| moonbitstack/mooncrypt | 0.4.5 | Copyright 2026 Leo Cheng；Apache-2.0 | `hash/blake2` 和其 `spec` 依赖，纯 MoonBit 摘要探针 |
+| moonbitstack/moonbase | 0.4.2 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包；不代表全包测试通过 |
+| moonbitstack/moondate | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
+| moonbitstack/moonrand | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
+| moonbitlang/core | 0.10.20+65efd5b93 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库与 Native 系统接口 |
+| librsync | v2.3.4 / e364852674780e43d578e4239128ff7014190ed3 | 保留上游 COPYING 中 LGPL v2.1 文本 | 后续格式参考，本阶段无算法代码移植或链接 |
+
+完整 Apache-2.0 文本见 `licenses/Apache-2.0.txt`，core 的原始声明见 `licenses/MoonBit-core-LICENSE` 与 `licenses/MoonBit-core-NOTICE`。本仓库没有分发 mooncrypt 实现副本或工具链二进制，也没有修改依赖源码的版权头。所有固定包的许可证和压缩包校验值还记录在 `dependencies.lock.json` 中。
+
+`moonbitlang/x@0.5.7` 在调查中安装并检查过文件 API，但最终未采用：固定工具链的 `core/async/fs`、`core/env`、`core/async/stdio` 已提供本笔所需能力。它不属于本模块最终依赖闭包。
+
+Python hashlib 只作为开发阶段独立向量来源，不复制其实现或链接 Python 到 MoonBit 核心；许可证与算法参考链接见 `SOURCES.md`。没有用 C librsync FFI 替代核心。

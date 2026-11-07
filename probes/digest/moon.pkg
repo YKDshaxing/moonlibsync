@@ -1,0 +1,6 @@
+import {
+  "moonbitstack/mooncrypt/hash/blake2",
+  "moonbitlang/core/encoding/hex",
+}
+
+pkgtype(kind: "executable")
