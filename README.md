@@ -41,7 +41,7 @@ python3 scripts/check.py
 
 ## 摘要探针
 
-采用 `moonbitstack/mooncrypt@0.4.5` 的 `hash/blake2` 包，通过 `hash(input, kind=Blake2b, len=32)` 将输出长度参数设为 32，再取 `strong_sum_len` 的前 1–32 字节。探针同时排除 BLAKE2s-256 和截断 BLAKE2b-512。内部解析器只读取签名中已有的摘要字节，不重算摘要；核心摘要 API 和签名生成尚未实现。
+采用 `moonbitstack/mooncrypt@0.4.5` 的 `hash/blake2` 包，通过 `hash(input, kind=Blake2b, len=32)` 将输出长度参数设为 32，再取 `strong_sum_len` 的前 1–32 字节。探针同时排除 BLAKE2s-256 和截断 BLAKE2b-512。内部解析器只读取签名中已有的摘要字节，不重算摘要；本节保留 Commit 1 依赖可行性探针；Commit 5 内部适配见文末，签名生成仍未实现。
 
 ```powershell
 moon run probes/digest --target native
@@ -89,4 +89,8 @@ Commit 3 建立固定 librsync v2.3.4 参考构建与16个自有输入用例的�
 
 ## Commit 4 弱校验
 
-新增内部 Rabin–Karp 标量状态及加入、批量更新、旋转、EOF缩短操作，详见 [Rabin–Karp说明](docs/rabinkarp.md)。使用独立重算、固定上游向量及16例真实签名记录逐块验证；仅扩展old.bin离线字节搬运，正式夹具与manifest不变。强摘要适配仍未实现，摘要依赖探针的历史结果不代表该适配已完成。
+新增内部 Rabin–Karp 标量状态及加入、批量更新、旋转、EOF缩短操作，详见 [Rabin–Karp说明](docs/rabinkarp.md)。使用独立重算、固定上游向量及16例真实签名记录逐块验证；仅扩展old.bin离线字节搬运，正式夹具与manifest不变。Commit 4 时强摘要适配尚未实现，不能将历史探针结果当作 Commit 5 适配证据。
+
+## Commit 5 强摘要适配
+
+现已实现内部strong_sum入口：固定计算32字节BLAKE2b，再取1..32字节前缀，非法长度先拒绝。10组独立hashlib向量覆盖128字节压缩块边界，并逐块匹配原16例rdiff强摘要记录；详见 [强摘要说明](docs/strongsum.md)。模块版本和锁不变，没有新增公开API，签名生成、匹配、delta、patch和双向互操作仍未实现。

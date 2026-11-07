@@ -37,3 +37,7 @@
 ## Commit 4 弱校验移植
 
 固定提交 e364852674780e43d578e4239128ff7014190ed3 的 src/rabinkarp.h、src/rabinkarp.c 与 tests/rabinkarp_test.c 已实际核对。rabinkarp.mbt移植头文件状态、常量和标量公式，不移植C展开更新循环或幂表；保留Donovan Baarda 2019 LGPL-2.1-or-later。rabinkarp_wbtest.mbt的固定向量来自上游测试并保留Donovan Baarda 2003声明，额外独立重算与边界验证为本项目新增。原夹具字节仅扩展搬运old.bin，不重算或刷新上游预期。
+
+## Commit 5 来源
+
+strongsum.mbt是原创LGPL-2.1-or-later内部适配，真实调用既有moonbitstack/mooncrypt@0.4.5的hash/blake2（kind=Blake2b，len=32，无key/salt/person），不是本项目移植BLAKE2b实现；依赖原Apache-2.0声明不变。语义参考固定e364852674780e43d578e4239128ff7014190ed3的src/checksum.c及src/librsync.h：最大强摘要长度32，初始化和最终输出都使用该长度。checksum.c原声明Martin Pool、Andrew Tridgell、Paul Mackerras，LGPL-2.1-or-later；本笔只核对参数语义，未复制其C实现。独立预期来自Python hashlib，输入规则、完整32字节值与Python版本见tests/strongsum-vectors.json，脚本默认只读核验。

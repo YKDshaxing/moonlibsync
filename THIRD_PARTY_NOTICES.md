@@ -22,3 +22,5 @@ Commit 2 的格式参考包括 `src/readsums.c`，其头部保留 Martin Pool、
 Commit 3 在忽略目录构建固定 librsync 源码，保留 LGPL-2.1-or-later 声明。内置 src/blake2/blake2b-ref.c 为 Samuel Neves 2012 作品，原声明可选 CC0、OpenSSL、Apache-2.0，本参考路径保留 Apache-2.0 选择与来源；未复制其实现到MoonBit核心。完整许可证文本已在 licenses/Apache-2.0.txt 保存。夹具输入为本项目自有规则数据，参考输出可追溯至 manifest 的固定源码和命令。
 
 Commit 4 将固定librsync src/rabinkarp.h的标量状态公式移植至MoonBit，保留Copyright (C) 2019 Donovan Baarda；固定测试向量保留tests/rabinkarp_test.c的Copyright (C) 2003 Donovan Baarda。许可均为LGPL-2.1-or-later，完整文本保存在COPYING.LESSER / COPYING；未重标为MIT，未移植展开循环或性能表。
+
+Commit 5新增原创适配胶合层，BLAKE2实现仍属于mooncrypt 0.4.5，保留Apache-2.0声明，未冒称自行移植。固定librsync checksum.c的LGPL-2.1-or-later参数语义仅供参考，原版权为Martin Pool、Andrew Tridgell、Paul Mackerras；相关完整许可已保留。Python hashlib仅用于离线独立向量，不复制其实现到核心。

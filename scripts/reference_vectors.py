@@ -11,3 +11,6 @@ for data, expected in (
     actual = hashlib.blake2b(data, digest_size=32).hexdigest()
     assert actual == expected
     print(f"input_hex={data.hex()} expected={expected} actual={actual}")
+
+from strong_vectors import verify
+verify()

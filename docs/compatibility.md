@@ -52,3 +52,7 @@ reference_bytes_wbtest.mbt 由 verify_fixtures.py --export 独立搬运原始old
 ## Commit 4 增量证据
 
 新增内部Rabin–Karp弱校验，使用独立逐窗口/EOF重算、固定上游向量及原16例basis真实块与签名weak_sum逐块比较。old.bin由已校验夹具离线搬运，不在生成器内计算弱校验。原夹具和manifest不刷新；历史Commit 3构建与roundtrip证据仍属原阶段。弱校验一致不表示强摘要适配、签名生成或双向互操作完成，详见rabinkarp.md及最终同SHA CI报告。
+
+## Commit 5 增量证据
+
+内部强摘要适配固定BLAKE2b输出参数32，再取1..32字节前缀。新增10组独立hashlib向量与所有长度前缀验证，覆盖127/128/129和255/256/257压缩边界；原16例强摘要记录逐块比较通过，空basis不增加记录、真实尾块不补零。原夹具与manifest不刷新，原阶段历史快照不改。该结果不等于完整签名生成、候选匹配或双向互操作通过；详情见strongsum.md，同SHA云端结果由最终报告提供。
