@@ -1,0 +1,908 @@
+{
+  "format": 1,
+  "upstream": {
+    "repository": "https://github.com/librsync/librsync",
+    "version": "v2.3.4",
+    "commit": "e364852674780e43d578e4239128ff7014190ed3"
+  },
+  "tool_version": "rdiff (librsync 2.3.4)\nCopyright (C) 1997-2016 by Martin Pool, Andrew Tridgell and others.\nhttp://librsync.sourcefrog.net/\nCapabilities: 64 bit files, trace disabled\n\nlibrsync comes with NO WARRANTY, to the extent permitted by law.\nYou may redistribute copies of librsync under the terms of the GNU\nLesser General Public License.  For more information about these\nmatters, see the files named COPYING.",
+  "generator": "scripts/fixture_data.py cases(): explicit bytes and (i*73+19)%256 for i=0..4999",
+  "cases": [
+    {
+      "id": "empty",
+      "purpose": "empty to empty",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 2048,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "2048",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "empty/old.bin",
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "empty/new.bin",
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "empty/old.sig",
+          "length": 12,
+          "sha256": "62269816b4c1a3072b360e21c13eaba37e328d6a3d1c506b720ed598da2cecba"
+        },
+        {
+          "path": "empty/update.delta",
+          "length": 5,
+          "sha256": "99bda669e1803fb643f9d14e63bb7d5bfca917c603b4e7d1673d4e35b30a8acb"
+        }
+      ]
+    },
+    {
+      "id": "empty-new",
+      "purpose": "empty to binary short",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 1,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "1",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "empty-new/old.bin",
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "empty-new/new.bin",
+          "length": 3,
+          "sha256": "5240672d7b51756b829ad0ef8d9468b7a078afa2f410484fd3892dab47becb72"
+        },
+        {
+          "path": "empty-new/old.sig",
+          "length": 12,
+          "sha256": "f5570f8709a9b16d504ec4a349c11b6c7f682514dfd795d4c9fb5f1e1e80ac40"
+        },
+        {
+          "path": "empty-new/update.delta",
+          "length": 9,
+          "sha256": "6c3a356e7fdd5f3548aecf510bd9e57466b41f98769630c1ed25f2e7b94ef3c3"
+        }
+      ]
+    },
+    {
+      "id": "to-empty",
+      "purpose": "nonempty to empty",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 16,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "16",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "to-empty/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "to-empty/new.bin",
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "to-empty/old.sig",
+          "length": 72,
+          "sha256": "d3f8a0cc0d5a9b02f21f13bd7d7a041f58c1bd1395a0b53e7dcd04e9c6d1f8d2"
+        },
+        {
+          "path": "to-empty/update.delta",
+          "length": 5,
+          "sha256": "99bda669e1803fb643f9d14e63bb7d5bfca917c603b4e7d1673d4e35b30a8acb"
+        }
+      ]
+    },
+    {
+      "id": "one",
+      "purpose": "one zero byte to high byte",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 1,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "1",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "one/old.bin",
+          "length": 1,
+          "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+        },
+        {
+          "path": "one/new.bin",
+          "length": 1,
+          "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+        },
+        {
+          "path": "one/old.sig",
+          "length": 17,
+          "sha256": "9de1cfdaa5b1e607a49f12d608f19b4e87c4c3cdcbb7aa56b6341526966c1ee1"
+        },
+        {
+          "path": "one/update.delta",
+          "length": 7,
+          "sha256": "9d6accca0b98fba2cbe5113cec39812e7715a9733526fac286f2204d6432e2f1"
+        }
+      ]
+    },
+    {
+      "id": "before-block",
+      "purpose": "block minus one",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 16,
+      "strong_sum_len": 16,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "16",
+          "-S",
+          "16",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "before-block/old.bin",
+          "length": 15,
+          "sha256": "2bb8a575a90c1a0d5b26c0e52d134f1b8834638c5fafdb2db6297ec41183dc7e"
+        },
+        {
+          "path": "before-block/new.bin",
+          "length": 15,
+          "sha256": "2bb8a575a90c1a0d5b26c0e52d134f1b8834638c5fafdb2db6297ec41183dc7e"
+        },
+        {
+          "path": "before-block/old.sig",
+          "length": 32,
+          "sha256": "17dd59e7977b4a38c09e5236e3308e115ff5d88d36b245396f15f5853be24a50"
+        },
+        {
+          "path": "before-block/update.delta",
+          "length": 8,
+          "sha256": "d07c7c08d4f3fe860ca0faf12422fca1f9f527cfc68f3d78b9ee4f9a0ca8411c"
+        }
+      ]
+    },
+    {
+      "id": "exact-block",
+      "purpose": "exact block",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 16,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "16",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "exact-block/old.bin",
+          "length": 16,
+          "sha256": "3ba97212696509337e83b2e2be94593303a3ee893f5307c6808cf6b0a6f8e43d"
+        },
+        {
+          "path": "exact-block/new.bin",
+          "length": 16,
+          "sha256": "3ba97212696509337e83b2e2be94593303a3ee893f5307c6808cf6b0a6f8e43d"
+        },
+        {
+          "path": "exact-block/old.sig",
+          "length": 48,
+          "sha256": "9b02cf39307c2eb9e23f3a1b9eac822395f47e47c170ea2d099a9a7cfd8cf67f"
+        },
+        {
+          "path": "exact-block/update.delta",
+          "length": 8,
+          "sha256": "8e751f92cb839e116aa1dfdfb2aacf03ec1626e82ace0f703c49e05760e652f2"
+        }
+      ]
+    },
+    {
+      "id": "after-block",
+      "purpose": "block plus one",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 16,
+      "strong_sum_len": 1,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "16",
+          "-S",
+          "1",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "after-block/old.bin",
+          "length": 17,
+          "sha256": "f8da6643f2618455bf2c5ef84bb9f41546dc80d93646fe2f7d85d2c1c1401a83"
+        },
+        {
+          "path": "after-block/new.bin",
+          "length": 17,
+          "sha256": "f8da6643f2618455bf2c5ef84bb9f41546dc80d93646fe2f7d85d2c1c1401a83"
+        },
+        {
+          "path": "after-block/old.sig",
+          "length": 22,
+          "sha256": "92b304a20afbfc9cad114e4bc6045139a113098f9837806e40d446e6ecb4dfc0"
+        },
+        {
+          "path": "after-block/update.delta",
+          "length": 8,
+          "sha256": "68645865c0567daa7be0c9571d5eb6b919e6e53e1e032a9947bee4451a4bcc64"
+        }
+      ]
+    },
+    {
+      "id": "multi",
+      "purpose": "distinct blocks with short tail",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "multi/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "multi/new.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "multi/old.sig",
+          "length": 120,
+          "sha256": "28522699383cd404965b537d2505ee336bdd740da5da3017e254d00576196c70"
+        },
+        {
+          "path": "multi/update.delta",
+          "length": 8,
+          "sha256": "68645865c0567daa7be0c9571d5eb6b919e6e53e1e032a9947bee4451a4bcc64"
+        }
+      ]
+    },
+    {
+      "id": "repeat",
+      "purpose": "repeated complete blocks and constant bytes",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 16,
+      "strong_sum_len": 16,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "16",
+          "-S",
+          "16",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "repeat/old.bin",
+          "length": 48,
+          "sha256": "2ac4dd6f486e2f061ebe8ce8b651dbdf25d71b88184d0bf308608cdcaae05309"
+        },
+        {
+          "path": "repeat/new.bin",
+          "length": 64,
+          "sha256": "1df1b7ce1fd8fcbe20cde61646875e54fe38d8945ea7911afd59e025cc520a68"
+        },
+        {
+          "path": "repeat/old.sig",
+          "length": 72,
+          "sha256": "227a0a5f0f5cd05d82c95d23324987d1ba19417782a3bd635886bbc67149b7f6"
+        },
+        {
+          "path": "repeat/update.delta",
+          "length": 17,
+          "sha256": "fae5d30cc9bc765a9433650728f0ad84ebc4d5d5e921d36ec9ebf77fb6afad24"
+        }
+      ]
+    },
+    {
+      "id": "insert-head",
+      "purpose": "head insertion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 1,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "1",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "insert-head/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "insert-head/new.bin",
+          "length": 18,
+          "sha256": "1b762ae3d157b0a2446993f1287c2d5a16dd503ea79ec505d405af3aa987e37a"
+        },
+        {
+          "path": "insert-head/old.sig",
+          "length": 27,
+          "sha256": "757500bb9384e05520e51c8c63face3486100a8981223f62cc2f58acdeb4f341"
+        },
+        {
+          "path": "insert-head/update.delta",
+          "length": 10,
+          "sha256": "813557a361291f6a539867a505734d4fb969f6e4f9c561ae7493b097ee26bf36"
+        }
+      ]
+    },
+    {
+      "id": "insert-middle",
+      "purpose": "middle insertion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 16,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "16",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "insert-middle/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "insert-middle/new.bin",
+          "length": 19,
+          "sha256": "4ea91f3fcd53805aaab2c6750a91ffa5d554ef615f21a9e999dad5bd168d0cb1"
+        },
+        {
+          "path": "insert-middle/old.sig",
+          "length": 72,
+          "sha256": "d3f8a0cc0d5a9b02f21f13bd7d7a041f58c1bd1395a0b53e7dcd04e9c6d1f8d2"
+        },
+        {
+          "path": "insert-middle/update.delta",
+          "length": 14,
+          "sha256": "77681b4b18b71c0a38b18cd729f36bf50f8b4c14a88246884df832ad6cc112e0"
+        }
+      ]
+    },
+    {
+      "id": "insert-tail",
+      "purpose": "tail insertion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "insert-tail/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "insert-tail/new.bin",
+          "length": 18,
+          "sha256": "57b79d22705b95482af84878263082a38401540317191172a991e50cc90abef0"
+        },
+        {
+          "path": "insert-tail/old.sig",
+          "length": 120,
+          "sha256": "28522699383cd404965b537d2505ee336bdd740da5da3017e254d00576196c70"
+        },
+        {
+          "path": "insert-tail/update.delta",
+          "length": 13,
+          "sha256": "5125cb472a6307605dc2832ea12a93ec004301b1523ff586ed880c82d54bb335"
+        }
+      ]
+    },
+    {
+      "id": "delete-head",
+      "purpose": "head deletion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 16,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "16",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "delete-head/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "delete-head/new.bin",
+          "length": 15,
+          "sha256": "10d0abd49546c7319adfa9fc2f62b56588544a45b6c859d67f08946d8540d15f"
+        },
+        {
+          "path": "delete-head/old.sig",
+          "length": 72,
+          "sha256": "d3f8a0cc0d5a9b02f21f13bd7d7a041f58c1bd1395a0b53e7dcd04e9c6d1f8d2"
+        },
+        {
+          "path": "delete-head/update.delta",
+          "length": 14,
+          "sha256": "8c471c82039f03cd36ed4795ef2bbbf34b96bc74e7d1057d97873d6d7d2ff01c"
+        }
+      ]
+    },
+    {
+      "id": "delete-middle",
+      "purpose": "middle deletion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "delete-middle/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "delete-middle/new.bin",
+          "length": 15,
+          "sha256": "c574fa625a19e639dd97822b0a97249369a85b714aeae566fa615d0f2cc15e37"
+        },
+        {
+          "path": "delete-middle/old.sig",
+          "length": 120,
+          "sha256": "28522699383cd404965b537d2505ee336bdd740da5da3017e254d00576196c70"
+        },
+        {
+          "path": "delete-middle/update.delta",
+          "length": 17,
+          "sha256": "60b65e40c01ce6b9cb1d677cb8fae14df64052b1a0c9f88e30f3294545c2ff04"
+        }
+      ]
+    },
+    {
+      "id": "delete-tail",
+      "purpose": "tail deletion",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 7,
+      "strong_sum_len": 1,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "7",
+          "-S",
+          "1",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "delete-tail/old.bin",
+          "length": 17,
+          "sha256": "3d99a0ea7f6dde1745ca24e432f8d849a689c012412efcaed4f6c3713ad861e0"
+        },
+        {
+          "path": "delete-tail/new.bin",
+          "length": 15,
+          "sha256": "f72f7cac06ef18b990af4837d32d8e0f8d2b8aca5728a1159b18572fc6b7433d"
+        },
+        {
+          "path": "delete-tail/old.sig",
+          "length": 27,
+          "sha256": "757500bb9384e05520e51c8c63face3486100a8981223f62cc2f58acdeb4f341"
+        },
+        {
+          "path": "delete-tail/update.delta",
+          "length": 10,
+          "sha256": "a87560318e3a777a5aea3f0d2d1b8a666d045a88a09a88c94fe509858ea2376f"
+        }
+      ]
+    },
+    {
+      "id": "default-edit",
+      "purpose": "default parameters long common regions and local edits",
+      "profile": "RS_RK_BLAKE2_SIG_MAGIC",
+      "block_len": 2048,
+      "strong_sum_len": 32,
+      "commands": [
+        [
+          "-H",
+          "blake2",
+          "-R",
+          "rabinkarp",
+          "-b",
+          "2048",
+          "-S",
+          "32",
+          "signature",
+          "old.bin",
+          "old.sig"
+        ],
+        [
+          "delta",
+          "old.sig",
+          "new.bin",
+          "update.delta"
+        ],
+        [
+          "patch",
+          "old.bin",
+          "update.delta",
+          "restored.bin"
+        ]
+      ],
+      "files": [
+        {
+          "path": "default-edit/old.bin",
+          "length": 5000,
+          "sha256": "b1a945ccbd841c5f602362747f6d7f714df070ac8ed81346ac1cc4d37d4f8aaf"
+        },
+        {
+          "path": "default-edit/new.bin",
+          "length": 5000,
+          "sha256": "75c54db90fbe298ba6100d789efdfaa1f0008a9261f4e821b52a7b45e0191043"
+        },
+        {
+          "path": "default-edit/old.sig",
+          "length": 120,
+          "sha256": "d8804058dd8786f5630612474ad013892a483dc19575c274037d1422a8d57f0c"
+        },
+        {
+          "path": "default-edit/update.delta",
+          "length": 923,
+          "sha256": "8edc429f5282dcfe1faf36d0a52a49d8447845e9380d89ccf363be29b24e3cb1"
+        }
+      ]
+    }
+  ]
+}

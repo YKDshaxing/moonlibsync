@@ -1,4 +1,4 @@
-name: Foundations and bounded signatures
+name: Foundations and reference fixtures
 
 on:
   push:
@@ -9,6 +9,14 @@ permissions:
   contents: read
 
 jobs:
+  reference:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install reference build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libpopt-dev
+      - name: Build from fixed source, rebuild and reject corruption
+        run: bash scripts/rebuild-reference.sh
   foundations:
     name: ${{ matrix.os }} / fixed toolchain
     runs-on: ${{ matrix.os }}

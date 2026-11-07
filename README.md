@@ -84,3 +84,5 @@ moon run probes/digest --target wasm-gc
 [CI 配置](.github/workflows/ci.yml) 在 Windows 和 Ubuntu 上执行格式、依赖完整性、接口一致性、Native/JS/Wasm-GC check/build/test、摘要向量和 Native 基础文件接口探针。脚本在任何自动写接口的检查之前保存接口快照；生成后比较差异，不把自动覆盖视为一致。云端执行状态与本地结果分别记录，不以 CI 配置文件存在代替运行证据。
 
 原创代码采用 `LGPL-2.1-or-later`，完整文本见 [COPYING.LESSER](COPYING.LESSER) 和 [COPYING](COPYING)。依赖保留 Apache-2.0 等上游声明，详见 [SOURCES.md](SOURCES.md) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本阶段不打包或发布二进制。
+
+Commit 3 建立固定 librsync v2.3.4 参考构建与16个自有输入用例的离线签名/delta夹具。普通检查核验 manifest 与字节搬运文件；三目标测试离线读取上游签名。独立 Linux CI 从源码重建、逐文件比较并拒绝损坏副本。见 [兼容性证据](docs/compatibility.md)。上游自行恢复不等于 MoonBit 双向互操作通过。

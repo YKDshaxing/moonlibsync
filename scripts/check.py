@@ -34,6 +34,7 @@ if actual != lock["moonc"]:
     raise SystemExit(f"Expected {lock['moonc']}; got {actual}")
 moon("version", "--all")
 moon("fmt", "--check")
+run(sys.executable, "scripts/verify_fixtures.py")
 if not os.environ.get("MOONLIBSYNC_OFFLINE_INDEX"):
     moon("update")
 # Fetch without rewriting local interface files, then verify every dependency.

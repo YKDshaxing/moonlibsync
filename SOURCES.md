@@ -29,3 +29,7 @@
 实际读取固定提交的 [`src/librsync.h`](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/librsync.h) 和 [`src/readsums.c`](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/readsums.c)：前者核对四种签名 magic 与 delta magic 的分类；后者核对 magic、块长、强摘要长的头顺序，以及每条记录先 weak u32、后指定长度 strong 字节的布局。没有根据名字或字节前缀推测 profile 算法。
 
 `wire.mbt`、`signature.mbt` 及白盒测试为独立 MoonBit 实现，未逐行移植 C 解析状态机或其有符号整数读取代码。手写十六进制向量不是由本项目编码器生成。头部长度、零字段拒绝、严格尾部对齐、错误优先级和资源限制是本项目明确制定并测试的解析策略，不能将其错误返回行为等同于上游 C API。上游 `librsync.h` 的原始声明为 Martin Pool / Donovan Baarda，`readsums.c` 为 Martin Pool / Andrew Tridgell，均为 LGPL-2.1-or-later；没有变更其声明。适用文本已保留在 `COPYING.LESSER` / `COPYING`，本笔没有新增第三方代码或运行依赖。
+
+## Commit 3 参考构建
+
+固定 e364852674780e43d578e4239128ff7014190ed3 的 CMakeLists.txt、src/rdiff.c 和 src/blake2/blake2b-ref.c 实际用于参考构建；上游源码与二进制留在忽略目录，不进入核心运行依赖。CMakeLists.txt 保留 Adam Schubert / Martin Pool 的 LGPL-2.1-or-later；BLAKE2参考代码 Copyright 2012 Samuel Neves，允许选择 CC0、OpenSSL 或 Apache-2.0，本参考路径按 Apache-2.0 声明保留来源，完整许可见 licenses/Apache-2.0.txt。没有将其统一改标为MIT。tests/fixtures 输入为本项目规则生成，输出由该固定rdiff产生；manifest记录命令、完整版本、长度和SHA-256。数据及常量生成不是MoonBit算法实现或双向互操作证据。

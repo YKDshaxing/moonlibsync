@@ -2,3 +2,4 @@
 /.mooncakes/
 /.toolchain/
 /target/
+__pycache__/
