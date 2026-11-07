@@ -86,3 +86,7 @@ moon run probes/digest --target wasm-gc
 原创代码采用 `LGPL-2.1-or-later`，完整文本见 [COPYING.LESSER](COPYING.LESSER) 和 [COPYING](COPYING)。依赖保留 Apache-2.0 等上游声明，详见 [SOURCES.md](SOURCES.md) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本阶段不打包或发布二进制。
 
 Commit 3 建立固定 librsync v2.3.4 参考构建与16个自有输入用例的离线签名/delta夹具。普通检查核验 manifest 与字节搬运文件；三目标测试离线读取上游签名。独立 Linux CI 从源码重建、逐文件比较并拒绝损坏副本。见 [兼容性证据](docs/compatibility.md)。上游自行恢复不等于 MoonBit 双向互操作通过。
+
+## Commit 4 弱校验
+
+新增内部 Rabin–Karp 标量状态及加入、批量更新、旋转、EOF缩短操作，详见 [Rabin–Karp说明](docs/rabinkarp.md)。使用独立重算、固定上游向量及16例真实签名记录逐块验证；仅扩展old.bin离线字节搬运，正式夹具与manifest不变。强摘要适配仍未实现，摘要依赖探针的历史结果不代表该适配已完成。

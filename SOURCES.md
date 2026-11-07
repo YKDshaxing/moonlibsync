@@ -33,3 +33,7 @@
 ## Commit 3 参考构建
 
 固定 e364852674780e43d578e4239128ff7014190ed3 的 CMakeLists.txt、src/rdiff.c 和 src/blake2/blake2b-ref.c 实际用于参考构建；上游源码与二进制留在忽略目录，不进入核心运行依赖。CMakeLists.txt 保留 Adam Schubert / Martin Pool 的 LGPL-2.1-or-later；BLAKE2参考代码 Copyright 2012 Samuel Neves，允许选择 CC0、OpenSSL 或 Apache-2.0，本参考路径按 Apache-2.0 声明保留来源，完整许可见 licenses/Apache-2.0.txt。没有将其统一改标为MIT。tests/fixtures 输入为本项目规则生成，输出由该固定rdiff产生；manifest记录命令、完整版本、长度和SHA-256。数据及常量生成不是MoonBit算法实现或双向互操作证据。
+
+## Commit 4 弱校验移植
+
+固定提交 e364852674780e43d578e4239128ff7014190ed3 的 src/rabinkarp.h、src/rabinkarp.c 与 tests/rabinkarp_test.c 已实际核对。rabinkarp.mbt移植头文件状态、常量和标量公式，不移植C展开更新循环或幂表；保留Donovan Baarda 2019 LGPL-2.1-or-later。rabinkarp_wbtest.mbt的固定向量来自上游测试并保留Donovan Baarda 2003声明，额外独立重算与边界验证为本项目新增。原夹具字节仅扩展搬运old.bin，不重算或刷新上游预期。

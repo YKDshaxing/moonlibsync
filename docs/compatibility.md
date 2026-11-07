@@ -48,3 +48,7 @@ reference_bytes_wbtest.mbt 由 verify_fixtures.py --export 独立搬运原始old
 | 双向互操作 | 未执行 |
 
 同SHA CI链接由最终交付报告提供，不能用提交前快照宣称云端通过。Linux reference任务从源码构建、重建全部数据并拒绝损坏副本；原Windows/Ubuntu三目标矩阵保留。未实现滚动校验、匹配、signature/delta/patch，未发布版本、标签或Release；止于Commit 3。
+
+## Commit 4 增量证据
+
+新增内部Rabin–Karp弱校验，使用独立逐窗口/EOF重算、固定上游向量及原16例basis真实块与签名weak_sum逐块比较。old.bin由已校验夹具离线搬运，不在生成器内计算弱校验。原夹具和manifest不刷新；历史Commit 3构建与roundtrip证据仍属原阶段。弱校验一致不表示强摘要适配、签名生成或双向互操作完成，详见rabinkarp.md及最终同SHA CI报告。
