@@ -22,7 +22,7 @@ SYSTEM = platform.system().lower()
 if SYSTEM not in ("windows", "linux") or platform.machine().lower() not in (
     "amd64", "x86_64"
 ):
-    raise SystemExit("Only Windows/Linux x86_64 are locked for Commit 1")
+    raise SystemExit("Only Windows/Linux x86_64 toolchain archives are locked")
 SPEC = LOCK["platforms"][SYSTEM + "-x86_64"]
 parser = argparse.ArgumentParser()
 parser.add_argument("--name", default="selected", choices=("selected", "linux"))

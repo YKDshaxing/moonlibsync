@@ -1,4 +1,4 @@
-"""Run Commit 1 checks and reject public-interface drift, including auto-writes."""
+"""Check foundations and bounded signatures; reject interface auto-write drift."""
 
 import json
 import os
@@ -51,4 +51,4 @@ if before != after:
     changed = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
     raise SystemExit("Public interfaces changed; review the diff: " + ", ".join(changed))
 run("git", "-c", f"safe.directory={ROOT.as_posix()}", "diff", "--check")
-print("All Commit 1 checks passed. No algorithm correctness or interop claim.")
+print("All foundation and bounded signature checks passed. No rdiff interop or full algorithm delivery claim.")

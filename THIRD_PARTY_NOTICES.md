@@ -9,10 +9,12 @@
 | moonbitstack/moondate | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
 | moonbitstack/moonrand | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
 | moonbitlang/core | 0.10.20+65efd5b93 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库与 Native 系统接口 |
-| librsync | v2.3.4 / e364852674780e43d578e4239128ff7014190ed3 | 保留上游 COPYING 中 LGPL v2.1 文本 | 后续格式参考，本阶段无算法代码移植或链接 |
+| librsync | v2.3.4 / e364852674780e43d578e4239128ff7014190ed3 | 保留上游 COPYING 中 LGPL v2.1 文本 | 读取 librsync.h、readsums.c 核对签名布局与 magic；无 C 代码移植或链接 |
 
 完整 Apache-2.0 文本见 `licenses/Apache-2.0.txt`，core 的原始声明见 `licenses/MoonBit-core-LICENSE` 与 `licenses/MoonBit-core-NOTICE`。本仓库没有分发 mooncrypt 实现副本或工具链二进制，也没有修改依赖源码的版权头。所有固定包的许可证和压缩包校验值还记录在 `dependencies.lock.json` 中。
 
 `moonbitlang/x@0.5.7` 在调查中安装并检查过文件 API，但最终未采用：固定工具链的 `core/async/fs`、`core/env`、`core/async/stdio` 已提供本笔所需能力。它不属于本模块最终依赖闭包。
 
 Python hashlib 只作为开发阶段独立向量来源，不复制其实现或链接 Python 到 MoonBit 核心；许可证与算法参考链接见 `SOURCES.md`。没有用 C librsync FFI 替代核心。
+
+Commit 2 的格式参考包括 `src/readsums.c`，其头部保留 Martin Pool、Andrew Tridgell 的版权及 LGPL-2.1-or-later 声明；本项目仅据此核对格式事实，受检整数与内部解析器独立实现，没有复制上游状态机或覆盖其版权。固定文件链接与实际使用程度见 `SOURCES.md` 的 Commit 2 记录。

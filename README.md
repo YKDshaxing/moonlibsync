@@ -4,13 +4,13 @@
 
 模块：`YKDshaxing/moonlibsync`；仓库归属：[`YKDshaxing/moonlibsync`](https://github.com/YKDshaxing/moonlibsync)。元数据版本 `0.1.0` 是开发目标，**尚未发布**，不表示版本已预留或已获得 Mooncakes 发布权限。
 
-当前只实现 Commit 1 的工程基础：10 类错误声明、Limits 草案及配置校验、固定摘要依赖的向量探针、独立 Native 文件接口探针和最小 CI 配置。**signature、delta、patch 均未实现**，没有返回占位成功结果的接口。
+当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**签名生成（signature）、delta、patch 均未实现**，没有返回占位成功结果的接口。
 
 文件格式参考固定为 librsync v2.3.4，提交 `e364852674780e43d578e4239128ff7014190ed3`。本阶段没有构建 rdiff、生成离线互操作夹具或验证互操作。项目不主张 MoonBit 的远端签名差分领域为空白。网络传输、目录同步、流式 API 和其他签名 profile 不在首版范围。
 
 ## 已验证版本与运行
 
-本地 Windows 与 Ubuntu 24.04 WSL2 已验证编译器为 `moonc v0.10.20+65efd5b93 (2026-11-05)`，moon/moonrun 为 `0.1.20261104 (940aa18 2026-11-04)`。这不构成支持所有 `0.10.16` 以上版本的声明。Windows 已验证 Node.js `v24.18.0` 和 MSVC x64 `19.44.35229`；Linux 已验证 Node.js `v22.23.2` 和 GCC `13.3.0`。两环境的三目标检查和探针均通过，逐项证据与云端状态见 [docs/probes.md](docs/probes.md)。
+已验证工具链固定为 `moonc v0.10.20+65efd5b93 (2026-11-05)`，moon/moonrun 为 `0.1.20261104 (940aa18 2026-11-04)`。这不构成支持所有 `0.10.16` 以上版本的声明。Commit 1 在本地 Windows 和 Ubuntu 24.04 WSL2 上验证过三个目标与探针：Windows 使用 Node.js `v24.18.0`、MSVC x64 `19.44.35229`，Linux 使用 Node.js `v22.23.2`、GCC `13.3.0`。保留其历史记录 [docs/probes.md](docs/probes.md)，Commit 2 的格式策略、测试与执行证据单独记录于 [docs/signature-format.md](docs/signature-format.md)。
 
 需要 Git、Python 3.12+，以及 Native 所需的 C/C++ 工具；Windows 使用含 Windows SDK 的 Visual Studio C++ Build Tools。构建系统会发现 MSVC，MinGW 的存在不替代 MSVC 验证。
 
@@ -41,7 +41,7 @@ python3 scripts/check.py
 
 ## 摘要探针
 
-采用 `moonbitstack/mooncrypt@0.4.5` 的 `hash/blake2` 包，通过 `hash(input, kind=Blake2b, len=32)` 将输出长度参数设为 32，再取 `strong_sum_len` 的前 1–32 字节。探针同时排除 BLAKE2s-256 和截断 BLAKE2b-512。这只确定后续实现的摘要路线；尚未添加核心摘要 API 或签名格式。
+采用 `moonbitstack/mooncrypt@0.4.5` 的 `hash/blake2` 包，通过 `hash(input, kind=Blake2b, len=32)` 将输出长度参数设为 32，再取 `strong_sum_len` 的前 1–32 字节。探针同时排除 BLAKE2s-256 和截断 BLAKE2b-512。内部解析器只读取签名中已有的摘要字节，不重算摘要；核心摘要 API 和签名生成尚未实现。
 
 ```powershell
 moon run probes/digest --target native
@@ -67,9 +67,17 @@ moon run probes/digest --target wasm-gc
 | `max_instructions` | 条指令 | 1,000,000 |
 | `max_match_work` | 工作量单位，计量规则待定 | 256 × 1024 × 1024 |
 
-零预算允许表达“不能消费此类资源”，不表示未来任意空格式都能通过。当前仅做逐字段配置校验，未固定跨字段关系，也**没有约束算法分配、指令执行或匹配工作量**。
+零预算允许表达“不能消费此类资源”，不表示任意空格式都能通过。内部签名解析入口先校验所有配置，再实际落实 `max_signature_bytes`、`max_signature_records`、`max_block_bytes`；零记录签名可在记录数预算为零时通过，但仍需合法头部、块长与足够的字节预算。其他字段尚未落实为旧/新文件、delta、恢复输出、指令执行或匹配工作量预算。
 
-`SyncError` 包括 `InvalidOptions`、`UnsupportedSignatureProfile`、`TruncatedInput`、`InvalidSignature`、`InvalidDelta`、`InvalidOpcode`、`IntegerOutOfRange`、`CopyOutOfBounds`、`TrailingData`、`LimitExceeded`。只有当前实际使用的 `InvalidOptions(String)` 携带字段名，其余分类不冻结未来解析器的详细载荷。`Limits::validate()` 使用 MoonBit 的 `raise SyncError` 返回明确校验错误。
+`SyncError` 包括 `InvalidOptions`、`UnsupportedSignatureProfile`、`TruncatedInput`、`InvalidSignature`、`InvalidDelta`、`InvalidOpcode`、`IntegerOutOfRange`、`CopyOutOfBounds`、`TrailingData`、`LimitExceeded`。只有 `InvalidOptions(String)` 携带字段名，本笔未改变公开错误声明。`Limits::validate()` 和内部解析器使用 MoonBit 的 `raise SyncError` 返回明确错误。
+
+## 内部签名结构解析
+
+只接受 RK/BLAKE2 profile `0x72730147`。MD4、BLAKE2 和 RK/MD4 三种已知其他 profile 返回 `UnsupportedSignatureProfile`；未知 magic 和 delta magic 返回 `InvalidSignature`。头部固定 12 字节，块长必须为正，强摘要长必须为 1–32；头部不足或尾部不足一条记录返回 `TruncatedInput`。
+
+记录保持原顺序与重复项，弱校验以 UInt32 保留全部位；u64 wire 工具完整保留 UInt64。实现范围和项目预算分别报 `IntegerOutOfRange`、`LimitExceeded`，不会先窄化再比较。具体字段、错误优先级与手写向量覆盖见 [签名格式说明](docs/signature-format.md)。
+
+签名不包含 `basis_len`、每块真实长度、显式块偏移或整文件摘要。内部 `nominal_offset` 只是受检的块序号乘块长，不能据此推断真实旧文件长度或最后一块长度，也不能认证旧文件身份。当前没有签名生成、滚动校验、匹配或恢复能力。
 
 ## CI 与许可证
 
