@@ -69,3 +69,9 @@ Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C
 ## Commit 12 资源结构核对
 
 实际读取固定工具链core/builtin/array.mbt的push、reserve_capacity、resize_buffer及容量增长，确认自动追加可能复制活跃前缀；bytes.mbt与bytesview.mbt核对Bytes转换的跨目标复制/独占复用及视图to_owned语义。core原Copyright 2026 International Digital Economy Academy / Apache-2.0及既有NOTICE不变，未复制其实现；本项目新增的是预收费、容量上限和公共接口调用。固定mooncrypt0.4.5的blake2.mbt核对128字节处理缓冲、压缩临时数组和finish副本，不修改其Apache-2.0实现。resources.md的规模关系由这些真实结构推导，不是峰值内存测量或新增第三方代码。
+
+## Commit 13 Native 文件适配来源
+
+实际读取固定core async/fs的File.kind/size/read_at/write/sync/close、kind(follow_symlink=false)、realpath和rename接口，以及runtime/fs.c的Windows/Linux重命名后端。runtime/fs.c原Copyright 2025 International Digital Economy Academy / Apache-2.0，其他core文件原声明及既有LICENSE/NOTICE保留，不复制或修改其实现。Windows使用FileRenameInfoEx Flags=0、旧系统MoveFileEx无REPLACE_EXISTING，Linux调用renameat2/RENAME_NOREPLACE，未知支持时失败；不据参数名空泛宣称所有文件系统安全。
+
+新增CLI参数、限量读取、独占临时发布及烟雾编排为原创LGPL-2.1-or-later适配，算法只调用原三项公开API。Python ctypes与PowerShell权限设置仅在受控测试中证明当前身份不可写并恢复，不进入产品算法，也不修改全局设置。无新增C librsync FFI或第三方运行依赖；实际平台与文件系统边界见docs/cli.md。

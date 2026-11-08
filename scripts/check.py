@@ -45,7 +45,7 @@ resource_report = {
 
 def test_target(target):
     build_dir = os.environ.get("MOONLIBSYNC_BUILD_DIR")
-    command = ["moon", *(["--target-dir", build_dir] if build_dir else []), "test", "--target", target]
+    command = ["moon", *(["--target-dir", build_dir] if build_dir else []), "test", "--target", target, "--package", "YKDshaxing/moonlibsync"]
     print("+", " ".join(command), flush=True)
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     print(result.stdout, end="", flush=True)

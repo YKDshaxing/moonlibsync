@@ -32,3 +32,5 @@ Commit 8 依据固定 librsync prototab.c、patch.c、netint.c、emit.c 核对 o
 Commit 10 核对固定librsync src/delta.c的扫描、EOF和连续COPY语义，保留Martin Pool (2000, 2001)、Donovan Baarda (2003)及LGPL-2.1-or-later来源声明，完整许可见COPYING.LESSER / COPYING，固定链接及使用程度见SOURCES.md。新增全缓冲扫描、预算与合并胶合层为独立MoonBit实现，不复制C流式状态机；既有Rabin–Karp移植和mooncrypt摘要的原声明不变，无新增第三方运行依赖。
 
 Commit 11仅扩展原创测试适配、Python互操作编排与确定性输入，不新增第三方实现或运行依赖；继续使用固定librsync参考工具，保留其原版权和LGPL-2.1-or-later声明及既有完整许可。标准格式参考与既有MoonBit/摘要依赖归属不变，未将第三方实现改标为本项目原创。矩阵、种子和数据来源见SOURCES.md及tests/interop/README.md。
+
+Commit 13原创Native CLI通过固定MoonBit core公开文件/路径/参数/stderr接口和原三项字节API工作，无第三方代码移植或新增运行依赖。核对的core runtime/fs.c原Copyright 2025 International Digital Economy Academy、Apache-2.0，既有core许可证及NOTICE完整保留；后端实际使用程度与来源见SOURCES.md。不将测试权限工具或无覆盖提交包装冒称为本项目实现了操作系统文件系统。

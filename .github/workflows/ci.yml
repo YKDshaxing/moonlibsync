@@ -66,6 +66,20 @@ jobs:
       - name: PowerShell external-process exit handling
         shell: pwsh
         run: ./scripts/native_probe.ps1
+      - name: Windows Native CLI file smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/cli-smoke.ps1
+      - name: Linux Native CLI file smoke
+        if: runner.os == 'Linux'
+        run: bash scripts/cli-smoke.sh
+      - name: Preserve Native CLI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.os }}-${{ github.sha }}
+          path: _build/cli/
+          if-no-files-found: error
       - name: Reject tracked interface changes
         run: git diff --exit-code -- '*.mbti'
       - name: Preserve per-target resource audit evidence

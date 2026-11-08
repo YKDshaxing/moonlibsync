@@ -1,6 +1,6 @@
 # MoonLibSync
 
-开发中的 MoonBit 纯字节库，目标是兼容指定 librsync/rdiff 文件格式。首版计划采用全量字节缓冲 API，并提供 Native 单文件 CLI。
+开发中的 MoonBit 纯字节库，目标是兼容指定 librsync/rdiff 文件格式。采用全量字节缓冲 API，现提供 Windows／Linux Native 单文件 CLI，仍处于开发阶段。
 
 模块：`YKDshaxing/moonlibsync`；仓库归属：[`YKDshaxing/moonlibsync`](https://github.com/YKDshaxing/moonlibsync)。元数据版本 `0.1.0` 是开发目标，**尚未发布**，不表示版本已预留或已获得 Mooncakes 发布权限。
 
@@ -187,3 +187,27 @@ fn main raise {
 新增19项资源测试，原80项保留，共99项，另保留6项Python工具检查；三目标使用同次完整测试生成独立资源报告。覆盖16个适用入口/字段关系的少1/等于/多1、退化候选与指令、UInt64边界、优先级及失败后复用。资源产物与完整互操作报告分别统计，274输入对/496参数/3968恢复计划不变。
 
 API接收已存在的完整Bytes，视图会保活输入，记录、排序数组、命令容量、输出缓冲和最终转换副本可能共存。单项上限不是全进程峰值内存或精确CPU预算；没有执行OOM或堆峰值测量，也不承诺OOM能作为普通错误恢复。公开API、格式和默认参数不变；正式CLI、流式实现和发布仍未完成。
+
+## Commit 13 Native 单文件 CLI
+
+选择上述固定工具链后实际构建：
+
+```text
+moon build cmd/moonlibsync --target native
+```
+
+Windows与Linux默认产物均为`_build/native/debug/build/cmd/moonlibsync/moonlibsync.exe`；Linux文件实际为Native ELF，保留.exe后缀。本机WSL自定义目标目录为_build/linux。三个子命令：
+
+```text
+moonlibsync signature "old file.bin" old.sig --block-size 2048 --sum-size 32
+moonlibsync delta old.sig "new file.bin" update.delta
+moonlibsync patch "old file.bin" update.delta restored.bin
+moonlibsync --help
+moonlibsync --version
+```
+
+signature默认2048/32，选项仅对signature有效；--结束选项解析，单独-是普通文件名，不是管道。退出码0成功/help/version、2用法错误、1文件/核心错误；错误到stderr，文件操作成功时不打印二进制或额外日志。版本0.1.0仍为development/not released。
+
+输入按普通文件和同句柄大小检查后分块限量读取：OLD/NEW各64MiB、SIG16MiB、DELTA80MiB。只分配已检查初始大小，增长/截短则拒绝；仍为全量缓冲，不是快照或流式保证。输出默认拒绝任何已有条目；同目录CreateNew临时文件写完、文件同步并关闭后，以replace=false提交，失败只清理自己临时文件，清理失败明确报错。
+
+已测Windows Native/NTFS及Linux Native/ext4，WSL DrvFS对无覆盖重命名的EINVAL会明确失败并清理；未验证所有文件系统或断电持久化。构建路径、输入稳定要求、路径/链接策略、两平台证据及完整保证边界见[CLI说明](docs/cli.md)。运行`./scripts/cli-smoke.ps1`或`bash scripts/cli-smoke.sh`。CLI检查与99项跨目标库测试、6项Python工具检查分别统计；核心API、资源默认值和正式夹具不变。未发布版本、标签或Release，止于Commit13。
