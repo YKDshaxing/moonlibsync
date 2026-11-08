@@ -59,3 +59,17 @@ max_old_bytes 限制 basis，max_delta_bytes 含 magic/END，max_instructions �
 标准 delta 不携带 basis 身份认证。范围合法的错误 basis 可以成功执行但恢复错误内容；整体内容校验由应用在标准格式外承担，不增加私有摘要字段。
 
 原 58 项保留，新增 9 项，共 67 项：8 项公开黑盒验证手写正常/错误/预算/复用及全部 16 种 COPY 宽度，1 项调用公开 patch 恢复全部 16 个原始上游 delta，并与独立搬运的 new.bin 逐字节比较。生成器只搬运已核验文件，不调用 patch 生成预期。该证据是“MoonBit patch 恢复固定上游 delta”，并非两条互操作链完成；无公开 delta 生成、扫描、CLI 或发布。
+
+## Commit 10：只依赖远端签名的公开 delta
+
+新增 `delta(Bytes, Bytes, Limits) -> Bytes raise SyncError`；两个 Bytes 分别为标准签名和新文件，生成路径不持有 basis。入口顺序为 Limits.validate → parse_signature 完整验证 → max_new_bytes → max_output_bytes → max_delta_bytes 至少5 → 创建一次共享 MatchWork → 非空输入建索引并扫描 → 原 encode_delta。空新文件在签名验证及字节预算通过后返回 magic/END，不建立索引；不跳过损坏或不支持的签名。
+
+扫描不变量：position 指向当前未处理的新字节；弱校验 count 等于窗口真实长度；窗口内容是 new[position:position+count]；已有指令准确覆盖此前新字节，最后一条 literal 视图可继续增长。初始化及匹配后重建取 min(block_len, remaining)，非空匹配先累积 COPY 并推进 count；无匹配且有后续字节时 rotate，EOF 无字节补入时 rollout，二者都前进一字节。循环没有不推进重试。
+
+弱键筛选及配置长度的全部强摘要字节确认后才 COPY，长度取当前窗口 count。记录顺序与最小候选选择不变，不把所有记录假设为完整块，不推断私有尾块长度。短尾移到中间可成为 literal，尾部缩短仍能复用。相邻 literal 共享原输入视图合并；COPY 仅在输出相邻且 basis 偏移连续时受检合并，重复引用同一区间不合并。编码继续选择各参数最短宽度，最终只有一个 END。
+
+max_signature_bytes/records、max_block_bytes 由既有解析器执行；新文件同时受 max_new_bytes、max_output_bytes 限制。共享工作收费详见 matching.md；每次累积按最终合并后的指令数和精确编码大小检查，再允许数组增长，最终编码器门禁不关闭。部分失败只留在局部不可见状态，不改变签名或新文件，也不重置工作预算或回退到完整 literal。
+
+保留原67项，新增13项，共80项。测试检查正常 roundtrip、逐条真实 COPY 内容/范围、输出总长度、literal/COPY合并、确定性及小预算；代表配置 block=1/2/64/2048、strong=1/16/32。八个互异64字节块中插入3字节，预设 COPY下限512、delta<515，实际COPY512、delta18；相同文件及多块修改另要求真实COPY。EOF样例 ABCDxyz→00 80 xyz 的手写预期包含2字节literal及COPY(offset4,length3)。
+
+必要参考方向为固定上游签名+新文件→MoonBit delta→上游patch/cmp，16正式例及13临时复用/短尾例；不比较delta字节同一性。Native参考适配的 delta 分支只读取签名和新文件路径，basis只用于签名准备与上游恢复；输出只写新临时文件，该适配不是产品CLI。没有开展完整反向链、随机矩阵或小文件穷举，也未发布版本。

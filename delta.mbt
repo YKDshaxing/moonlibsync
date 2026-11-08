@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // Format reference: librsync e364852674780e43d578e4239128ff7014190ed3/src/prototab.c
+// Generation flow reference: the same src/delta.c, Martin Pool (2000, 2001),
+// Donovan Baarda (2003), LGPL-2.1-or-later; independent full-buffer implementation.
 
 ///|
 /// Literal borrows immutable input bytes; no payload copy or recovered output.
@@ -210,4 +212,206 @@ fn encode_delta(
   }
   out[cursor.to_int()] = b'\x00' // preflight included END
   Bytes::from_array(out[:])
+}
+
+///|
+/// Mutable only within one generation call; size includes magic and final END.
+priv struct DeltaBuilder {
+  commands : Array[DeltaCommand]
+  mut size : UInt64
+}
+
+///|
+fn generated_command_size(command : DeltaCommand) -> UInt64 raise SyncError {
+  match command {
+    Literal(data) =>
+      checked_match_end(
+        literal_header_size(data.length().to_uint64()).to_uint64(),
+        data.length().to_uint64(),
+      )
+    Copy(offset, length) =>
+      (1 + delta_width(offset) + delta_width(length)).to_uint64()
+  }
+}
+
+///|
+/// One charged bounded append/merge action, before views, arithmetic or storage.
+/// The scanner provides consecutive nonempty spans of the same new-file input.
+fn append_generated_span(
+  builder : DeltaBuilder,
+  input : BytesView,
+  start : Int32,
+  end : Int32,
+  matched : BlockMatch?,
+  limits : Limits,
+  work : MatchWork,
+) -> Unit raise SyncError {
+  work.spend(1L)
+  let count = builder.commands.length()
+  let mut replace = false
+  let command = match matched {
+    Some(found) => {
+      let offset = found.nominal_offset
+      let length = (end - start).to_uint64()
+      if count > 0 {
+        match builder.commands[count - 1] {
+          Copy(previous, size) if checked_match_end(previous, size) == offset => {
+            replace = true
+            Copy(previous, checked_match_end(size, length))
+          }
+          _ => Copy(offset, length)
+        }
+      } else {
+        Copy(offset, length)
+      }
+    }
+    None =>
+      if count > 0 {
+        match builder.commands[count - 1] {
+          Literal(previous) => {
+            replace = true
+            // Previous literal ends exactly at start; no byte concatenation.
+            Literal(input[start - previous.length():end])
+          }
+          _ => Literal(input[start:end])
+        }
+      } else {
+        Literal(input[start:end])
+      }
+  }
+  let retained = builder.size -
+    (if replace {
+      generated_command_size(builder.commands[count - 1])
+    } else {
+      0UL
+    })
+  let addition = generated_command_size(command)
+  let maximum = limits.max_delta_bytes.reinterpret_as_uint64()
+  guard retained <= maximum && addition <= maximum - retained else {
+    raise LimitExceeded
+  }
+  if !replace {
+    guard count.to_int64() < limits.max_instructions else {
+      raise LimitExceeded
+    }
+    builder.commands.push(command)
+  } else {
+    builder.commands[count - 1] = command
+  }
+  builder.size = retained + addition
+}
+
+///|
+fn generation_window(
+  input : BytesView,
+  position : Int32,
+  block : Int32,
+  work : MatchWork,
+) -> RabinKarp raise SyncError {
+  let length = if block < input.length() - position {
+    block
+  } else {
+    input.length() - position
+  }
+  work.spend(1L + length.to_int64()) // state setup and all actual update bytes
+  let weak = RabinKarp::new()
+  weak.update(input[position:position + length])
+  weak
+}
+
+///|
+/// Only the verified signature index and new bytes enter this rolling scan.
+fn scan_signature_delta(
+  index : SignatureIndex,
+  input : BytesView,
+  limits : Limits,
+  work : MatchWork,
+) -> Bytes raise SyncError {
+  let builder : DeltaBuilder = { commands: [], size: 5UL, }
+  let mut position = 0
+  if input.length() > 0 {
+    let mut weak = generation_window(
+      input,
+      position,
+      index.signature.block_len,
+      work,
+    )
+    while position < input.length() {
+      work.spend(1L) // window dispatch and bounded progress/position bookkeeping
+      let length = weak.count
+      let matched = match_signature_window(
+        index,
+        input[position:position + length],
+        weak.digest(),
+        work,
+      )
+      match matched {
+        Some(found) => {
+          append_generated_span(
+            builder,
+            input,
+            position,
+            position + length,
+            Some(found),
+            limits,
+            work,
+          )
+          position = position + length // nonempty; <= input.length by window invariant
+          if position < input.length() {
+            weak = generation_window(
+              input,
+              position,
+              index.signature.block_len,
+              work,
+            )
+          }
+        }
+        None => {
+          append_generated_span(
+            builder,
+            input,
+            position,
+            position + 1,
+            None,
+            limits,
+            work,
+          )
+          if length < input.length() - position {
+            work.spend(3L) // one rotation, outgoing byte and incoming byte
+            weak.rotate(input[position], input[position + length])
+          } else {
+            work.spend(2L) // one EOF rollout and outgoing byte
+            weak.rollout(input[position])
+          }
+          position = position + 1
+        }
+      }
+    }
+  }
+  encode_delta(builder.commands, limits)
+}
+
+///|
+/// Precedence: limits, complete signature, new bytes, output bytes, minimum
+/// delta bytes, then one shared index/scan budget and incremental output checks.
+fn generate_remote_delta(
+  signature_bytes : Bytes,
+  new_bytes : Bytes,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  limits.validate()
+  let sig = parse_signature(signature_bytes, limits)
+  guard new_bytes.length().to_int64() <= limits.max_new_bytes else {
+    raise LimitExceeded
+  }
+  guard new_bytes.length().to_int64() <= limits.max_output_bytes else {
+    raise LimitExceeded
+  }
+  guard limits.max_delta_bytes >= 5L else { raise LimitExceeded }
+  let work = MatchWork::new(limits)
+  if new_bytes.length() == 0 {
+    return encode_delta([], limits)
+  }
+  let index = build_signature_index(sig, work)
+  scan_signature_delta(index, new_bytes, limits, work)
 }

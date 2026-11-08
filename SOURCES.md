@@ -55,3 +55,9 @@ Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C
 ## Commit 9 原创补丁执行层
 
 复用 Commit 8 已核对的固定 src/patch.c / prototab.c 格式及原始 basis COPY 语义，固定提交和原 LGPL-2.1-or-later 声明不变；本笔未移植 C 回调、状态机或文件接口。patch.mbt、公开入口和测试为原创组合层，先完整解析并预检，再在内存中复制。new.bin 预期从原 16 个参考文件只读搬运，不由 MoonBit patch 生成；原参考输出、依赖和许可不变。
+
+## Commit 10 Delta 扫描流程参考
+
+实际核对固定 e364852674780e43d578e4239128ff7014190ed3 的 [src/delta.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/delta.c)：rs_delta_s_scan/flush 的 rotate/rollout、rs_findmatch 的真实窗口长度与重建、rs_appendmatch 的偏移连续合并。原声明 Copyright (C) 2000, 2001 Martin Pool；Copyright (C) 2003 Donovan Baarda，LGPL-2.1-or-later；许可文本仍在 COPYING.LESSER / COPYING，delta.mbt保留流程来源提示。
+
+新增扫描是基于上述语义的独立全缓冲MoonBit组合实现，复用本项目既有滚动校验、稳定候选索引及标准编码器；不复制C流式tube/scoop状态机、回调或分段常量。共享收费、增量预算检查、新文件视图合并为本项目策略。临时参考适配只调用公开API，rdiff从固定源码构建用于独立消费，无新增运行依赖或许可证替换。

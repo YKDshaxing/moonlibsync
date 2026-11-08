@@ -80,3 +80,13 @@ reference_bytes_wbtest.mbt 由 verify_fixtures.py --export 独立搬运原始old
 新增 new.bin 搬运函数，预期只来自已校验的原始文件。原 16 例/64 数据文件/12507 字节和原 manifest、29 个 opcode 向量及独立清单不变。固定参考重建、两类损坏副本拒绝、82 次上游签名消费、格式/依赖/原探针和三目标检查保留；接口快照只新增公开 patch。
 
 新增证据称为“MoonBit patch 恢复固定上游 delta”，尚不是“MoonBit signature → 上游 delta → MoonBit patch”完整链路证据。此笔无 delta 生成、新文件扫描、正式 CLI、完整双向互操作或版本发布；实际本机和同 SHA CI 结果见最终交付报告，止于 Commit 9。
+
+## Commit 10 增量证据
+
+基线7131afe9c8172dd737ab3f71a9d019317adc13f7。新增公开delta(Bytes签名, Bytes新文件, Limits)，接口快照只增加delta；signature、patch及内部格式/候选顺序保持不变。滚动扫描真实使用rotate/rollout和匹配后重建，连续literal及真正连续COPY受检合并，索引/扫描/确认/累积共享同一预算，累积前检查合并后指令数和编码大小。
+
+原67项保留，新增13项，共80项。覆盖空/相同/全异、头中尾插删改、完整块/短尾/尾块移动/块移动/重复块/二进制字节，代表block1/2/64/2048和strong1/16/32。解析生成结果逐条核验真实basis范围、COPY内容、总输出、合并及确定性；八块复用门槛预设COPY≥512且delta<515，实际new515、delta18、COPY512。配置、签名错误、输入/输出/编码/指令预算、共享工作精确边界、候选攻击、极小块增长、失败复用和输入不变均验证。
+
+scripts/consume_delta.py在现有Linux参考任务追加必需步骤：16个保存的上游签名和独立new.bin生成MoonBit delta，13个临时复用/短尾代表例用固定rdiff准备签名；所有29例由上游patch及cmp验证恢复，生成/恢复/比较命令退出码写入日志，任一失败导致任务失败。生成适配仅取得签名和新文件，不取得basis。正式16例64文件12507字节及manifest、29个手写opcode向量及清单不改，参考重建、两类损坏拒绝、原82次签名消费及所有探针保留。
+
+此处是“固定上游签名→MoonBit delta→上游patch”的已执行代表范围，不表示完整双向互操作矩阵通过。完整反向链、交叉随机变异、小文件穷举、统一资源审计、CLI与发布仍未完成。具体本机与同SHA CI结果由最终报告提供，止于Commit10。

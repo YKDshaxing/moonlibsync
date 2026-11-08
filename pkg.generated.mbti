@@ -2,6 +2,8 @@
 package "YKDshaxing/moonlibsync"
 
 // Values
+pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError

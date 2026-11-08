@@ -4,7 +4,7 @@
 
 模块：`YKDshaxing/moonlibsync`；仓库归属：[`YKDshaxing/moonlibsync`](https://github.com/YKDshaxing/moonlibsync)。元数据版本 `0.1.0` 是开发目标，**尚未发布**，不表示版本已预留或已获得 Mooncakes 发布权限。
 
-当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**目前已公开 signature 和 patch；delta 生成仍未实现**。Commit 8 的内部 delta 编解码与 Commit 9 的补丁执行均已加入，没有返回占位成功结果的接口。
+当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**目前已公开 signature、delta 和 patch**。Commit 10 的 delta 生成只接收远端签名与新文件，三项主操作均有可运行路径；完整互操作矩阵和发布验收仍未完成。
 
 文件格式参考固定为 librsync v2.3.4，提交 `e364852674780e43d578e4239128ff7014190ed3`。Commit 1 阶段没有构建 rdiff、生成离线互操作夹具或验证互操作；后续证据按阶段记录于下文。项目不主张 MoonBit 的远端签名差分领域为空白。网络传输、目录同步、流式 API 和其他签名 profile 不在首版范围。
 
@@ -148,3 +148,26 @@ fn main raise {
 COPY 始终读取原始 basis，支持非顺序、重复和重叠区间，不能引用新增输出。入口先校验配置、basis 字节预算，完整解析全部 delta（必须 END 且无尾随），再预检所有 COPY 范围和最终输出长度，通过后才分配恢复缓冲区。失败只返回错误，不暴露半成品；输入不变。使用 max_old_bytes、max_delta_bytes、max_instructions 和 max_output_bytes；不消耗匹配工作预算，也不使用 max_new_bytes 代替恢复输出上限。详见[格式与补丁边界](docs/delta-format.md)。
 
 标准 delta **不认证 basis 身份**：错误 basis 即使范围合法，也可能恢复出错误内容。应用需在标准格式外校验整体内容，本项目不添加私有摘要字段。新增 9 项测试，共 67 项，涵盖公开调用与 16 个固定上游 delta 的逐字节恢复；此证据称为“MoonBit patch 恢复固定上游 delta”，尚未验证“MoonBit signature → 上游 delta → MoonBit patch”完整链路。公开能力现在是 signature 和 patch，delta 生成、新文件扫描、完整双向互操作及 0.1.0 发布仍未完成。
+
+## Commit 10 从远端签名生成增量
+
+新增 `delta(signature_bytes: Bytes, new_bytes: Bytes, limits: Limits) -> Bytes raise SyncError`，生成路径不接收 basis、不访问文件系统或全局缓存。签名只提供块长、弱/强校验和名义偏移，尾块长度由当前真实匹配窗口决定。扫描使用 rotate 逐字节推进、EOF rollout 缩短；确认强摘要后才输出 COPY。连续 literal 保存为新文件视图，仅合并输出相邻且 basis 区间连续的 COPY。详见[格式与生成流程](docs/delta-format.md)及[工作预算](docs/matching.md)。
+
+以下示例沿用上文导入，签名准备模拟接收端；发送端的 delta 调用只使用签名和新文件：
+
+```moonbit
+fn main raise {
+  let limits = @moonlibsync.Limits::default()
+  let remote_signature = @moonlibsync.signature(
+    b"abc", @moonlibsync.SignatureOptions::default(), limits,
+  )
+  let encoded = @moonlibsync.delta(remote_signature, b"!abc", limits)
+  println(encoded.length())
+}
+```
+
+同一次调用的索引、弱校验重建、滚动推进、候选确认和指令累积共享 max_match_work，超限即失败，不退化为完整 literal。输入受签名、新文件及预计恢复输出预算限制，指令累积时按合并后指令数和实际最短编码大小检查，最终编码器仍预检。签名即使配合空新文件也必须合法；其他公开入口及默认 Limits 不变。
+
+预设复用用例为八个互异 64 字节块，中间插入 3 字节；固定门槛 COPY≥512 且 delta<515。实测 new=515、delta=18、COPY=512 字节。全异或很小的输入可能产生比新文件更大的 delta，不承诺普遍压缩。短强摘要有碰撞概率，伪造签名及看不到的 basis 无法认证，范围合法性与整体内容仍需接收端及应用验证。
+
+新增 13 项测试，共 80 项。固定上游 old.sig + 独立 new.bin → MoonBit delta → 上游 rdiff patch/cmp，本机通过 16 个正式用例和 13 个临时复用/短尾用例。此处仅记录该方向及代表集，完整反向链、交叉/随机矩阵、小文件穷举和统一资源审计留待后续；无网络、目录同步、流式 API、正式 CLI 或发布。

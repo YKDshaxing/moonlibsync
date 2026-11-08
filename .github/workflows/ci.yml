@@ -27,6 +27,8 @@ jobs:
         run: bash scripts/rebuild-reference.sh
       - name: Compare public signatures and verify upstream consumption
         run: python scripts/consume_signature.py
+      - name: Consume MoonBit deltas with pinned upstream patch
+        run: python scripts/consume_delta.py
   foundations:
     name: ${{ matrix.os }} / fixed toolchain
     runs-on: ${{ matrix.os }}

@@ -62,3 +62,17 @@ pub fn patch(
 ) -> Bytes raise SyncError {
   apply_patch_bytes(basis, delta_bytes, limits)
 }
+
+///|
+/// Generate a standard delta using only the remote signature and new bytes.
+/// Validates the signature even for empty new input. One work budget covers
+/// indexing, rolling scan, candidate confirmation and instruction accumulation.
+/// COPY uses confirmed checksum prefixes, not basis identity authentication;
+/// callers must check final content outside the standard format.
+pub fn delta(
+  signature_bytes : Bytes,
+  new_bytes : Bytes,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  generate_remote_delta(signature_bytes, new_bytes, limits)
+}
