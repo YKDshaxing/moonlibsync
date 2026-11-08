@@ -1,0 +1,79 @@
+{
+  "format": 1,
+  "expected_cases": 496,
+  "groups": {
+    "fixed": 16,
+    "signature-boundary": 66,
+    "short-tail": 12,
+    "reuse": 3,
+    "edits": 13,
+    "exhaustive": 338,
+    "random": 48
+  },
+  "parameters": [
+    [
+      1,
+      32
+    ],
+    [
+      2,
+      16
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      16,
+      32
+    ],
+    [
+      64,
+      16
+    ],
+    [
+      2048,
+      32
+    ]
+  ],
+  "exhaustive": {
+    "alphabet": [
+      0,
+      128,
+      255
+    ],
+    "lengths": [
+      0,
+      1,
+      2
+    ],
+    "blocks": [
+      1,
+      2
+    ],
+    "strong": 32
+  },
+  "random": {
+    "algorithm": "LCG32: state=(1664525*state+1013904223) mod 2^32; byte=state>>24",
+    "seed": 1296847633,
+    "case_seed": "(seed + ordinal*0x9e3779b9) mod 2^32",
+    "samples": 48,
+    "old_length": [
+      0,
+      8192
+    ],
+    "max_new_length": 8384,
+    "edits": [
+      1,
+      6
+    ],
+    "parameter_rule": "parameters[ordinal % 6]",
+    "pattern_rule": "ordinal % 3: LCG bytes, repeated LCG pattern of length 1..16, arithmetic bytes",
+    "operation_rule": "(ordinal+edit_index)%6: insert, delete, replace, move, tail resize, sparse byte replacement"
+  },
+  "reuse": {
+    "new_bytes": 515,
+    "minimum_copy_bytes": 512,
+    "maximum_delta_exclusive": 515
+  }
+}

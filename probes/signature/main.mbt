@@ -5,6 +5,17 @@
 async fn main {
   let args = @env.args()
   guard args.length() == 5 else { @env.exit(64) }
+  if args[1] == "patch" {
+    let basis = @fs.read_binary(args[2])
+    let delta_bytes = @fs.read_binary(args[3])
+    let result = @moonlibsync.patch(
+      basis,
+      delta_bytes,
+      @moonlibsync.Limits::default(),
+    )
+    @fs.write_binary(args[4], result, create_mode=CreateNew)
+    return
+  }
   if args[1] == "delta" {
     // This generation branch reads only a signature and the new file.
     let signature_bytes = @fs.read_binary(args[2])

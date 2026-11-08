@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from interop_wire import inspect_delta
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -34,31 +35,7 @@ def run(args, cwd):
 
 
 def copy_bytes(data):
-    # Independent wire inspection for the reuse gate, not a patch implementation.
-    assert data[:4] == bytes.fromhex('72730236')
-    cursor, copied = 4, 0
-    while cursor < len(data):
-        opcode = data[cursor]
-        cursor += 1
-        if opcode == 0:
-            assert cursor == len(data)
-            return copied
-        assert opcode <= 0x54
-        if opcode <= 0x40:
-            cursor += opcode
-        elif opcode <= 0x44:
-            width = 1 << (opcode - 0x41)
-            length = int.from_bytes(data[cursor:cursor + width], 'big')
-            assert length > 0
-            cursor += width + length
-        else:
-            ow, lw = 1 << ((opcode - 0x45) // 4), 1 << ((opcode - 0x45) % 4)
-            cursor += ow
-            length = int.from_bytes(data[cursor:cursor + lw], 'big')
-            assert length > 0
-            cursor += lw
-            copied += length
-    raise AssertionError('Missing final END')
+    return sum(command[2] for command in inspect_delta(data) if command[0] == 'copy')
 
 
 with tempfile.TemporaryDirectory(prefix='generate-', dir=base) as temp:

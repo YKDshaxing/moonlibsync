@@ -90,3 +90,19 @@ reference_bytes_wbtest.mbt 由 verify_fixtures.py --export 独立搬运原始old
 scripts/consume_delta.py在现有Linux参考任务追加必需步骤：16个保存的上游签名和独立new.bin生成MoonBit delta，13个临时复用/短尾代表例用固定rdiff准备签名；所有29例由上游patch及cmp验证恢复，生成/恢复/比较命令退出码写入日志，任一失败导致任务失败。生成适配仅取得签名和新文件，不取得basis。正式16例64文件12507字节及manifest、29个手写opcode向量及清单不改，参考重建、两类损坏拒绝、原82次签名消费及所有探针保留。
 
 此处是“固定上游签名→MoonBit delta→上游patch”的已执行代表范围，不表示完整双向互操作矩阵通过。完整反向链、交叉随机变异、小文件穷举、统一资源审计、CLI与发布仍未完成。具体本机与同SHA CI结果由最终报告提供，止于Commit10。
+
+## Commit 11 双向矩阵证据
+
+基线8fe4d2c1e159d3c2d590994b9a7917728ac4315e。新增scripts/interop.sh与Python编排，Native适配器最小增加公开patch调用；delta模式仍不接收basis。公开API、核心算法、工具链/依赖锁和正式参考/opcode数据不变。
+
+矩阵配置tests/interop/matrix.json、源码interop_cases.py及计划SHA-256固定输入：16原始+66参数边界+12短尾+3复用+13编辑+338穷举参数+48固定种子变异=496参数用例，对应274独立old/new对。参数覆盖block1/2/7/16/64/2048与strong1/16/32，分配及LCG32(基种子0x4d4c5311、逐例派生状态、1–6次有界编辑)的精确规则见tests/interop/README.md。穷举范围仅为字母表00/80/ff、长度0–2共13串的169有序对，在block1/2,strong32下各执行八组合。
+
+两条必需链A(upstream signature→MoonBit delta→upstream patch)、B(MoonBit signature→upstream delta→MoonBit patch)及其余六组合各计划496次，共3968矩阵恢复。签名完整字节比较496次，每次恢复与独立new逐字节比较，不以哈希/长度替代，不要求delta编码一致。COPY门槛检查两种签名来源，复用new515要求COPY≥512且delta<515，相同文件要求512，局部两块修改要求384。额外一次门禁后的正常恢复单独统计。
+
+Python指令检查器补齐完整参数/payload/END/尾随检查，原consume_delta复用该检查器，避免Python切片截断被int.from_bytes接受。六项离线Python工具检查验证全部手写宽度、截断/保留/零长/END、真实内容比较、固定计划与清理前归档；这6项不是新增MoonBit库测试，库仍80项。没有为增加回归数制造算法失败；本轮若无真实失败，最终报告明确记载“本轮未发现需归档的算法失败样本”。
+
+缺失参考工具通过隔离的不存在路径测试入口非零，比较失败通过修改恢复副本走真实比较函数非零；二者只在观察到预期错误码/标记时通过，之后再正常恢复。外部非零、超时、崩溃、输出缺失或不一致都会失败。临时清理前保存输入、产物、种子/组合/命令和版本。忽略的_build/interop报告分别统计预期/成功/失败/未执行，记录真实HEAD、dirty与源码内容摘要，报告另附SHA-256；同SHA CI保存完整产物。
+
+保留原82次签名消费、29次delta消费、参考重建及两类损坏副本拒绝，现有Linux参考任务追加统一矩阵并上传报告，Windows/Ubuntu三目标核心检查不变。实际执行状态由最终交付报告及同SHA产物提供；Linux Native互操作与Native/JS/Wasm-GC离线单元证据分别列出，不扩展为JS/Wasm-GC直接运行rdiff。有限矩阵通过不是任意输入兼容或短摘要无碰撞证明；统一资源审计、CLI、最终验收、发布仍留后续，止于Commit11。
+
+本机WSL已实际完成274对输入、496参数用例、各组合496次及总3968次恢复，A/B均496成功、0失败、0未执行；496次签名完整字节比较通过。两个预期失败均观察到退出码1，门禁后额外正常恢复通过。插入复用例两种签名来源均为new515、delta18、COPY512；相同例COPY512，局部修改COPY384。本轮未发现需归档的算法失败样本；只修复了Python统计器对截断的校验缺口并增加对应工具回归。该本机报告明确source.head为基线8fe4d2c、dirty=true，不当作最终提交源码的同SHA证据；最终CI产物另行核对。

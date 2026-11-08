@@ -61,3 +61,7 @@ Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C
 实际核对固定 e364852674780e43d578e4239128ff7014190ed3 的 [src/delta.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/delta.c)：rs_delta_s_scan/flush 的 rotate/rollout、rs_findmatch 的真实窗口长度与重建、rs_appendmatch 的偏移连续合并。原声明 Copyright (C) 2000, 2001 Martin Pool；Copyright (C) 2003 Donovan Baarda，LGPL-2.1-or-later；许可文本仍在 COPYING.LESSER / COPYING，delta.mbt保留流程来源提示。
 
 新增扫描是基于上述语义的独立全缓冲MoonBit组合实现，复用本项目既有滚动校验、稳定候选索引及标准编码器；不复制C流式tube/scoop状态机、回调或分段常量。共享收费、增量预算检查、新文件视图合并为本项目策略。临时参考适配只调用公开API，rdiff从固定源码构建用于独立消费，无新增运行依赖或许可证替换。
+
+## Commit 11 互操作与确定性输入来源
+
+参考仍为固定librsync v2.3.4/e364852674780e43d578e4239128ff7014190ed3，从既有脚本构建并核验源码、版本与参考BLAKE2编译路径，不使用PATH中未知rdiff。Native适配只调用既有公开signature/delta/patch，核心库及第三方实现未改。Python编排、严格指令检查器、有限穷举及显式LCG32变异规则为本项目测试代码，无额外运行依赖。原16参考数据不刷新，其他预期new由固定独立输入生成器构造，绝不由恢复输出定义。来源/参数/完整计划指纹见tests/interop，运行源码SHA和dirty状态随报告记录，不以本机未提交运行冒充最终同SHA证据。

@@ -30,3 +30,5 @@ Commit 6仅新增原创签名生成胶合层、预算预检、公开配置和参
 Commit 8 依据固定 librsync prototab.c、patch.c、netint.c、emit.c 核对 opcode、大端参数及 COPY 顺序，原创 MoonBit 编解码器不复制 C 状态机。原声明分别为 Martin Pool / Donovan Baarda、Martin Pool、Martin Pool / Andrew Tridgell、Martin Pool，均 LGPL-2.1-or-later；年份、固定文件链接和使用程度见 SOURCES.md 的 Commit 8 记录，完整许可见 COPYING.LESSER / COPYING。手写 opcode 数据和预算策略为本项目新增，无新增第三方运行依赖或许可证替换。
 
 Commit 10 核对固定librsync src/delta.c的扫描、EOF和连续COPY语义，保留Martin Pool (2000, 2001)、Donovan Baarda (2003)及LGPL-2.1-or-later来源声明，完整许可见COPYING.LESSER / COPYING，固定链接及使用程度见SOURCES.md。新增全缓冲扫描、预算与合并胶合层为独立MoonBit实现，不复制C流式状态机；既有Rabin–Karp移植和mooncrypt摘要的原声明不变，无新增第三方运行依赖。
+
+Commit 11仅扩展原创测试适配、Python互操作编排与确定性输入，不新增第三方实现或运行依赖；继续使用固定librsync参考工具，保留其原版权和LGPL-2.1-or-later声明及既有完整许可。标准格式参考与既有MoonBit/摘要依赖归属不变，未将第三方实现改标为本项目原创。矩阵、种子和数据来源见SOURCES.md及tests/interop/README.md。
