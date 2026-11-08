@@ -4,7 +4,7 @@
 
 模块：`YKDshaxing/moonlibsync`；仓库归属：[`YKDshaxing/moonlibsync`](https://github.com/YKDshaxing/moonlibsync)。元数据版本 `0.1.0` 是开发目标，**尚未发布**，不表示版本已预留或已获得 Mooncakes 发布权限。
 
-当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**签名生成（signature）、delta、patch 均未实现**，没有返回占位成功结果的接口。
+当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**Commit 6 已实现公开 signature；delta、patch 仍未实现**，没有返回占位成功结果的接口。
 
 文件格式参考固定为 librsync v2.3.4，提交 `e364852674780e43d578e4239128ff7014190ed3`。本阶段没有构建 rdiff、生成离线互操作夹具或验证互操作。项目不主张 MoonBit 的远端签名差分领域为空白。网络传输、目录同步、流式 API 和其他签名 profile 不在首版范围。
 
@@ -94,3 +94,28 @@ Commit 3 建立固定 librsync v2.3.4 参考构建与16个自有输入用例的�
 ## Commit 5 强摘要适配
 
 现已实现内部strong_sum入口：固定计算32字节BLAKE2b，再取1..32字节前缀，非法长度先拒绝。10组独立hashlib向量覆盖128字节压缩块边界，并逐块匹配原16例rdiff强摘要记录；详见 [强摘要说明](docs/strongsum.md)。模块版本和锁不变，没有新增公开API，签名生成、匹配、delta、patch和双向互操作仍未实现。
+
+## 公开 signature 调用（Commit 6）
+
+客户端moon.pkg导入：
+
+```moonbit
+import { "YKDshaxing/moonlibsync" }
+```
+
+main.mbt：
+
+```moonbit
+fn main raise {
+  let bytes = @moonlibsync.signature(
+    b"abc",
+    @moonlibsync.SignatureOptions::default(),
+    @moonlibsync.Limits::default(),
+  )
+  println(bytes.length()) // 48
+}
+```
+
+该调用已由公开黑盒测试编译执行。默认块长2048、强摘要前缀32；选项字段为Int64，块长必须正且可表示为Int32，摘要长1..32，零不代表自动选择。返回标准RK+BLAKE2签名，不是delta，签名自身不能恢复新文件。生成前实际检查max_old_bytes、max_block_bytes、max_signature_records、max_signature_bytes；空文件只输出12字节头，完整块不多出空尾块，短尾块不补零，格式不保存真实尾块长度。错误顺序及预算细节见[签名说明](docs/signature-format.md)。
+
+当前仅signature公开可调用；delta、patch、匹配索引与双向互操作仍待后续阶段。Commit 6本机已完成16例固定夹具和66个临时参数用例的完整上游签名比较及82次“MoonBit签名的上游消费验证”；其中delta/patch都是上游操作，不是MoonBit实现。历史各笔“未实现”描述保留其阶段归属。

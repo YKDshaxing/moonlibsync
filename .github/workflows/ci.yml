@@ -13,10 +13,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked MoonBit for public signature consumption
+        run: |
+          python scripts/install_toolchain.py
+          echo "MOON_HOME=$PWD/.toolchain/selected" >> "$GITHUB_ENV"
+          echo "$PWD/.toolchain/selected/bin" >> "$GITHUB_PATH"
       - name: Install reference build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake libpopt-dev
       - name: Build from fixed source, rebuild and reject corruption
         run: bash scripts/rebuild-reference.sh
+      - name: Compare public signatures and verify upstream consumption
+        run: python scripts/consume_signature.py
   foundations:
     name: ${{ matrix.os }} / fixed toolchain
     runs-on: ${{ matrix.os }}

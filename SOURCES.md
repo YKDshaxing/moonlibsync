@@ -41,3 +41,7 @@
 ## Commit 5 来源
 
 strongsum.mbt是原创LGPL-2.1-or-later内部适配，真实调用既有moonbitstack/mooncrypt@0.4.5的hash/blake2（kind=Blake2b，len=32，无key/salt/person），不是本项目移植BLAKE2b实现；依赖原Apache-2.0声明不变。语义参考固定e364852674780e43d578e4239128ff7014190ed3的src/checksum.c及src/librsync.h：最大强摘要长度32，初始化和最终输出都使用该长度。checksum.c原声明Martin Pool、Andrew Tridgell、Paul Mackerras，LGPL-2.1-or-later；本笔只核对参数语义，未复制其C实现。独立预期来自Python hashlib，输入规则、完整32字节值与Python版本见tests/strongsum-vectors.json，脚本默认只读核验。
+
+## Commit 6 原创组合层
+
+api.mbt、signature.mbt新增生成/预检/内部编码，复用已有Rabin–Karp移植、mooncrypt强摘要适配及wire工具，不重写校验算法。固定上游格式和算法参考版本不变。signature_test.mbt的少量完整字节预期由独立Python struct、标量弱校验及hashlib生成后固化；16例完整上游字节仍来自原夹具，未刷新。Native参考适配只调用公开API；消费脚本的delta与patch始终调用固定rdiff，未移植这些算法。

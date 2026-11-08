@@ -2,6 +2,7 @@
 package "YKDshaxing/moonlibsync"
 
 // Values
+pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
 
 // Errors
 pub(all) suberror SyncError {
@@ -31,6 +32,12 @@ pub(all) struct Limits {
 }
 pub fn Limits::default() -> Self
 pub fn Limits::validate(Self) -> Unit raise SyncError
+
+pub(all) struct SignatureOptions {
+  block_len : Int64
+  strong_sum_len : Int64
+}
+pub fn SignatureOptions::default() -> Self
 
 // Type aliases
 

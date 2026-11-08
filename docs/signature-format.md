@@ -140,3 +140,19 @@ Feature flags enabled: rr_moon_mod,rr_moon_pkg
 `scripts/check.py` 保留工具链核对、依赖归档及源码完整性、格式、公开接口快照、三目标 check/build/test、摘要探针和 Native 文件探针的全部门禁，只更新阶段名称及完成提示。新增测试自动进入现有矩阵，没有复制一套 CI。为保持内部入口不公开，部分目前只由白盒测试消费的函数/字段使用局部 unused 警告注解；未关闭错误、接口一致性或任一实际测试。
 
 未执行项：rdiff 构建、互操作及参考夹具、签名生成、滚动校验、匹配、delta、patch、性能和完整 CLI 验收。到 Commit 2 完成即止，不自动进入 Commit 3；首版仍未完成。
+
+## Commit 6：公开标准签名生成
+
+新增公开SignatureOptions（block_len:Int64、strong_sum_len:Int64）、default()与signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError。默认2048/32；block_len必须正且可表示为Int32，strong_sum_len为1..32；0不表示自动参数。内部Signature、记录、解析器、wire及校验入口不公开，没有delta或patch声明。
+
+生成错误优先级独立于解析：Limits::validate既定顺序 → block_len正值 → strong_sum_len范围 → 块长实现表示范围 → max_old_bytes → max_block_bytes → max_signature_records → 输出乘加及Int32表示范围 → max_signature_bytes。非法选项返回InvalidOptions(字段名)，表示范围错误为IntegerOutOfRange，预算错误为LimitExceeded；原解析优先级不变。
+
+记录数按整除加余数计算，不做basis_len+block_len-1；输出乘法先用UInt64除法界限检查，再证明body<=UInt64.MAX-12，最后检查Int32索引范围。所有预算和表示检查都在输出分配及摘要计算前完成。块结束位置先比较剩余长度，完整块不额外追加空记录，短尾块不补零。空basis只有12字节头，但仍需合法选项、块长预算、至少12字节输出预算，记录预算0可接受空输出记录区。
+
+复用RabinKarp、strong_sum和大端wire工具写出0x72730147头及原顺序记录，不增加basis_len、真实尾块长度、显式偏移或整文件摘要。内部encode_signature复用头/记录写入能力，验证解析后重编码完全一致，不增加公开序列化API。其他Limits仍不代表匹配、指令、delta或恢复的预算实现。
+
+新增5项测试（2项公开黑盒、3项白盒），保留原38项，共43项。黑盒覆盖block=1/2/64/2048、strong=1/16/32，输入长度0/1/B-1/B/B+1/2B-1/2B及确定性字节。保存空、单记录、多记录及短尾块完整字节样本，预期由独立Python标量弱校验与hashlib一次核算后固化，并与16例上游完整签名交叉验证。小预算测试涵盖四项生成限制、空文件预算、零记录上限、错误恢复；算术极值在内部size预检测试，不申请巨大数组。
+
+Linux scripts/consume_signature.py先核对固定moonc、依赖及夹具，用隔离Native包probes/signature通过公开API生成临时签名；固定源码e364852674780e43d578e4239128ff7014190ed3的绝对路径rdiff重新生成签名并完整比较，再执行delta、patch、cmp。16例固定数据加66个去重临时参数用例均已在本机WSL通过，共82次上游消费验证。该Native工具只写本次临时目录，CreateNew避免覆盖；不是产品CLI，不参与JS/Wasm-GC核心编译。
+
+本地完整检查：Native、JS、Wasm-GC各43/43，接口生成审查仅新增上述配置及signature，快照门禁保留；正式16例64文件12507字节及manifest、依赖版本、锁文件和校验算法不变。Linux参考CI接入相同哈希锁定工具链，在原重建/损坏副本门禁后执行消费脚本；同SHA结果以最终交付报告为准。本阶段只完成signature，MoonBit delta、patch、候选匹配及双向互操作未实现，0.1.0仍未完成。

@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+///|
+/// Options for the standard RK+BLAKE2 signature profile. Zero never means auto.
+pub(all) struct SignatureOptions {
+  block_len : Int64
+  strong_sum_len : Int64
+}
+
+///|
+/// Default signature block size 2048; prefix of BLAKE2b-256 of length 32.
+pub fn SignatureOptions::default() -> SignatureOptions {
+  { block_len: 2048L, strong_sum_len: 32L, }
+}
+
+///|
+/// Generate standard 0x72730147 signature bytes, not a delta or file recovery.
+/// Validates limits, options, basis and output budgets before hashing/allocation.
+/// Empty basis emits only the 12-byte header; the final short block is unpadded.
+pub fn signature(
+  basis : Bytes,
+  options : SignatureOptions,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  let (block, strong, count, size) = signature_plan(
+    basis.length().to_uint64(),
+    options,
+    limits,
+  )
+  let output = signature_header(block, strong, size)
+  let mut pos = 0
+  let mut cursor = 12L
+  for _ in 0..<count {
+    let remaining = basis.length() - pos
+    let take = if remaining < block { remaining } else { block }
+    let end = pos + take // take <= remaining; addition is now bounded.
+    let window = basis[pos:end]
+    let weak = RabinKarp::new()
+    weak.update(window)
+    write_signature_record(
+      output,
+      cursor,
+      weak.digest(),
+      strong_sum(window, strong),
+    )
+    pos = end
+    cursor = cursor + (4 + strong).to_int64()
+  }
+  Bytes::from_array(output[:])
+}

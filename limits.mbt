@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
-/// Configuration draft. Signature parsing enforces the byte, record and block
-/// limits; budgets for the other algorithms are not implemented yet.
+/// Signature parsing enforces byte, record and block limits. Generation also
+/// enforces the old-file budget; budgets for other algorithms remain unimplemented.
 /// Byte fields count bytes; records and instructions count items; work units are
 /// reserved for a future matching-work definition. Int64 inputs are validated
 /// against the common signed 32-bit collection ceiling, without narrowing casts.
@@ -19,7 +19,7 @@ pub(all) struct Limits {
 }
 
 ///|
-/// Initial policy draft. Only signature parsing budgets are currently enforced.
+/// Initial policy draft. Signature parsing/generation enforce their relevant budgets.
 pub fn Limits::default() -> Limits {
   {
     max_old_bytes: 67108864L,
