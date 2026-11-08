@@ -156,3 +156,7 @@ Feature flags enabled: rr_moon_mod,rr_moon_pkg
 Linux scripts/consume_signature.py先核对固定moonc、依赖及夹具，用隔离Native包probes/signature通过公开API生成临时签名；固定源码e364852674780e43d578e4239128ff7014190ed3的绝对路径rdiff重新生成签名并完整比较，再执行delta、patch、cmp。16例固定数据加66个去重临时参数用例均已在本机WSL通过，共82次上游消费验证。该Native工具只写本次临时目录，CreateNew避免覆盖；不是产品CLI，不参与JS/Wasm-GC核心编译。
 
 本地完整检查：Native、JS、Wasm-GC各43/43，接口生成审查仅新增上述配置及signature，快照门禁保留；正式16例64文件12507字节及manifest、依赖版本、锁文件和校验算法不变。Linux参考CI接入相同哈希锁定工具链，在原重建/损坏副本门禁后执行消费脚本；同SHA结果以最终交付报告为准。本阶段只完成signature，MoonBit delta、patch、候选匹配及双向互操作未实现，0.1.0仍未完成。
+
+## Commit 12 资源审计补充
+
+公开signature的basis/块/记录/输出预检及原错误顺序不变，输出缓冲与摘要工作只在plan通过后开始。parse_signature先完成字节、头部、对齐、表示、块/记录预算和最大名义偏移预检，才按已知count精确保留记录槽，再逐条复制strong子区间；65条的记录容量为65。signature不收匹配工作，未适用的合法0字段不误限，但所有字段仍配置校验。完整九字段契约、三点测试、摘要依赖临时对象和最终Bytes转换副本见resources.md；不把最终签名字节上限等同峰值堆内存。

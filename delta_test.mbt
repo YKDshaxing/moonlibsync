@@ -171,7 +171,7 @@ test "public delta input signature and output policy precedence is fixed" {
 test "public delta literal merging byte instruction and no-match work boundaries" {
   let d = @moonlibsync.Limits::default()
   let sig = b"\x72\x73\x01\x47\x00\x00\x00\x40\x00\x00\x00\x20"
-  // Empty index; setup+update=4, three (dispatch+append+rollout)=12: total16.
+  // Empty index; setup+update=4, three (dispatch+append+rollout)=12, first slot1: total17.
   let exact = {
     ..d,
     max_signature_bytes: 12L,
@@ -181,7 +181,7 @@ test "public delta literal merging byte instruction and no-match work boundaries
     max_output_bytes: 3L,
     max_instructions: 1L,
     max_delta_bytes: 9L,
-    max_match_work: 16L,
+    max_match_work: 17L,
   }
   assert_eq(
     @moonlibsync.delta(sig, b"abc", exact),
@@ -189,7 +189,7 @@ test "public delta literal merging byte instruction and no-match work boundaries
   )
   for
     limits in [
-      { ..exact, max_match_work: 15L, },
+      { ..exact, max_match_work: 16L, },
       { ..exact, max_delta_bytes: 8L, },
       { ..exact, max_instructions: 0L, },
       { ..exact, max_new_bytes: 2L, },

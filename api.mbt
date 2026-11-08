@@ -17,6 +17,8 @@ pub fn SignatureOptions::default() -> SignatureOptions {
 /// Generate standard 0x72730147 signature bytes, not a delta or file recovery.
 /// Validates limits, options, basis and output budgets before hashing/allocation.
 /// Empty basis emits only the 12-byte header; the final short block is unpadded.
+/// Full-buffer API: input is already allocated; final Bytes conversion may copy
+/// the output buffer. These limits are not a process-wide peak-memory bound.
 pub fn signature(
   basis : Bytes,
   options : SignatureOptions,
@@ -55,6 +57,8 @@ pub fn signature(
 /// final output size before allocating recovery bytes. Failure returns no output.
 /// Requires END with no trailing data. Delta does not authenticate basis identity;
 /// applications must verify whole-file content outside this standard format.
+/// Parsed commands and input views can coexist with recovery/output buffers;
+/// see docs/resources.md. Matching work is not charged by patch.
 pub fn patch(
   basis : Bytes,
   delta_bytes : Bytes,
@@ -69,6 +73,9 @@ pub fn patch(
 /// indexing, rolling scan, candidate confirmation and instruction accumulation.
 /// COPY uses confirmed checksum prefixes, not basis identity authentication;
 /// callers must check final content outside the standard format.
+/// Command capacity allocation and live-slot relocation are precharged before
+/// reserve/push. Parsed digest copies, index arrays, views and final conversion
+/// storage coexist; see docs/resources.md, not a constant-memory promise.
 pub fn delta(
   signature_bytes : Bytes,
   new_bytes : Bytes,

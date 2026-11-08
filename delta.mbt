@@ -294,6 +294,22 @@ fn append_generated_span(
     guard count.to_int64() < limits.max_instructions else {
       raise LimitExceeded
     }
+    // Array.push may otherwise hide a linear relocation in the append unit.
+    // Reserve an explicit capped capacity, charging allocation slots and every
+    // live slot moved BEFORE reserve/push. Replacement/merge needs no growth.
+    let capacity = builder.commands.capacity()
+    if count == capacity {
+      let doubled = if capacity == 0 { 1L } else { capacity.to_int64() * 2L }
+      let next = if doubled < limits.max_instructions {
+        doubled
+      } else {
+        limits.max_instructions
+      }
+      work.spend(next + count.to_int64())
+      builder.commands.reserve_capacity(
+        checked_index(next.reinterpret_as_uint64()),
+      )
+    }
     builder.commands.push(command)
   } else {
     builder.commands[count - 1] = command

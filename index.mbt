@@ -85,7 +85,7 @@ fn checked_match_end(
 }
 
 ///|
-/// Supplied weak sum comes from a future scanner; only this window is hashed.
+/// Supplied weak sum comes from the rolling scanner; only this window is hashed.
 #warnings("-unused_value")
 fn match_signature_window(
   index : SignatureIndex,

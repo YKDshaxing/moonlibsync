@@ -30,8 +30,10 @@ fn MatchWork::spend(self : MatchWork, amount : Int64) -> Unit raise SyncError {
 /// budget and COPY ranges before recovery allocation. Delta generation enforces
 /// new/output bytes and shares one index/rolling-scan/instruction work budget.
 /// Byte fields count bytes; records and instructions count items. Work units
-/// meter index/matching and generation scanning as defined in docs/matching.md. Int64 inputs are validated
-/// against the common signed 32-bit collection ceiling, without narrowing casts.
+/// meter index/matching, scanning and command-buffer growth (logical units,
+/// not total CPU/heap). See docs/resources.md for phase-specific checks, live
+/// structures and conversion copies. Inputs already exist before these checks.
+/// Int64 fields are validated against the common signed 32-bit collection ceiling.
 pub(all) struct Limits {
   max_old_bytes : Int64
   max_new_bytes : Int64
@@ -73,7 +75,8 @@ fn validate_limit(
 
 ///|
 /// All fields accept 0..2^31-1, except block bytes which accept 1..2^31-1.
-/// This validates values only; cross-field relationships await the algorithms.
+/// This validates every field on every entry, including fields unused by that
+/// operation. Phase-specific relationships are enforced by the relevant plans.
 pub fn Limits::validate(self : Limits) -> Unit raise SyncError {
   validate_limit("max_old_bytes", self.max_old_bytes, 0L)
   validate_limit("max_new_bytes", self.max_new_bytes, 0L)

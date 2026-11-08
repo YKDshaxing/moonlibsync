@@ -73,3 +73,9 @@ max_signature_bytes/records、max_block_bytes 由既有解析器执行；新文�
 保留原67项，新增13项，共80项。测试检查正常 roundtrip、逐条真实 COPY 内容/范围、输出总长度、literal/COPY合并、确定性及小预算；代表配置 block=1/2/64/2048、strong=1/16/32。八个互异64字节块中插入3字节，预设 COPY下限512、delta<515，实际COPY512、delta18；相同文件及多块修改另要求真实COPY。EOF样例 ABCDxyz→00 80 xyz 的手写预期包含2字节literal及COPY(offset4,length3)。
 
 必要参考方向为固定上游签名+新文件→MoonBit delta→上游patch/cmp，16正式例及13临时复用/短尾例；不比较delta字节同一性。Native参考适配的 delta 分支只读取签名和新文件路径，basis只用于签名准备与上游恢复；输出只写新临时文件，该适配不是产品CLI。没有开展完整反向链、随机矩阵或小文件穷举，也未发布版本。
+
+## Commit 12 资源审计补充
+
+扫描及编码格式不变。修复累积指令Array的容量增长工作：原追加/合并1单位仍涵盖固定元数据动作，增长时另先收新容量+活跃槽搬移，显式reserve后再push；容量被max_instructions截断，替换无需增长费。新编码大小与合并后数量仍在增长之前检查，最终encode_delta完整预检继续保留。首槽新增1使旧精确工作32/82/16变为33/83/17，默认值及其他单位不变。
+
+patch仍先完整parse，再检查全部COPY和输出尺寸，才分配恢复缓冲；解析期间已存在的受限命令不是恢复输出，也不表示所有失败前绝不分配。高位offset先无符号比较，巨长length可能先触发输出预算；零长度和严格END策略不变。资源三点/退化/复用、字节视图保活、标准Array解析容量和结果转换副本详见resources.md。

@@ -65,3 +65,7 @@ Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C
 ## Commit 11 互操作与确定性输入来源
 
 参考仍为固定librsync v2.3.4/e364852674780e43d578e4239128ff7014190ed3，从既有脚本构建并核验源码、版本与参考BLAKE2编译路径，不使用PATH中未知rdiff。Native适配只调用既有公开signature/delta/patch，核心库及第三方实现未改。Python编排、严格指令检查器、有限穷举及显式LCG32变异规则为本项目测试代码，无额外运行依赖。原16参考数据不刷新，其他预期new由固定独立输入生成器构造，绝不由恢复输出定义。来源/参数/完整计划指纹见tests/interop，运行源码SHA和dirty状态随报告记录，不以本机未提交运行冒充最终同SHA证据。
+
+## Commit 12 资源结构核对
+
+实际读取固定工具链core/builtin/array.mbt的push、reserve_capacity、resize_buffer及容量增长，确认自动追加可能复制活跃前缀；bytes.mbt与bytesview.mbt核对Bytes转换的跨目标复制/独占复用及视图to_owned语义。core原Copyright 2026 International Digital Economy Academy / Apache-2.0及既有NOTICE不变，未复制其实现；本项目新增的是预收费、容量上限和公共接口调用。固定mooncrypt0.4.5的blake2.mbt核对128字节处理缓冲、压缩临时数组和finish副本，不修改其Apache-2.0实现。resources.md的规模关系由这些真实结构推导，不是峰值内存测量或新增第三方代码。

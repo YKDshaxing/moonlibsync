@@ -112,7 +112,7 @@ fn encode_signature(sig : Signature, limits : Limits) -> Bytes raise SyncError {
 
 ///|
 /// Internal only. The wire format provides no actual final-block length.
-/// Fields have whitebox test consumers; production matching is a later stage.
+/// Production consumers are the signature index and remote-delta scanner.
 #warnings("-unused_field")
 priv struct SignatureRecord {
   block_index : Int32
@@ -123,7 +123,7 @@ priv struct SignatureRecord {
 
 ///|
 /// Parsed structure, not a generated signature or proof of basis identity.
-/// Fields have whitebox test consumers; the type stays private.
+/// The signature index and generator consume this private validated structure.
 #warnings("-unused_field")
 priv struct Signature {
   magic : UInt32
@@ -135,7 +135,7 @@ priv struct Signature {
 ///|
 /// Only the RK/BLAKE2 profile is accepted. See docs/signature-format.md for
 /// the explicit error precedence, resource policy, and wire-format sources.
-/// The parser is exercised only by whitebox tests until a later core consumer.
+/// Public delta generation uses this parser before index construction.
 #warnings("-unused_value")
 fn parse_signature(
   input : BytesView,
@@ -179,7 +179,8 @@ fn parse_signature(
       block_wire.to_uint64(),
     )
   }
-  let records : Array[SignatureRecord] = []
+  // Record count and greatest offset are checked before exact slot allocation.
+  let records : Array[SignatureRecord] = Array(capacity=record_count)
   let mut cursor = 12L
   for block_index in 0..<record_count {
     let start = checked_wire_span(input_len, cursor, record_width)

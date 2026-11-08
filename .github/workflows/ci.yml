@@ -68,3 +68,10 @@ jobs:
         run: ./scripts/native_probe.ps1
       - name: Reject tracked interface changes
         run: git diff --exit-code -- '*.mbti'
+      - name: Preserve per-target resource audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resources-${{ matrix.os }}-${{ github.sha }}
+          path: _build/resources/
+          if-no-files-found: error
