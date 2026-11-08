@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 import sys
 from fixture_data import SHA, cases, render_constants
+from opcode_vectors import verify_opcodes, check_transport
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,8 +44,11 @@ def verify(base):
         assert struct.unpack('>III', sig[:12]) == (0x72730147, block, strong)
         assert len(sig) == 12 + ((len(old) + block - 1) // block) * (4 + strong)
     assert ids == set(expected), 'Missing cases'
+    opcode_records, rendered = verify_opcodes(base / 'opcodes')
+    check_transport(rendered)
     actual = {p.relative_to(base).as_posix() for p in base.rglob('*') if p.is_file()}
-    assert actual == paths | {'manifest.json'}, 'Unregistered/missing fixture files'
+    assert actual == paths | {'manifest.json', 'opcodes/vectors.json', 'opcodes/manifest.json'}, 'Unregistered/missing fixture files'
+    print(f'Handwritten opcode integrity verified separately: {len(opcode_records)} vectors')
     return len(ids), sum((base / p).stat().st_size for p in paths)
 
 

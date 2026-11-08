@@ -60,6 +60,17 @@ def render_constants(directory):
         else:
             lines.append(line)
     lines += ['  ]', '}', '']
+    lines += ['///|', 'fn reference_deltas() -> Array[(String, Bytes)] {', '  [']
+    for case in cases():
+        name = case[0]
+        data = (directory / name / 'update.delta').read_bytes()
+        escaped = ''.join('\\x%02x' % b for b in data)
+        line = f'    ("{name}", b"{escaped}"),'
+        if len(line) > 81:
+            lines += ['    (', f'      "{name}", b"{escaped}",', '    ),']
+        else:
+            lines.append(line)
+    lines += ['  ]', '}', '']
     return '\n'.join(lines).encode()
 
 

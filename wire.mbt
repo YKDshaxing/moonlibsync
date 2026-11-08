@@ -1,6 +1,44 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
+/// Fixed legal widths only; preserve the complete unsigned parameter.
+fn read_uint_be(
+  input : BytesView,
+  offset : Int64,
+  width : Int32,
+) -> UInt64 raise SyncError {
+  guard width == 1 || width == 2 || width == 4 || width == 8 else {
+    raise InvalidOptions("wire_width")
+  }
+  let start = checked_wire_span(input.length(), offset, width)
+  let mut value = 0UL
+  for i in 0..<width {
+    value = (value << 8) | input[start + i].to_uint64()
+  }
+  value
+}
+
+///|
+/// Check width, complete span and value before the first write.
+fn write_uint_be(
+  output : FixedArray[Byte],
+  offset : Int64,
+  width : Int32,
+  value : UInt64,
+) -> Unit raise SyncError {
+  guard width == 1 || width == 2 || width == 4 || width == 8 else {
+    raise InvalidOptions("wire_width")
+  }
+  let start = checked_wire_span(output.length(), offset, width)
+  if width < 8 {
+    guard value < 1UL << (width * 8) else { raise IntegerOutOfRange }
+  }
+  for i in 0..<width {
+    output[start + i] = ((value >> ((width - 1 - i) * 8)) & 0xffUL).to_byte()
+  }
+}
+
+///|
 /// Convert only after proving that an unsigned wire value fits an array index.
 fn checked_index(value : UInt64) -> Int32 raise SyncError {
   guard value <= 2147483647UL else { raise IntegerOutOfRange }

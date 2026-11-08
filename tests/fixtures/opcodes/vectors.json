@@ -1,0 +1,151 @@
+{
+  "format": 1,
+  "source": "handwritten from fixed prototab.c; L=Literal(0080), C=Copy(2,3), E=empty",
+  "vectors": [
+    {
+      "id": "empty",
+      "hex": "7273023600",
+      "expect": "E"
+    },
+    {
+      "id": "direct",
+      "hex": "7273023602008000",
+      "expect": "L"
+    },
+    {
+      "id": "literal1",
+      "hex": "727302364102008000",
+      "expect": "L"
+    },
+    {
+      "id": "literal2",
+      "hex": "72730236420002008000",
+      "expect": "L"
+    },
+    {
+      "id": "literal4",
+      "hex": "727302364300000002008000",
+      "expect": "L"
+    },
+    {
+      "id": "literal8",
+      "hex": "72730236440000000000000002008000",
+      "expect": "L"
+    },
+    {
+      "id": "copy-0",
+      "hex": "7273023645020300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-1",
+      "hex": "727302364602000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-2",
+      "hex": "7273023647020000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-3",
+      "hex": "727302364802000000000000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-4",
+      "hex": "727302364900020300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-5",
+      "hex": "727302364a0002000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-6",
+      "hex": "727302364b00020000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-7",
+      "hex": "727302364c0002000000000000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-8",
+      "hex": "727302364d000000020300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-9",
+      "hex": "727302364e00000002000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-10",
+      "hex": "727302364f000000020000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-11",
+      "hex": "727302365000000002000000000000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-12",
+      "hex": "727302365100000000000000020300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-13",
+      "hex": "72730236520000000000000002000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-14",
+      "hex": "727302365300000000000000020000000300",
+      "expect": "C"
+    },
+    {
+      "id": "copy-15",
+      "hex": "72730236540000000000000002000000000000000300",
+      "expect": "C"
+    },
+    {
+      "id": "zero-lit",
+      "hex": "72730236410000",
+      "expect": "InvalidDelta"
+    },
+    {
+      "id": "zero-copy",
+      "hex": "7273023645000000",
+      "expect": "InvalidDelta"
+    },
+    {
+      "id": "reserved",
+      "hex": "727302365500",
+      "expect": "InvalidOpcode"
+    },
+    {
+      "id": "trailing",
+      "hex": "727302360000",
+      "expect": "TrailingData"
+    },
+    {
+      "id": "missing-end",
+      "hex": "727302360101",
+      "expect": "TruncatedInput"
+    },
+    {
+      "id": "short-parameter",
+      "hex": "72730236440000",
+      "expect": "TruncatedInput"
+    },
+    {
+      "id": "literal-short",
+      "hex": "72730236410400",
+      "expect": "TruncatedInput"
+    }
+  ]
+}

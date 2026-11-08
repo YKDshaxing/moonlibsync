@@ -123,3 +123,9 @@ fn main raise {
 ## Commit 7 内部候选匹配
 
 已增加仅从已验证签名建立的排序索引，按完整弱校验和原序号稳定定位，用一次强摘要确认候选。共享max_match_work预算覆盖索引分配/排序、查询、候选、摘要字节及比较，具体单位、错误和短尾块边界见[匹配说明](docs/matching.md)。公开API仍只有signature；没有新文件扫描、COPY、delta或patch，不代表双向互操作完成。
+
+## Commit 8 内部 Delta 指令编解码
+
+内部编解码已覆盖直接 literal 1–64、四种扩展 literal 宽度和 16 种 COPY 参数宽度组合。编码逐参数选择最短形式，解析接受非最短形式，要求最终 END 且拒绝尾随数据。字节、指令及预期输出预算在对应存储增长前检查；COPY 保留 UInt64 参数。详见[Delta 格式说明](docs/delta-format.md)。
+
+原参考数据仍为 16 例、64 文件、12507 字节及原 manifest；新增 `tests/fixtures/opcodes/` 的 29 个手写向量，使用 1 个 JSON 数据文件及独立 manifest，分别核验。新增 7 项测试，共 58 项，16 个上游 delta 已离线解析并按指令语义重编码。公开接口不变；新文件扫描、公开 delta/patch、补丁执行、双向互操作及 0.1.0 发布仍未完成。历史段落保留对应阶段状态。

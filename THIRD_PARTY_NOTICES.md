@@ -26,3 +26,5 @@ Commit 4 将固定librsync src/rabinkarp.h的标量状态公式移植至MoonBit�
 Commit 5新增原创适配胶合层，BLAKE2实现仍属于mooncrypt 0.4.5，保留Apache-2.0声明，未冒称自行移植。固定librsync checksum.c的LGPL-2.1-or-later参数语义仅供参考，原版权为Martin Pool、Andrew Tridgell、Paul Mackerras；相关完整许可已保留。Python hashlib仅用于离线独立向量，不复制其实现到核心。
 
 Commit 6仅新增原创签名生成胶合层、预算预检、公开配置和参考适配工具，采用项目LGPL-2.1-or-later；复用依赖及弱校验的原声明不变，没有新增第三方实现或运行依赖。固定rdiff只在参考验证中消费签名，未把其delta/patch链接或移植到核心。
+
+Commit 8 依据固定 librsync prototab.c、patch.c、netint.c、emit.c 核对 opcode、大端参数及 COPY 顺序，原创 MoonBit 编解码器不复制 C 状态机。原声明分别为 Martin Pool / Donovan Baarda、Martin Pool、Martin Pool / Andrew Tridgell、Martin Pool，均 LGPL-2.1-or-later；年份、固定文件链接和使用程度见 SOURCES.md 的 Commit 8 记录，完整许可见 COPYING.LESSER / COPYING。手写 opcode 数据和预算策略为本项目新增，无新增第三方运行依赖或许可证替换。

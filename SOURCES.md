@@ -45,3 +45,9 @@ strongsum.mbt是原创LGPL-2.1-or-later内部适配，真实调用既有moonbits
 ## Commit 6 原创组合层
 
 api.mbt、signature.mbt新增生成/预检/内部编码，复用已有Rabin–Karp移植、mooncrypt强摘要适配及wire工具，不重写校验算法。固定上游格式和算法参考版本不变。signature_test.mbt的少量完整字节预期由独立Python struct、标量弱校验及hashlib生成后固化；16例完整上游字节仍来自原夹具，未刷新。Native参考适配只调用公开API；消费脚本的delta与patch始终调用固定rdiff，未移植这些算法。
+
+## Commit 8 Delta 格式来源
+
+继续固定 librsync `e364852674780e43d578e4239128ff7014190ed3`：实际核对 [src/prototab.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/prototab.c) 的 opcode 表、[src/patch.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/patch.c) 的 offset 后 length 顺序，以及 [src/netint.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/netint.c) / [src/emit.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/emit.c) 的大端参数与宽度编码。prototab.c 原声明 Martin Pool (2000, 2001, 2014, 2015)、Donovan Baarda (2003)；patch.c 为 Martin Pool (2000, 2001)；netint.c 为 Martin Pool (1999, 2000, 2001)、Andrew Tridgell (1999)；emit.c 为 Martin Pool (2000, 2001, 2004)。均保留 LGPL-2.1-or-later 来源，完整许可仍在 COPYING.LESSER / COPYING。
+
+Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C patch 状态机，不链接 C librsync。严格 END、零长度拒绝、预算和错误优先级是本项目策略。29 个 opcode 向量由指令表手写十六进制及独立语义，未由被测编码器生成；清单固定长度/SHA-256，校验器默认只读，搬运常量另行核验。16 个 update.delta 仍为固定 rdiff 产物，本笔只搬运并解析，未重算基准或执行 MoonBit 补丁。
