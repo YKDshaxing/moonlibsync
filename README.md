@@ -119,3 +119,7 @@ fn main raise {
 该调用已由公开黑盒测试编译执行。默认块长2048、强摘要前缀32；选项字段为Int64，块长必须正且可表示为Int32，摘要长1..32，零不代表自动选择。返回标准RK+BLAKE2签名，不是delta，签名自身不能恢复新文件。生成前实际检查max_old_bytes、max_block_bytes、max_signature_records、max_signature_bytes；空文件只输出12字节头，完整块不多出空尾块，短尾块不补零，格式不保存真实尾块长度。错误顺序及预算细节见[签名说明](docs/signature-format.md)。
 
 当前仅signature公开可调用；delta、patch、匹配索引与双向互操作仍待后续阶段。Commit 6本机已完成16例固定夹具和66个临时参数用例的完整上游签名比较及82次“MoonBit签名的上游消费验证”；其中delta/patch都是上游操作，不是MoonBit实现。历史各笔“未实现”描述保留其阶段归属。
+
+## Commit 7 内部候选匹配
+
+已增加仅从已验证签名建立的排序索引，按完整弱校验和原序号稳定定位，用一次强摘要确认候选。共享max_match_work预算覆盖索引分配/排序、查询、候选、摘要字节及比较，具体单位、错误和短尾块边界见[匹配说明](docs/matching.md)。公开API仍只有signature；没有新文件扫描、COPY、delta或patch，不代表双向互操作完成。

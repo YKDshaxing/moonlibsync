@@ -1,10 +1,33 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
+/// One upper operation owns this budget; helpers never replenish it.
+#warnings("-unused_field")
+priv struct MatchWork {
+  mut remaining : Int64
+}
+
+///|
+/// Existing max_match_work range/default is unchanged.
+#warnings("-unused_value")
+fn MatchWork::new(limits : Limits) -> MatchWork raise SyncError {
+  limits.validate()
+  { remaining: limits.max_match_work, }
+}
+
+///|
+/// Charge before work; failed charges do not refund earlier successful work.
+fn MatchWork::spend(self : MatchWork, amount : Int64) -> Unit raise SyncError {
+  guard amount >= 0L else { raise InvalidOptions("match_work_charge") }
+  guard amount <= self.remaining else { raise LimitExceeded }
+  self.remaining = self.remaining - amount
+}
+
+///|
 /// Signature parsing enforces byte, record and block limits. Generation also
-/// enforces the old-file budget; budgets for other algorithms remain unimplemented.
-/// Byte fields count bytes; records and instructions count items; work units are
-/// reserved for a future matching-work definition. Int64 inputs are validated
+/// enforces the old-file budget; full scan, delta and patch budgets remain unimplemented.
+/// Byte fields count bytes; records and instructions count items. Work units
+/// meter internal index/matching as defined in docs/matching.md. Int64 inputs are validated
 /// against the common signed 32-bit collection ceiling, without narrowing casts.
 pub(all) struct Limits {
   max_old_bytes : Int64
@@ -19,7 +42,7 @@ pub(all) struct Limits {
 }
 
 ///|
-/// Initial policy draft. Signature parsing/generation enforce their relevant budgets.
+/// Signature parsing/generation and internal index/matching enforce relevant budgets.
 pub fn Limits::default() -> Limits {
   {
     max_old_bytes: 67108864L,
