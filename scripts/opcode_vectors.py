@@ -20,7 +20,7 @@ def verify_opcodes(base):
         assert path not in paths
         paths.add(path)
         data = target.read_bytes()
-        assert len(data) == f['length'] and hashlib.sha256(data).hexdigest() == f['sha256']
+        assert len(data) == f['length'] and hashlib.sha256(data).hexdigest() == f['sha256'], f'Opcode fixture checksum: {path}'
     assert paths == {'vectors.json'}
     assert {p.relative_to(base).as_posix() for p in base.rglob('*') if p.is_file()} == paths | {'manifest.json'}
     records = json.loads((base / 'vectors.json').read_text(encoding='utf-8'))['vectors']

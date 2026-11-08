@@ -1,3 +1,9 @@
+# 当前兼容范围（Commit 14）
+
+三项公开字节API已实现，核心Native/JS/Wasm-GC检查与Linux Native固定rdiff互操作分别执行；当前入口与边界见[README](../README.md)、[资源契约](resources.md)、[CLI](cli.md)、[九项验收表](contest-acceptance.md)。固定工具链不表示全部更高版本兼容；Mooncakes未发布，最终包审计及注册表消费未完成。
+
+以下各Commit章节保留对应阶段事实，“当前/未完成”仅指该阶段，不作为当前能力限制；原README早期阶段全文另存[历史快照](history.md)。
+
 # Commit 3：固定参考与离线夹具
 
 基线 66ffddb29fdfdc50cdb583a274c60c59a76f92e0。工具链、核心依赖、公开接口及 Commit 1/2 历史文档保持不变。
@@ -128,3 +134,13 @@ CLI默认读上限OLD/NEW64MiB、SIG16MiB、DELTA80MiB，已知大小先拒绝�
 固定后端Linux renameat2(RENAME_NOREPLACE)、Windows FileRenameInfoEx无替换（旧系统MoveFileEx也无替换）；本机DrvFS实测EINVAL时退出1、输入不变、无最终目标且清理成功，Linux正向烟雾在ext4执行。该负向结果保留为明确不支持边界，不写成DrvFS正向成功。文件sync不承诺父目录持久化或断电恢复；稳定可信父目录/输入、未测网络盘和其他FS等限制见cli.md。
 
 现有Windows/Ubuntu任务追加对应烟雾和CLI产物，根库99项按包选择仍在三目标执行，CLI6仅Native；6项Python工具、274对/496参数/3968恢复、原82/29消费、参考重建和全部失败门禁保留。CLI报告单列版本、实际路径/魔数、文件系统、源码SHA/dirty、退出码、未执行项与清理，不能把平台场景次数加到库测试总数。实际同SHA证据由交付报告提供；止于Commit13，不宣称Commit14示例、整体验收、发布或0.1.0交付完成。
+
+## Commit 14 示例、接口与失败传播
+
+只增加公开API示例、CI整合、文件交换演示、隔离失败门禁及文档；核心实现、预算、工具链、依赖锁与正式夹具不变。纯示例发送端函数仅取得签名和新数据，三个目标各真实运行，脚本从本次stdout提取delta并用既有严格解析器验证COPY>=512、delta<515、实际内容与大小；它不导出内部指令。
+
+固定moon info为新basic可执行包生成空公开接口，提交该文件并显式保护。已跟踪接口在任何自动生成前与HEAD比较，缺失也失败；前后比较包含显式包范围的缺失状态，不盲扫缓存和_build。隔离副本删除digest接口，实际前置入口拒绝，恢复后通过。
+
+CI使用check_fixtures.py包装真实verify_fixtures.py；参考及opcode副本损坏均要求预期诊断和非零，未刷新manifest。预期字节损坏运行真实check_example.py，实际恢复断言输出BASIC_RESTORE_MISMATCH后非零，check_returncode继续失败；外层check.py及CI无容错步骤继续失败。仅临时副本被改动；恢复原始字节后同一正常入口须通过，损坏和复验日志独立。Wasm-GC abort本身只显示unreachable，因此示例在失败分支先明确打印断言诊断，再中止。
+
+文件交换使用正式Native CLI，不用probes/signature替代，固定rdiff身份与原始文件均核对；新目录中实际执行两条链，独立new逐字节比较，保留命令及交换文件。Linux/ext4正向运行，DrvFS边界不变；演示不新增完整矩阵，正常互操作计划与原消费次数完整保留。产物路径与分项计数见验收表。

@@ -1,4 +1,4 @@
-name: Foundations and reference fixtures
+name: Core examples CLI and interoperability
 
 on:
   push:
@@ -32,6 +32,15 @@ jobs:
       - name: Bidirectional rdiff interoperability and deterministic regression
         timeout-minutes: 10
         run: bash scripts/interop.sh
+      - name: Linux Native product CLI and pinned rdiff file exchange
+        run: python scripts/file_exchange.py
+      - name: Preserve Linux file exchange evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exchange-${{ github.sha }}
+          path: _build/exchange/
+          if-no-files-found: error
       - name: Preserve same-SHA interoperability evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +72,18 @@ jobs:
           "$PWD/.toolchain/selected/bin" >> $env:GITHUB_PATH
       - name: Format, interfaces, dependencies, three targets and probes
         run: python scripts/check.py
+      - name: Isolated corrupt fixtures and false example expectation
+        run: python scripts/failure_gates.py
+      - name: Preserve examples interfaces and failure propagation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gates-examples-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            _build/examples/
+            _build/interfaces/
+            _build/gates/
+          if-no-files-found: error
       - name: PowerShell external-process exit handling
         shell: pwsh
         run: ./scripts/native_probe.ps1

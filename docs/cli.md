@@ -109,3 +109,24 @@ bash scripts/cli-smoke.sh
 ```
 
 这让Linux正向文件操作位于ext4而报告仍在工作区；不会把DrvFS提交降级。原99库测试按根包选择在Native/JS/Wasm-GC各执行一次，CLI6仅Native另计；原6 Python工具、274对/496参数/3968恢复、82/29消费和所有参考/失败门禁均保留。报告分别作为现有任务产物，不新建三目标重复矩阵。止于Commit13，Commit14示例/整体验收、基准、源码包及发布不在本笔完成范围。
+
+## Commit 14：Linux Native 文件交换
+
+选择固定Linux工具链，先运行 `bash scripts/rebuild-reference.sh`，然后实际执行：
+
+```bash
+python3 scripts/file_exchange.py
+```
+
+WSL工程在/mnt/d时设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`，使用ext4临时目录；不在DrvFS放正向输出。CI checkout所在Linux文件系统支持无覆盖提交。脚本核对固定moonc、rdiff2.3.4及上游完整SHA，构建正式cmd/moonlibsync，核对ELF魔数，在独立临时目录创建512字节old与515字节new后实际运行：
+
+```text
+rdiff -H blake2 -R rabinkarp -b 64 -S 32 signature old.bin upstream.sig
+<product-cli> delta upstream.sig new.bin moon.delta
+rdiff patch old.bin moon.delta upstream-restored.bin
+<product-cli> signature old.bin moon.sig --block-size 64 --sum-size 32
+rdiff delta moon.sig new.bin upstream.delta
+<product-cli> patch old.bin upstream.delta moon-restored.bin
+```
+
+两份restored均与独立new逐字节相等；签名完整字节一致，实际moon.delta严格检查内容与COPY>=512。真实命令/绝对CLI路径、退出码、版本、文件系统和源码SHA/dirty保存于 `_build/exchange/commands.log` 与 `report.json`，实际交换文件保存于其独占files-*目录。临时目录只清理本次拥有的内容，不覆盖已有输出。这是两条Linux Native演示，单列于274对/496参数/3968恢复之外；不代表JS/Wasm-GC直接调用rdiff或发布包消费者验证。
