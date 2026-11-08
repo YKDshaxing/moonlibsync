@@ -48,3 +48,17 @@ pub fn signature(
   }
   Bytes::from_array(output[:])
 }
+
+///|
+/// Apply a standard librsync delta to the original basis; no signature needed.
+/// Validates Limits, basis budget, the complete delta, then every COPY span and
+/// final output size before allocating recovery bytes. Failure returns no output.
+/// Requires END with no trailing data. Delta does not authenticate basis identity;
+/// applications must verify whole-file content outside this standard format.
+pub fn patch(
+  basis : Bytes,
+  delta_bytes : Bytes,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  apply_patch_bytes(basis, delta_bytes, limits)
+}

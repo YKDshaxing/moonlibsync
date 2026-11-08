@@ -51,3 +51,7 @@ api.mbt、signature.mbt新增生成/预检/内部编码，复用已有Rabin–Ka
 继续固定 librsync `e364852674780e43d578e4239128ff7014190ed3`：实际核对 [src/prototab.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/prototab.c) 的 opcode 表、[src/patch.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/patch.c) 的 offset 后 length 顺序，以及 [src/netint.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/netint.c) / [src/emit.c](https://github.com/librsync/librsync/blob/e364852674780e43d578e4239128ff7014190ed3/src/emit.c) 的大端参数与宽度编码。prototab.c 原声明 Martin Pool (2000, 2001, 2014, 2015)、Donovan Baarda (2003)；patch.c 为 Martin Pool (2000, 2001)；netint.c 为 Martin Pool (1999, 2000, 2001)、Andrew Tridgell (1999)；emit.c 为 Martin Pool (2000, 2001, 2004)。均保留 LGPL-2.1-or-later 来源，完整许可仍在 COPYING.LESSER / COPYING。
 
 Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C patch 状态机，不链接 C librsync。严格 END、零长度拒绝、预算和错误优先级是本项目策略。29 个 opcode 向量由指令表手写十六进制及独立语义，未由被测编码器生成；清单固定长度/SHA-256，校验器默认只读，搬运常量另行核验。16 个 update.delta 仍为固定 rdiff 产物，本笔只搬运并解析，未重算基准或执行 MoonBit 补丁。
+
+## Commit 9 原创补丁执行层
+
+复用 Commit 8 已核对的固定 src/patch.c / prototab.c 格式及原始 basis COPY 语义，固定提交和原 LGPL-2.1-or-later 声明不变；本笔未移植 C 回调、状态机或文件接口。patch.mbt、公开入口和测试为原创组合层，先完整解析并预检，再在内存中复制。new.bin 预期从原 16 个参考文件只读搬运，不由 MoonBit patch 生成；原参考输出、依赖和许可不变。

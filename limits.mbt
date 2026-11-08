@@ -26,7 +26,8 @@ fn MatchWork::spend(self : MatchWork, amount : Int64) -> Unit raise SyncError {
 ///|
 /// Signature parsing enforces byte, record and block limits. Generation also
 /// enforces the old-file budget. Internal delta codecs enforce delta bytes,
-/// data instructions and estimated output; scanning and patch execution remain pending.
+/// data instructions and estimated output. Patch additionally enforces the basis
+/// budget and COPY ranges before recovery allocation; new-file scanning is pending.
 /// Byte fields count bytes; records and instructions count items. Work units
 /// meter internal index/matching as defined in docs/matching.md. Int64 inputs are validated
 /// against the common signed 32-bit collection ceiling, without narrowing casts.
@@ -43,7 +44,7 @@ pub(all) struct Limits {
 }
 
 ///|
-/// Signature, internal index/matching and delta codecs enforce relevant budgets.
+/// Signature, internal index/matching, delta codecs and patch enforce relevant budgets.
 pub fn Limits::default() -> Limits {
   {
     max_old_bytes: 67108864L,

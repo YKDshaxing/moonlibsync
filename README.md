@@ -4,9 +4,9 @@
 
 模块：`YKDshaxing/moonlibsync`；仓库归属：[`YKDshaxing/moonlibsync`](https://github.com/YKDshaxing/moonlibsync)。元数据版本 `0.1.0` 是开发目标，**尚未发布**，不表示版本已预留或已获得 Mooncakes 发布权限。
 
-当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**Commit 6 已实现公开 signature；delta、patch 仍未实现**，没有返回占位成功结果的接口。
+当前已完成工程基础，以及 Commit 2 的受检大端 u32/u64 读写和内部签名结构解析。解析器检查头部、profile、记录对齐、无符号数值、名义块偏移及三项签名预算；所有新类型和函数均为内部使用，未新增公开解析 API。**目前已公开 signature 和 patch；delta 生成仍未实现**。Commit 8 的内部 delta 编解码与 Commit 9 的补丁执行均已加入，没有返回占位成功结果的接口。
 
-文件格式参考固定为 librsync v2.3.4，提交 `e364852674780e43d578e4239128ff7014190ed3`。本阶段没有构建 rdiff、生成离线互操作夹具或验证互操作。项目不主张 MoonBit 的远端签名差分领域为空白。网络传输、目录同步、流式 API 和其他签名 profile 不在首版范围。
+文件格式参考固定为 librsync v2.3.4，提交 `e364852674780e43d578e4239128ff7014190ed3`。Commit 1 阶段没有构建 rdiff、生成离线互操作夹具或验证互操作；后续证据按阶段记录于下文。项目不主张 MoonBit 的远端签名差分领域为空白。网络传输、目录同步、流式 API 和其他签名 profile 不在首版范围。
 
 ## 已验证版本与运行
 
@@ -129,3 +129,22 @@ fn main raise {
 内部编解码已覆盖直接 literal 1–64、四种扩展 literal 宽度和 16 种 COPY 参数宽度组合。编码逐参数选择最短形式，解析接受非最短形式，要求最终 END 且拒绝尾随数据。字节、指令及预期输出预算在对应存储增长前检查；COPY 保留 UInt64 参数。详见[Delta 格式说明](docs/delta-format.md)。
 
 原参考数据仍为 16 例、64 文件、12507 字节及原 manifest；新增 `tests/fixtures/opcodes/` 的 29 个手写向量，使用 1 个 JSON 数据文件及独立 manifest，分别核验。新增 7 项测试，共 58 项，16 个上游 delta 已离线解析并按指令语义重编码。公开接口不变；新文件扫描、公开 delta/patch、补丁执行、双向互操作及 0.1.0 发布仍未完成。历史段落保留对应阶段状态。
+
+## Commit 9 公开补丁应用
+
+公开入口 `patch(basis: Bytes, delta_bytes: Bytes, limits: Limits) -> Bytes raise SyncError` 只接收旧文件、标准 delta 和 Limits，不需要签名或预期新文件，不访问文件系统。以下 `main.mbt` 继续使用上文导入方式，已由公开黑盒测试编译并执行相同调用：
+
+```moonbit
+fn main raise {
+  let restored = @moonlibsync.patch(
+    b"abc",
+    b"\x72\x73\x02\x36\x45\x00\x03\x00",
+    @moonlibsync.Limits::default(),
+  )
+  println(restored.length()) // 3; restored == b"abc"
+}
+```
+
+COPY 始终读取原始 basis，支持非顺序、重复和重叠区间，不能引用新增输出。入口先校验配置、basis 字节预算，完整解析全部 delta（必须 END 且无尾随），再预检所有 COPY 范围和最终输出长度，通过后才分配恢复缓冲区。失败只返回错误，不暴露半成品；输入不变。使用 max_old_bytes、max_delta_bytes、max_instructions 和 max_output_bytes；不消耗匹配工作预算，也不使用 max_new_bytes 代替恢复输出上限。详见[格式与补丁边界](docs/delta-format.md)。
+
+标准 delta **不认证 basis 身份**：错误 basis 即使范围合法，也可能恢复出错误内容。应用需在标准格式外校验整体内容，本项目不添加私有摘要字段。新增 9 项测试，共 67 项，涵盖公开调用与 16 个固定上游 delta 的逐字节恢复；此证据称为“MoonBit patch 恢复固定上游 delta”，尚未验证“MoonBit signature → 上游 delta → MoonBit patch”完整链路。公开能力现在是 signature 和 patch，delta 生成、新文件扫描、完整双向互操作及 0.1.0 发布仍未完成。
