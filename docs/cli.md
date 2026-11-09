@@ -2,6 +2,63 @@
 
 0.1.0 提供下述单文件命令与保证边界。Commit16只将版本输出改为 `MoonLibSync 0.1.0` 并同步相应检查；下方Commit13/15的development/not released字样属于当时历史输出，不能作为本版当前输出。模块包交付CLI源码；从注册表下载包构建时明确称为“注册表包源码构建”，不代表预编译二进制安装。发布/消费证据见[发布验收](release.md)。
 
+## Commit 18：开发源码检查命令
+
+注册表 0.1.0 仍只有原 `signature`、`delta`、`patch` 文件命令。下列命令只属于当前开发源码，尚未发布为新版本；模块元数据与 `--version` 保留0.1.0。当前帮助明确区分注册表发布与开发检查功能。
+
+```text
+moonlibsync inspect-signature SIG [--json]
+moonlibsync inspect-delta DELTA [--json]
+moonlibsync check-patch OLD DELTA [--json]
+```
+
+构建路径与下文一致；Linux ELF 也带 `.exe` 后缀。Windows PowerShell（`$cli` 先设为构建产物路径）：
+
+```powershell
+& $cli inspect-signature 'old.sig'
+& $cli inspect-signature 'old.sig' --json
+& $cli inspect-delta 'update.delta'
+& $cli inspect-delta --json 'update.delta'
+& $cli check-patch 'old file.bin' --json 'update.delta'
+& $cli check-patch 'old file.bin' 'update.delta'
+```
+
+Linux Bash 对应为 `"$cli" inspect-signature old.sig --json`、`"$cli" inspect-delta update.delta --json`、`"$cli" check-patch 'old file.bin' update.delta --json`。`--json` 可出现在命令后的路径前、中、后，必须位于 `--` 之前；例如 `inspect-delta --json -- -` 检查字面文件名 `-`，`inspect-signature --json -- --json` 检查字面文件名 `--json`。去掉前一个 `--json` 则以人类文本输出。重复、未知选项、缺少/多余路径、旧命令使用 `--json` 均退出2；旧命令的数值选项仍仅用于 signature。
+
+### 稳定成功 JSON（schema 1）
+
+stdout 为唯一 UTF-8 JSON 对象，以换行结束；没有 BOM、标题、日志、用户路径或原始二进制。顶层 `schema_version` 类型为整数且值为1，`command` 为实际命令字符串。所有计数及字节数（Int64）为十进制字符串，格式化不转浮点、不经过 JS Number。字段和层级如下，不添加“内容正确”标志。
+
+对12字节 `727301470000080000000020` 头部，`inspect-signature --json` 实际输出：
+
+```json
+{"schema_version":1,"command":"inspect-signature","summary":{"magic":"0x72730147","profile":"RS_RK_BLAKE2_SIG_MAGIC","block_len":"2048","strong_sum_len":"32","record_count":"0","signature_bytes":"12"}}
+```
+
+对8字节 `7273023645000300`（COPY offset=0, length=3），`inspect-delta --json` 实际输出：
+
+```json
+{"schema_version":1,"command":"inspect-delta","summary":{"delta_bytes":"8","instruction_count":"1","literal_commands":"0","copy_commands":"1","literal_bytes":"0","copy_bytes":"3","output_bytes":"3"}}
+```
+
+以3字节 `abc` 为 OLD，对同一 delta，`check-patch --json` 实际输出：
+
+```json
+{"schema_version":1,"command":"check-patch","basis_bytes":"3","summary":{"delta_bytes":"8","instruction_count":"1","literal_commands":"0","copy_commands":"1","literal_bytes":"0","copy_bytes":"3","output_bytes":"3"}}
+```
+
+对应人类输出以命令名为首行，逐行打印相同字段；长度字段注明 `bytes`。签名文本说明实际 basis/尾块长度未编码；delta 文本说明尚未校验 COPY 范围；check-patch 文本说明只检查格式与长度范围，没有认证 basis 身份或验证恢复内容。END 不计指令，literal 中零字节照常计入内容。
+
+### 只读、错误与资源边界
+
+私有计划用 `WriteFile(output)` 与 `Inspect(json)` 区分操作。检查分支不调用输出准备、临时文件或提交逻辑，可在普通可读但不可写的目录中执行。SIG/DELTA 沿用同句柄受限读取、EOF探针、大小复核、叶链接拒绝和句柄清理；默认上限分别16777216/83886080字节，没有增加 CLI Limits 选项。完整解析仍受核心记录、块长、指令及预计输出预算限制。
+
+check-patch 先拒绝不支持的 OLD 叶种类，打开只读句柄并查询实际种类和大小；仅对 DELTA 调用 bounded_read，调用公开 check_patch，再在成功输出前复核同一 OLD 句柄大小，所有路径关闭句柄。OLD 默认预算67108864字节，由核心预检检查。OLD 不经内容读取、哈希或恢复缓冲；测试中的注入读取回调只接收 DELTA 路径。大小变化拒绝，同大小修改不能检测；这不是快照、身份认证、恢复内容验证或输出路径可提交证明。
+
+退出0表示该命令定义的检查通过，退出2为用法错误，退出1为文件/预算/核心失败。失败 stdout 为空，stderr 包含命令、相关路径及具体错误类别，例如 InvalidOpcode、TruncatedInput、CopyOutOfBounds、LimitExceeded 或 ReadLimitExceeded。`--json` 不改变失败协议，不输出 JSON 错误对象。只有完整检查和格式化成功后才写 stdout；通道写失败非零退出，已写入部分字节无法普遍撤回。原写文件命令仍成功时 stdout 为空。
+
+私有辅助测试共12项：原6项完整保留，新增6项覆盖参数计划、大于2^53的数值及Int64.MAX的精确格式化、DELTA专用读取、OLD变化复核、句柄关闭及写失败。大数是格式化边界测试，不冒称默认预算可处理该大小文件。CLI 集成以独立 Python JSON 解析器检查唯一对象、重复键、全部字段及类型，涵盖29个原 opcode 向量、全部16种COPY宽度、只读目录、错误后合法调用和真实关闭管道；原集成检查与新增项分别统计于 `_build/cli/report.json`。Windows/NTFS、Linux/ext4及原写入的DrvFS保证边界不变，不由只读检查推导新的提交保证。
+
 # Commit 13：Native 单文件 CLI
 
 基线d7f4f05f3dd3392418eccf089c31748ffe7f21f3。CLI包为cmd/moonlibsync，仅支持Native，通过三项公开字节API计算；核心API、默认Limits、标准格式及JS/Wasm-GC依赖保持不变。probes/signature仍只用于参考互操作，不是产品CLI。

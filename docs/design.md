@@ -1,5 +1,11 @@
 # 字节库使用与设计
 
+## Commit 18：检查 CLI
+
+当前开发源码将下列三项检查 API 接到正式 Native CLI，命令为 inspect-signature、inspect-delta、check-patch，支持人类文本及 schema_version=1 JSON；详见[CLI 契约](cli.md#commit-18开发源码检查命令)。核心公开接口与 Commit 17 完全一致。检查计划不携带输出路径，不走写文件准备/提交；check-patch 持有 OLD 只读句柄、仅查询种类/大小，读取 DELTA 后调用公开预检并复核 OLD 大小。所有检查成功后才格式化/写出，stdout 写失败传播为非零。Int64 直接格式化为十进制字符串，不经过浮点。
+
+注册表0.1.0只有原三个文件命令；新增 CLI 尚未发布，元数据版本不改。本笔到 Commit 18 为止，不实现 PreparedSignature、清单或后续阶段。下文 Commit 17 中“JSON CLI 留待 Commit 18”为该阶段的历史边界。
+
 ## Commit 17：开发源码只读检查
 
 注册表 0.1.0 的公开操作仍为 `signature`、`delta`、`patch`。下列三项仅在当前开发源码可用，属于拟定 0.2.0 阶段；不修改发布版本元数据，不代表新版本已经发布。

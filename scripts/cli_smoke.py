@@ -1,4 +1,4 @@
-"""Real Native CLI tests. Separate from library99 and Python interop-tool6."""
+"""Real Native CLI tests. Separate from library115 and Python interop-tool6."""
 import ctypes
 import hashlib
 import json
@@ -18,8 +18,8 @@ os.chdir(ROOT)
 OUTPUT = ROOT / os.environ.get('MOONLIBSYNC_BUILD_DIR', '_build') / 'cli'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 report = dict(format=1, status='running', platform=platform.platform(), cases=[],
-              native_helper_tests=dict(expected=6, passed=0, status='not_executed'),
-              baseline_core_library_tests=99, baseline_python_interop_tool_tests=6,
+              native_helper_tests=dict(expected=12, baseline=6, inspection_added=6, passed=0, status='not_executed'),
+              baseline_core_library_tests=115, baseline_python_interop_tool_tests=6,
               cleanup='not_completed', unsupported=[])
 log = (OUTPUT/'commands.log').open('w', encoding='utf-8')
 root = None
@@ -95,6 +95,47 @@ def sparse(path, size):
         file.truncate(size)
 
 
+def inspection_case(name, args, expected=0, watch=(), summary=None, basis=None, json_mode=True, prefix=(), contains=None):
+    # A read-only operation may neither add nor remove any directory entry.
+    entries = {str(p.relative_to(root)) for p in root.rglob('*')}
+    p = case('inspection/'+name, args, expected, watch=watch, text=expected == 0,
+             prefix=prefix, contains=contains)
+    assert {str(p.relative_to(root)) for p in root.rglob('*')} == entries, name
+    report['cases'][-1]['inspection_added'] = True
+    if expected == 0:
+        text = p.stdout.decode('utf-8', errors='strict')
+        assert text.endswith('\n') and not text.startswith('\ufeff'), (name, text)
+        if json_mode:
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    assert key not in result, ('duplicate JSON key', key)
+                    result[key] = value
+                return result
+            obj = json.loads(text, object_pairs_hook=unique)
+            wanted = dict(schema_version=1, command=str(args[0]), summary=summary)
+            if basis is not None: wanted['basis_bytes'] = str(basis)
+            assert type(obj['schema_version']) is int
+            assert obj == wanted, (name, obj, wanted)
+            assert all(type(v) is str for v in obj['summary'].values()), name
+            if basis is not None: assert type(obj['basis_bytes']) is str
+        else:
+            assert text.startswith(str(args[0])+'\n'), (name,text)
+            for key, value in summary.items():
+                unit = ' bytes' if key.endswith('_bytes') or key in ('block_len','strong_sum_len') else ''
+                assert f'{key}: {value}{unit}\n' in text, (name,key,text)
+            if basis is not None:
+                assert f'basis_bytes: {basis} bytes\n' in text
+                assert 'no basis identity or recovered content verification' in text
+    return p
+
+
+def delta_stats(size, instructions, literals, copies, literal_bytes, copy_bytes, output):
+    return dict(zip(('delta_bytes','instruction_count','literal_commands','copy_commands',
+                     'literal_bytes','copy_bytes','output_bytes'),
+                    map(str,(size,instructions,literals,copies,literal_bytes,copy_bytes,output))))
+
+
 try:
     lock = json.loads((ROOT/'toolchain.lock.json').read_text(encoding='utf-8'))
     version = run(['moonc','-v'],expected=0).stdout.decode().strip()
@@ -109,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(6,6,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(12,12,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -226,6 +267,10 @@ try:
         case('input-dangling-symlink',['signature',dangling,'x'],1,watch=[a,dangling],output=root/'x',contains='leaf symlink')
     # Permissions are proven under the same identity that executes this case.
     denied=root/'unwritable'; denied.mkdir()
+    ro_sig, ro_delta, ro_old = [denied/name for name in ('inspect.sig','inspect.delta','basis')]
+    ro_sig.write_bytes(bytes.fromhex('727301470000080000000020'))
+    ro_delta.write_bytes(bytes.fromhex('7273023645000300'))
+    ro_old.write_bytes(b'abc')
     acl=root/'saved-acl'
     prefix=[]
     denied_mode=stat.S_IMODE(denied.stat().st_mode)
@@ -245,6 +290,13 @@ try:
         assert probe.returncode!=0 and b'PermissionError' in probe.stderr, ('permission denial not demonstrated',probe.stdout,probe.stderr)
         report['permission_identity']='nobody (controlled root-runner case)' if prefix else 'current process identity'
         case('output-actually-unwritable',['signature',a,denied/'out'],1,watch=[a],output=denied/'out',prefix=prefix)
+        for command, paths, summary, basis in [
+            ('inspect-signature',[ro_sig],dict(magic='0x72730147',profile='RS_RK_BLAKE2_SIG_MAGIC',block_len='2048',strong_sum_len='32',record_count='0',signature_bytes='12'),None),
+            ('inspect-delta',[ro_delta],delta_stats(8,1,0,1,0,3,3),None),
+            ('check-patch',[ro_old,ro_delta],delta_stats(8,1,0,1,0,3,3),3)]:
+            for machine in (False, True):
+                inspection_case('unwritable/'+command+str(machine),[command,*paths,*(['--json'] if machine else [])],
+                                watch=[ro_sig,ro_delta,ro_old],summary=summary,basis=basis,json_mode=machine,prefix=prefix)
     finally:
         if os.name=='nt' and acl.exists():
             run([permission_shell,'-NoProfile','-File',ROOT/'scripts/cli-permission.ps1','-Directory',denied,'-Backup',acl,'-Action','Restore'],expected=0)
@@ -255,7 +307,7 @@ try:
     with restored_probe.open('xb') as restored_file: restored_file.write(b'ok')
     restored_probe.unlink()
     report['permission_denial_and_restore_proven']=True
-    assert list(denied.iterdir())==[]
+    assert {p.name for p in denied.iterdir()}=={'inspect.sig','inspect.delta','basis'}
     # Three simultaneous pairs, exactly one complete publication per target.
     ra=root/'race-a'; rb=root/'race-b'
     ra.write_bytes(bytes((i*17+31)%256 for i in range(1048576))); rb.write_bytes(b'B'*1048576)
@@ -290,13 +342,107 @@ try:
     case('normal-after-failures/delta',['delta',fresh_sig,n,fresh_delta],watch=[a,n,fresh_sig],output=fresh_delta)
     case('normal-after-failures/patch',['patch',a,fresh_delta,recovered],watch=[a,n,fresh_sig,fresh_delta],output=recovered)
     assert recovered.read_bytes()==n.read_bytes()
+    # Inspection cases are additional; retain every preceding write-file assertion.
+    signature_summary = dict(magic='0x72730147',profile='RS_RK_BLAKE2_SIG_MAGIC',
+                             block_len='2048',strong_sum_len='32',record_count='0',signature_bytes='12')
+    inspect_sig = root/'empty signature.sig'; inspect_sig.write_bytes(bytes.fromhex('727301470000080000000020'))
+    multi_sig = root/'multi.sig'; multi_sig.write_bytes(bytes.fromhex('72730147000000020000000100000000ff0000000180'))
+    multi_summary = dict(signature_summary,block_len='2',strong_sum_len='1',record_count='2',signature_bytes='22')
+    basis_file = root/'inspect basis'; basis_file.write_bytes(b'abcde')
+    inspect_deltas = [
+        ('empty',bytes.fromhex('7273023600'),delta_stats(5,0,0,0,0,0,0)),
+        ('literal',bytes.fromhex('7273023602008000'),delta_stats(8,1,1,0,2,0,2)),
+        ('copy',bytes.fromhex('7273023645020300'),delta_stats(8,1,0,1,0,3,3)),
+        ('mixed',bytes.fromhex('7273023645020302008000'),delta_stats(11,2,1,1,2,3,5)),
+        ('repeated',bytes.fromhex('7273023645030245000345010200'),delta_stats(14,3,0,3,0,7,7))]
+    for machine in (False,True):
+        opts = ['--json'] if machine else []
+        for path, summary in [(inspect_sig,signature_summary),(multi_sig,multi_summary)]:
+            inspection_case(path.name+str(machine),['inspect-signature',*opts,path],watch=[path],summary=summary,json_mode=machine)
+        for label, data, summary in inspect_deltas:
+            path=root/('inspect-'+label+'.delta'); path.write_bytes(data)
+            inspection_case(label+str(machine),['inspect-delta',path,*opts],watch=[path],summary=summary,json_mode=machine)
+            inspection_case('preflight/'+label+str(machine),['check-patch',basis_file,*opts,path],watch=[basis_file,path],
+                            summary=summary,basis=5,json_mode=machine)
+    # --json after -- is a filename, and '-' never means stdin/stdout.
+    dash_delta = root/'-'; dash_delta.write_bytes(bytes.fromhex('7273023645020300'))
+    option_sig = root/'--json'; option_sig.write_bytes(inspect_sig.read_bytes())
+    inspection_case('literal-dash',['inspect-delta','--json','--','-'],watch=[dash_delta],summary=delta_stats(8,1,0,1,0,3,3))
+    inspection_case('option-path',['inspect-signature','--json','--','--json'],watch=[option_sig],summary=signature_summary)
+    inspection_case('option-path-human',['inspect-signature','--','--json'],watch=[option_sig],summary=signature_summary,json_mode=False)
+    option_old=root/'--old'; option_old.write_bytes(b'abcde')
+    inspection_case('preflight-dash',['check-patch','--json','--','--old','-'],watch=[option_old,dash_delta],summary=delta_stats(8,1,0,1,0,3,3),basis=5)
+    for label, args in [
+        ('duplicate',['inspect-delta','--json',d,'--json']), ('unknown',['inspect-signature',inspect_sig,'--wat']),
+        ('old-signature',['signature',a,'x','--json']),('old-delta',['delta',sig,n,'x','--json']),('old-patch',['patch',a,d,'x','--json']),
+        ('missing-signature',['inspect-signature','--json']),('missing-delta',['inspect-delta']),('missing-basis',['check-patch',a]),
+        ('extra-signature',['inspect-signature',inspect_sig,'x']),('extra-delta',['inspect-delta',d,'x']),('extra-check',['check-patch',a,d,'x']),
+        ('signature-option',['inspect-signature',inspect_sig,'--sum-size','1'])]:
+        inspection_case('usage/'+label,args,2,watch=[a,n,sig,d],contains='usage:')
+    for command, paths, needle in [
+        ('inspect-signature',[root/'missing'],'read'),('inspect-delta',[root/'missing'],'read'),
+        ('check-patch',[root/'missing',d],'file'),('check-patch',[a,root/'missing'],'read'),
+        ('inspect-signature',[folder],'unsupported input'),('inspect-delta',[folder],'unsupported input'),
+        ('check-patch',[folder,d],'unsupported input'),('check-patch',[a,folder],'unsupported input'),
+        ('inspect-signature',[badsig],'TruncatedInput'),('check-patch',[a,oob],'CopyOutOfBounds'),
+        ('inspect-signature',[sizes[1][0]],'ReadLimitExceeded'),('inspect-delta',[sizes[2][0]],'ReadLimitExceeded'),
+        ('check-patch',[sizes[0][0],d],'LimitExceeded'),('check-patch',[a,sizes[2][0]],'ReadLimitExceeded')]:
+        inspection_case('input/'+command+'/'+needle,[command,*paths,'--json'],1,watch=[a,d,badsig,oob],contains=needle)
+    # All 29 existing handwritten vectors, with exact independent field values.
+    vectors=json.loads((ROOT/'tests/fixtures/opcodes/vectors.json').read_text())['vectors']
+    assert len(vectors)==29
+    for vector in vectors:
+        path=root/'opcode.delta'; data=bytes.fromhex(vector['hex']); path.write_bytes(data)
+        kind=vector['expect']
+        summary = (delta_stats(len(data),0,0,0,0,0,0) if kind=='E' else
+                   delta_stats(len(data),1,1,0,2,0,2) if kind=='L' else
+                   delta_stats(len(data),1,0,1,0,3,3) if kind=='C' else None)
+        for command, paths, basis in [('inspect-delta',[path],None),('check-patch',[basis_file,path],5)]:
+            inspection_case('opcode/'+vector['id']+'/'+command,[command,*paths,'--json'],0 if summary else 1,
+                            watch=[basis_file,path],summary=summary,basis=basis,contains=None if summary else kind)
+    # Format-only accepts a high UInt64 offset; range preflight rejects it.
+    high=root/'high.delta'; high.write_bytes(bytes.fromhex('7273023651ffffffffffffffff0100'))
+    inspection_case('high-offset',['inspect-delta',high,'--json'],watch=[high],summary=delta_stats(15,1,0,1,0,1,1))
+    inspection_case('high-offset-range',['check-patch',basis_file,high,'--json'],1,watch=[basis_file,high],contains='CopyOutOfBounds')
+    no_end=root/'missing-end.delta'; no_end.write_bytes(bytes.fromhex('7273023645ff01'))
+    inspection_case('parse-before-range',['check-patch',basis_file,no_end,'--json'],1,watch=[basis_file,no_end],contains='TruncatedInput')
+    unsupported_sig=root/'unsupported.sig'; unsupported_sig.write_bytes(bytes.fromhex('727301460000080000000020'))
+    invalid_sig=root/'invalid.sig'; invalid_sig.write_bytes(bytes.fromhex('727301470000000000000020'))
+    for path, needle in [(unsupported_sig,'UnsupportedSignatureProfile'),(invalid_sig,'InvalidSignature')]:
+        inspection_case('signature/'+needle,['inspect-signature',path,'--json'],1,watch=[path],contains=needle)
+    inspection_case('human-format-error',['inspect-delta',no_end],1,watch=[no_end],contains='TruncatedInput',json_mode=False)
+    inspection_case('human-range-error',['check-patch',a,oob],1,watch=[a,oob],contains='CopyOutOfBounds',json_mode=False)
+    if not any(item['feature']=='symbolic links' for item in report['unsupported']):
+        for command, paths in [('inspect-signature',[link]),('inspect-delta',[link]),('check-patch',[link,d]),('check-patch',[a,link])]:
+            inspection_case('leaf-link/'+command+str(paths),[command,*paths,'--json'],1,watch=[a,link],contains='leaf symlink')
+    else:
+        report['unsupported'].append(dict(feature='inspection leaf links',status='not_executed',checks=4,reason='Windows symlink privilege unavailable'))
+    if os.name!='nt':
+        fifo=root/'input-fifo'; os.mkfifo(fifo)
+        for command, paths in [('inspect-signature',[fifo]),('inspect-delta',[fifo]),('check-patch',[fifo,d])]:
+            inspection_case('fifo/'+command,[command,*paths,'--json'],1,contains='unsupported input')
+    # Real closed stdout pipe: output failure must not return success.
+    protected_sig=snapshot(inspect_sig); pending=temps()
+    read_fd, write_fd = os.pipe(); os.close(read_fd)
+    try:
+        p=subprocess.run([str(exe),'inspect-signature',str(inspect_sig),'--json'],cwd=root,stdout=write_fd,stderr=subprocess.PIPE,timeout=120)
+    finally:
+        os.close(write_fd)
+    assert p.returncode!=0, ('closed stdout pipe returned success',p.stderr)
+    assert b'stdout inspect-signature' in p.stderr and str(inspect_sig).encode() in p.stderr
+    assert snapshot(inspect_sig)==protected_sig and temps()==pending
+    log.write(json.dumps(dict(argv=[str(exe),'inspect-signature',str(inspect_sig),'--json'],
+                             stdout='closed pipe',stderr=p.stderr.decode('utf-8'),exit_code=p.returncode))+'\n');log.flush()
+    report['cases'].append(dict(name='inspection/stdout-closed-pipe',passed=True,actual_exit=p.returncode,
+                               diagnostic=p.stderr.decode('utf-8'),inputs_preserved=True,owned_temporary_clean=True,inspection_added=True))
+    inspection_case('valid-after-failures',['check-patch',basis_file,root/'inspect-copy.delta','--json'],watch=[basis_file,root/'inspect-copy.delta'],summary=delta_stats(8,1,0,1,0,3,3),basis=5)
     assert foreign.read_bytes()==b'FOREIGN' and temps()=={foreign.name}
     # Delete only this verified fresh run directory, after restoring permissions.
     assert root.is_relative_to(run_parent) and root.name.startswith('run-')
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 6 Native helper tests; {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 12 Native helper tests (6 original + 6 inspection); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:
@@ -306,6 +452,8 @@ except BaseException as error:
     code=1
 finally:
     report['integration_cases_passed']=sum(c.get('passed',False) for c in report['cases'])
+    report['inspection_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('inspection_added'))
+    report['original_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if not c.get('inspection_added'))
     (OUTPUT/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     log.close()
 sys.exit(code)

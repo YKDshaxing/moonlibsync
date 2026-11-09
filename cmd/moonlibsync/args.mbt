@@ -7,23 +7,35 @@ priv suberror CliError {
 }
 
 ///|
+priv enum RunMode {
+  WriteFile(String)
+  Inspect(Bool)
+}
+
+///|
 priv struct Plan {
   operation : String
   inputs : Array[String]
-  output : String
+  mode : RunMode
   options : @lib.SignatureOptions
 }
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.1.0 (development; not released)
+  #|MoonLibSync 0.1.0 (registry release); inspection commands are development-only
   #|Usage:
   #|  moonlibsync signature OLD SIG [--block-size N] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA
   #|  moonlibsync patch OLD DELTA OUT
+  #|  moonlibsync inspect-signature SIG [--json]
+  #|  moonlibsync inspect-delta DELTA [--json]
+  #|  moonlibsync check-patch OLD DELTA [--json]
   #|  moonlibsync --help
   #|  moonlibsync --version
-  #|Signature options may appear anywhere before --; -- ends option parsing.
+  #|Options may appear anywhere after the command before --; -- ends option parsing.
+  #|--json is inspection-only. One schema_version=1 object; Int64 fields are decimal strings.
+  #|Inspection never creates output files; check-patch queries OLD metadata only.
+  #|Range checks do not authenticate basis identity or verify recovered content.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
   #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..1048576, sum 1..32.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
@@ -55,22 +67,43 @@ fn positive_decimal(text : String, maximum : Int64) -> Int64 raise CliError {
 fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard args.length() > 0 else { raise Usage("missing command") }
   let operation = args[0]
-  guard operation == "signature" || operation == "delta" || operation == "patch" else {
+  let inspection = operation == "inspect-signature" ||
+    operation == "inspect-delta" ||
+    operation == "check-patch"
+  guard inspection ||
+    operation == "signature" ||
+    operation == "delta" ||
+    operation == "patch" else {
     raise Usage("unknown command: " + operation)
   }
   let limits = @lib.Limits::default()
-  let needed = if operation == "signature" { 2 } else { 3 }
+  let needed = if inspection {
+    if operation == "check-patch" {
+      2
+    } else {
+      1
+    }
+  } else if operation == "signature" {
+    2
+  } else {
+    3
+  }
   let paths : Array[String] = []
   let mut block = 2048L
   let mut sum = 32L
   let mut saw_block = false
   let mut saw_sum = false
+  let mut json = false
   let mut options = true
   let mut i = 1
   while i < args.length() {
     let arg = args[i]
     if options && arg == "--" {
       options = false
+    } else if options && arg == "--json" {
+      guard inspection else { raise Usage("inspection-only option: --json") }
+      guard !json else { raise Usage("duplicate option: --json") }
+      json = true
     } else if options && (arg == "--block-size" || arg == "--sum-size") {
       guard operation == "signature" else {
         raise Usage("options are signature-only: " + arg)
@@ -105,8 +138,16 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   }
   {
     operation,
-    inputs: paths[0:needed - 1].to_owned(),
-    output: paths[needed - 1],
+    inputs: if inspection {
+      paths
+    } else {
+      paths[0:needed - 1].to_owned()
+    },
+    mode: if inspection {
+      Inspect(json)
+    } else {
+      WriteFile(paths[needed - 1])
+    },
     options: { block_len: block, strong_sum_len: sum, },
   }
 }

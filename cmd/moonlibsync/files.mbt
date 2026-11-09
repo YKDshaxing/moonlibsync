@@ -101,15 +101,27 @@ async fn read_open_file(
 ///|
 async fn bounded_read(path : String, maximum : Int64) -> Bytes {
   try {
-    guard @fs.kind(path, follow_symlink=false) is @fs.FileKind::Regular else {
-      raise FileFailure("unsupported input kind or leaf symlink: " + path)
-    }
-    let file = @fs.open(path, mode=ReadOnly, create_mode=OpenExisting)
+    let file = open_regular_input(path)
     defer file.close()
     read_open_file(file, path, maximum)
   } catch {
     error => raise FileFailure("read '" + path + "': \{cli_error_text(error)}")
   }
+}
+
+///|
+/// Reject unsupported leaves before open (including FIFOs), then verify the
+/// opened handle. This is shared by bounded content reads and metadata preflight.
+async fn open_regular_input(path : String) -> @fs.File {
+  guard @fs.kind(path, follow_symlink=false) is @fs.FileKind::Regular else {
+    raise FileFailure("unsupported input kind or leaf symlink: " + path)
+  }
+  let file = @fs.open(path, mode=ReadOnly, create_mode=OpenExisting)
+  errdefer file.close()
+  guard file.kind() is @fs.FileKind::Regular else {
+    raise FileFailure("unsupported input kind: " + path)
+  }
+  file
 }
 
 ///|

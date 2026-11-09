@@ -1,26 +1,35 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
-fn core_error_tag(error : @lib.SyncError) -> String {
+fn core_error_tag(error : Error) -> String {
   match error {
-    InvalidOptions(field) => "InvalidOptions:" + field
-    UnsupportedSignatureProfile => "UnsupportedSignatureProfile"
-    TruncatedInput => "TruncatedInput"
-    InvalidSignature => "InvalidSignature"
-    InvalidDelta => "InvalidDelta"
-    InvalidOpcode => "InvalidOpcode"
-    IntegerOutOfRange => "IntegerOutOfRange"
-    CopyOutOfBounds => "CopyOutOfBounds"
-    TrailingData => "TrailingData"
-    LimitExceeded => "LimitExceeded"
+    @lib.SyncError::InvalidOptions(field) => "InvalidOptions:" + field
+    @lib.SyncError::UnsupportedSignatureProfile => "UnsupportedSignatureProfile"
+    @lib.SyncError::TruncatedInput => "TruncatedInput"
+    @lib.SyncError::InvalidSignature => "InvalidSignature"
+    @lib.SyncError::InvalidDelta => "InvalidDelta"
+    @lib.SyncError::InvalidOpcode => "InvalidOpcode"
+    @lib.SyncError::IntegerOutOfRange => "IntegerOutOfRange"
+    @lib.SyncError::CopyOutOfBounds => "CopyOutOfBounds"
+    @lib.SyncError::TrailingData => "TrailingData"
+    @lib.SyncError::LimitExceeded => "LimitExceeded"
+    _ => cli_error_text(error)
   }
 }
 
 ///|
 async fn execute(plan : Plan) -> Unit {
+  match plan.mode {
+    WriteFile(output) => execute_write(plan, output)
+    Inspect(json) => execute_inspection(plan, json)
+  }
+}
+
+///|
+async fn execute_write(plan : Plan, output_path : String) -> Unit {
   let limits = @lib.Limits::default()
   limits.validate()
-  let output = prepare_output(plan.output)
+  let output = prepare_output(output_path)
   let first_limit = if plan.operation == "delta" {
     limits.max_signature_bytes
   } else {
@@ -51,7 +60,7 @@ async fn execute(plan : Plan) -> Unit {
         "core " +
         plan.operation +
         " for '" +
-        plan.output +
+        output_path +
         "': " +
         core_error_tag(error),
       )

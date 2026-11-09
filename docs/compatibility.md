@@ -1,5 +1,11 @@
 # 0.1.0 兼容范围与发布归属
 
+## Commit 18 开发源码检查 CLI（尚未发布）
+
+新增 inspect-signature、inspect-delta、check-patch 三个只读命令，及检查专用 --json。核心 API 与 Commit 17 一致，原三个文件命令、默认值、输出保护、退出0/2/1与输入链接策略保留。检查不创建输出文件；check-patch 只取 OLD 元数据，有界读取 DELTA，不认证内容或提供快照。schema 1 的 Int64 全为精确十进制字符串；失败仍 stderr 诊断、stdout 为空，stdout 通道失败非零。详细字段与路径选项语义见[CLI说明](cli.md#commit-18开发源码检查命令)。
+
+这些功能只在开发源码，注册表0.1.0仍只有原三个文件命令。版本元数据、原包归档、许可证和发布证据不变；本笔不发布或创建标签/Release，不进入Commit19。原Windows/Ubuntu任务接入新增CLI检查，不复制CI矩阵。下文保留各阶段范围。
+
 ## Commit 17 开发源码增量（尚未发布）
 
 当前 Git 源码新增 `inspect_signature(Bytes, Limits)`、`inspect_delta(Bytes, Limits)`、`check_patch(Int64, Bytes, Limits)` 及三个不可变摘要类型，返回/字段见[设计说明](design.md#commit-17开发源码只读检查)。注册表 0.1.0、其正式源码 SHA 和归档仍保留原三项操作，不能将当前元数据中的 0.1.0 解释为这些新增接口已发布。拟定 0.2.0 仍在开发。
