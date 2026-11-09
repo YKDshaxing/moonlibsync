@@ -27,3 +27,20 @@
 交付记录区分功能冻结SHA、publication_source_sha和发布后文档SHA；记录模块/版本、当前身份（不输出凭据）、权限/版本/标签/Release检查、实际包/逐成员哈希、许可审计、干净重建、候选消费、同SHA CI及产物、上传命令/退出码/响应/实际时间来源、Mooncakes页面与下载来源、三目标注册表结果及CLI边界。后续仓库文档不自动改变注册表内文档。
 
 Commit15基准是原环境、原二进制的历史测量。Commit16只调整CLI版本展示/对应断言及模块描述，不改算法；运行文件指纹的具体变化在交付记录中记录，不重跑测量来换SHA、不宣称发布二进制与旧测量字节相同。本笔不默认创建GitHub标签、Release或安装器。
+
+## 0.1.0 实际发布与消费结果（2026-11-09）
+
+- 功能冻结：857aa981debc3ce0c1e54176621e84454733202e。
+- 正式发布源码：f62958eceda9deecc4eae8a14007f5be76c59b0e；[发布源同SHA三项必需CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/42594652417)全部成功。首轮Windows取消后由用户在网页重跑成功，Linux成功结果保留。
+- 本段属于后续证据文档提交，具体文档SHA见交付记录；不能代替上述发布源。注册表中的README等文件仍来自发布源，不随本次仓库文档更新。
+- [Mooncakes 0.1.0 页面](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.1.0/)及[公开版本元数据](https://mooncakes.io/api/v0/manifest/YKDshaxing/moonlibsync@0.1.0)已实际访问200。注册表created_at为2026-11-09T13:25:46.635422+00:00，即北京时间2026-11-09 21:25:46.635422；以服务端字段为时间来源。
+- 实际官方ZIP为YKDshaxing-moonlibsync-0.1.0.zip，268008字节、179个文件成员，SHA-256 `07d6ea0ffbc77df9a3b9d2b792ee3ca0192a8527adec8da8c5c5926019a0dd96`。每个成员已核对发布Git提交的原始字节、完整许可证/来源及路径安全。Linux/Windows CI生成包的成员内容相同；容器哈希分别保留，不强求跨平台压缩字节相同。
+- 上传前确认Mooncakes身份YKDshaxing、版本未占用、干净源码已推送、同SHA CI、审计、干净重建、候选三目标消费均通过。固定客户端`--frozen`在临时解包目录缺依赖处失败；标准dry-run完整校验并返回202。用户明确允许保留工具链/依赖而改用标准 `moon publish`，实际命令退出0、服务器200。源码/锁及上传包前后哈希不变，没有升级或关闭包验证。
+- 公开注册表独立消费者位于仓库外新目录，重新安装固定工具链，空注册表缓存，未创建moon.work/path/Git替换；实际解析YKDshaxing/moonlibsync0.1.0、mooncrypt0.4.5、moonbase0.4.2、moondate0.1.0、moonrand0.1.0。下载ZIP与审计ZIP的压缩字节哈希也相同，179个模块文件及元数据逐字节一致。
+- 注册表API消费实测环境为Windows11/NTFS，Native、JS、Wasm-GC各运行相同文件和小替换两个场景，独立new恢复相等；签名均300字节，delta分别9/2065字节，COPY分别16384/14336字节。公开默认2048/32与TruncatedInput错误捕获在三个目标均通过。不是把消费者次数计作新增库测试。
+- 从实际下载模块另行构建Windows Native CLI，版本MoonLibSync0.1.0，三命令恢复/COPY验证通过。它是**注册表包源码构建**，没有预编译二进制。Linux/ext4的同SHA候选包三目标及CLI由CI验证，内容与下载包一致；没有额外声称本机WSL直接注册表消费成功。
+- 首次注册表消费者在工具链下载阶段遇到TLS中断，日志单独保留；第二次在全新目录完整重试通过，没有重传发布版本。原基准和冻结证据未重跑或改写。
+
+最终状态为 `published-and-consumer-verified`。原99项库测试、Python工具6项、两平台Native辅助各6项、Windows83/Linux81项CI集成、三目标示例、274/496/3968互操作、原82/29次消费及全部失败门禁保留通过；发布工具4项另计。交付记录和SHA256SUMS位于 `_build/release-0.1.0/`。本笔未创建GitHub标签、Release或安装器，未进入后续功能开发。
+
+严格重放0.1.0的包字节/注册表对照，应在发布源 `f62958eceda9deecc4eae8a14007f5be76c59b0e` 的干净检出运行检查器。后续文档HEAD生成的候选归档包含不同的证据文档，不能拿它替代已发布的179成员原包；CI在后续提交生成的候选产物也不是再次发布。

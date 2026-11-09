@@ -2,7 +2,7 @@
 
 MoonLibSync 0.1.0 是 MoonBit 纯字节远端签名差分库，提供 `signature(old, options, limits)`、`delta(signature, new, limits)`、`patch(old, delta, limits)`。发送端只持有标准签名与新字节即可生成增量。附 Windows／Linux Native 单文件 CLI；全量字节缓冲，不含网络或目录同步。
 
-模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。0.1.0 的功能、接口与行为范围已冻结；实际上传、注册表消费及其源码归属按[发布验收说明](docs/release.md)和独立交付记录核对，能力说明本身不代表上传或消费已成功。
+模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。**[0.1.0 已发布至 Mooncakes](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.1.0/)**，并通过仓库外、无本地替换的 Native／JS／Wasm-GC 注册表消费者验证。正式发布源码为 [`f62958eceda9deecc4eae8a14007f5be76c59b0e`](https://github.com/YKDshaxing/moonlibsync/commit/f62958eceda9deecc4eae8a14007f5be76c59b0e)；本仓库后续证据文档提交不改变注册表原包。审计、CI、实际下载及环境边界见[发布验收说明](docs/release.md)。
 
 ## 获取源码与本地导入
 
