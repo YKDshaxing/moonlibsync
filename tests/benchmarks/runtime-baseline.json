@@ -1,0 +1,29 @@
+{
+  "stage": "Commit 15 functional freeze",
+  "runtime_basis_commit": "925d47979549da4e8e3c32b742806513478346e6",
+  "runtime_files": {
+    "api.mbt": "b747c34cd8e8ead432dd89a1aba76cce861f58283c4f8dd036dbf74c01082e73",
+    "cmd/moonlibsync/args.mbt": "5b01eea1fde558e3e608039d4daa09d2ed09e977bc4744e6c00dbc5597662982",
+    "cmd/moonlibsync/files.mbt": "19377d9827dddc3a254019f05a8a72b8f11ae4beb6456bb5536b42d5f71ddfb0",
+    "cmd/moonlibsync/files_wbtest.mbt": "545414404cb4420616eca4ce873997db73fe615379ef5548a7aa0caaae6cc7a3",
+    "cmd/moonlibsync/main.mbt": "d6186c4805823a79ccb1c2b5b4e7105c8234df4fceb3eb7be64bc481e440f302",
+    "cmd/moonlibsync/moon.pkg": "8e31f67df653fb7a6693a0af0811bb6185bc2f4799a04a6a33e07b190512f6dd",
+    "delta.mbt": "9d9413265d3de1014691765e4c6945b9de41b643e4abdf313a19dea15e81426a",
+    "dependencies.lock.json": "182c8f72e287013042a0a5dde6de3491fe59d0eaffd09e31d7ded89828bae6c6",
+    "error.mbt": "d89a22692375dcbd8ef089fd2d85f5e2e91ccd8b5507bfd4e93204cce327f318",
+    "index.mbt": "74272027249a85b20cfa87ded532b1ca3be9530c3bc37537d86897678cda00a6",
+    "limits.mbt": "5f9c50254964afc35658915a04834c2a07147cc9df44b2953b13147e009a37c8",
+    "moon.mod": "323244d0b7d570314b282d0c79ee29dffb9e229d1e57322d05165e9a4ef9f87b",
+    "moon.pkg": "f5b0242cfca68e173dff92f7d47975f39b76c2f9d782b8a6f82b78145452ee2f",
+    "patch.mbt": "a16f440be0a7942a3032227233f43815ac8ad058ba38e3001835b4543a1e0d08",
+    "pkg.generated.mbti": "e87dd11401b0660643b1d4abd39ae4c04231a8f116e43b6ccc696a38c5e8bac4",
+    "rabinkarp.mbt": "8d1cfba6852414f950ac7a516cdeab2e891976468fa04f99eefc3e1cd09f06e8",
+    "signature.mbt": "3181e728d07104733d969cc93464684090daac0aad37c6c1761da9b165c5b573",
+    "strongsum.mbt": "1771749a17218aa4a82b179865670d961222f46a461867d1762970b6d467fe4e",
+    "toolchain.lock.json": "df61ba101d2ed29161607e17c9c0f81a5e0765cd7583065ecedaf5fb639462a4",
+    "wire.mbt": "4365d9505bfac572edc6a25ce698d915928e12f47734b3d6fb38a57c480f295d"
+  },
+  "build_mode": "moon build cmd/moonlibsync --target native --release",
+  "toolchain": "toolchain.lock.json",
+  "dependencies": "dependencies.lock.json"
+}

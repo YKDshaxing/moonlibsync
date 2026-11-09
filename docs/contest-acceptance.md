@@ -1,3 +1,27 @@
+# Commit 15：当前阶段验收与功能冻结
+
+基线925d47979549da4e8e3c32b742806513478346e6。当前已完成有限基准、使用/设计文档与首版功能冻结；运行库、CLI执行代码、默认值、锁和正式夹具保持基线。最终冻结SHA、同SHA全部必需CI、原始产物校验和测量/最终源码关联，在提交后交付记录提供，不为自身SHA另增提交。
+
+| 原规划要求 | Commit15当前实现/交付状态 | 实际证据及目标 | 源码归属与未完成项 |
+| --- | --- | --- | --- |
+| 1 MoonBit为主，moonc>=0.10.16 | 固定0.10.20+65efd5b93与既有依赖闭包；核心/CLI仍为MoonBit | toolchain.lock、dependencies.lock、check.py三目标；Linux release基准 | Commit1–14执行代码不变；不承诺全部更高版本 |
+| 2 GitHub公开，提交清晰 | 既有YKDshaxing仓库，Commit15独立工具/文档提交 | git历史、最终同SHA CI与交付记录 | 未代替发布身份/模块权限检查 |
+| 3 结构清晰，核心功能完成 | 三API、现有标准格式/资源/CLI/目标范围冻结 | compatibility.md冻结表、tests/benchmarks/runtime-baseline.json的20文件指纹 | 运行代码归属Commit1–14，冻结15；不是0.1.0整体交付完成 |
+| 4 README可复现 | 源码获取、公开导入、完整运行示例、错误/边界与基准说明 | README、design.md完整basic代码、现有三目标实际运行；CLI两平台 | 当前为源码消费；正式包解压与独立注册表消费待16 |
+| 5 CI覆盖检查/构建/测试 | 保留原3任务和全部必需检查，增加小型基准工具正确性入口 | 同SHA三任务，benchmark.py --self-check（无完整计时或速度阈值） | 原覆盖不缩减，提交后报告实际状态 |
+| 6 至少一个可运行例子 | 每平台三目标basic，实际COPY与恢复；Linux正式CLI/rdiff两条交换 | examples/basic、check_example.py、file_exchange.py | Commit14示例继续验证；不是已安装发布包消费 |
+| 7 完整核心测试 | 各目标99；Python6；两平台Native辅助各6及平台集成；274/496/3968；原82/29；所有失败门禁 | check.py、cli_smoke、interop、consume脚本、failure_gates；基准另120预热/420正式，不混入测试 | Commit15没有增加库测试或用基准替代原回归；范围仍有限 |
+| 8 发布Mooncakes | **未发布**，0.1.0仅开发元数据，无独立注册表证明 | 未发布声明；没有执行moon publish | 身份/精确版本检查、实际发布、无本地替换消费均待16 |
+| 9 OSI许可证及上游授权 | LGPL-2.1-or-later、来源及第三方说明保留，新增工具明确原创/标准库调用 | COPYING.LESSER、COPYING、SOURCES、THIRD_PARTY_NOTICES | 源码许可文件存在不等于实际源码包分发审计通过，待16 |
+
+有限基准在WSL2/Linux Native/ext4实际完成：两规模五类场景，参数2048/32，release正式CLI对固定rdiff Release，2预热+7正式交替顺序，三项操作全校验。patch两端使用相同rdiff delta。结果、min/median/max、实际大小/COPY/指令数、原始文件校验及结论边界见[基准](benchmarks.md)。运行时HEAD为基线且dirty=true，不冒充最终干净提交；交付前逐文件关联最终冻结源码，配置/依赖/执行代码变化必须重新测量。
+
+冻结[公开接口/默认值/profile/标准指令/错误资源/CLI/目标及范围外清单](compatibility.md#commit-15首版功能冻结)。Commit16尚须完成：精确版本与发布身份检查；实际源码包和许可证分发审计；干净目录重建；发布源SHA与必需CI对应；Mooncakes实际发布；无本地替换的独立注册表消费；发布后证据归档。此七项没有在本笔执行；未创建标签、Release或上传。
+
+## Commit 14 历史验收快照
+
+以下完整保留Commit14记录；其中“未测基准/未冻结”等只属于当时阶段，不作为Commit15当前状态。
+
 # Commit 14：九项阶段验收
 
 本表逐项沿用原《MoonLibSync 远端签名差分库开发与验收规划书》“九项验收要求对应”的九行，不将规划当作结果。阶段基线为 Commit 13 `d605522738066ee2494b2b5306dd1b7d217ffeef`；本笔增量为示例、CI整合、失败门禁及文档。提交前采用稳定证据入口；最终源码SHA、同SHA CI与产物链接由提交后交付报告提供，不为补记自身SHA追加循环提交。

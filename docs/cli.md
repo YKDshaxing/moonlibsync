@@ -130,3 +130,9 @@ rdiff delta moon.sig new.bin upstream.delta
 ```
 
 两份restored均与独立new逐字节相等；签名完整字节一致，实际moon.delta严格检查内容与COPY>=512。真实命令/绝对CLI路径、退出码、版本、文件系统和源码SHA/dirty保存于 `_build/exchange/commands.log` 与 `report.json`，实际交换文件保存于其独占files-*目录。临时目录只清理本次拥有的内容，不覆盖已有输出。这是两条Linux Native演示，单列于274对/496参数/3968恢复之外；不代表JS/Wasm-GC直接调用rdiff或发布包消费者验证。
+
+## Commit 15：release基准与CLI冻结
+
+用户默认debug构建及其真实路径保持前文不变。基准显式运行 `moon --target-dir RUN/build build cmd/moonlibsync --target native --release`，真实ELF路径为 `RUN/build/native/release/build/cmd/moonlibsync/moonlibsync.exe`，Linux仍保留.exe；脚本检查当前--help、实际路径、魔数和哈希，不回退到debug。Linux正向基准把两端可执行文件、输入和新输出均放在ext4临时目录，原始命令和构建身份见[基准](benchmarks.md)。
+
+计时包含本CLI的完整受限读取、计算、文件sync和无覆盖提交，与rdiff的文件保证不同。本笔没有关闭安全路径、改变预算或增加CLI参数来获取更好数字。冻结本页语法、退出码、输入稳定责任、链接及现存输出保护、失败清理和NTFS/ext4/DrvFS边界；最终源码包、安装器、Mooncakes发布及注册表消费未执行。

@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "sizes": [
+    65536,
+    1048576
+  ],
+  "scenarios": [
+    "identical",
+    "small-replace",
+    "front-insert",
+    "all-different",
+    "repeated"
+  ],
+  "block_len": 2048,
+  "strong_sum_len": 32,
+  "warmup_rounds": 2,
+  "formal_rounds": 7,
+  "generator": "hashlib.shake_256(domain).digest(size); old masked with 0x7f; different masked with 0x7f then OR 0x80",
+  "domain": "MoonLibSync benchmark v1/",
+  "small_replace": {
+    "position": "size//2 + 17",
+    "length": 64,
+    "bytes": "80..bf"
+  },
+  "front_insert": {
+    "position": 0,
+    "length": 32,
+    "bytes": "80..9f"
+  },
+  "repeated": {
+    "old": "bytes(range(128)) repeated to size",
+    "position": "size//2",
+    "insert_length": 32,
+    "bytes": "80..9f"
+  },
+  "order": "sizes ascending, scenarios as listed; round then signature/delta/patch; first engine=(case_index+round_index+operation_index)%2; alternate on each round",
+  "clock": "time.perf_counter_ns",
+  "units": "ns",
+  "timeout_seconds": 120
+}

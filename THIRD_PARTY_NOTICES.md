@@ -34,3 +34,5 @@ Commit 10 核对固定librsync src/delta.c的扫描、EOF和连续COPY语义，�
 Commit 11仅扩展原创测试适配、Python互操作编排与确定性输入，不新增第三方实现或运行依赖；继续使用固定librsync参考工具，保留其原版权和LGPL-2.1-or-later声明及既有完整许可。标准格式参考与既有MoonBit/摘要依赖归属不变，未将第三方实现改标为本项目原创。矩阵、种子和数据来源见SOURCES.md及tests/interop/README.md。
 
 Commit 13原创Native CLI通过固定MoonBit core公开文件/路径/参数/stderr接口和原三项字节API工作，无第三方代码移植或新增运行依赖。核对的core runtime/fs.c原Copyright 2025 International Digital Economy Academy、Apache-2.0，既有core许可证及NOTICE完整保留；后端实际使用程度与来源见SOURCES.md。不将测试权限工具或无覆盖提交包装冒称为本项目实现了操作系统文件系统。
+
+Commit15新增原创有限基准工具和固定输入计划，采用项目LGPL-2.1-or-later；只调用Python标准库生成与计时，不复制其实现，不新增MoonBit运行依赖。固定rdiff只作Linux Native外部参考，原librsync/BLAKE2来源、声明及完整许可保留不变。相关项目README仅用于核对生态定位，未复制其实现或声称认可。功能冻结及源码来源说明不等于已完成实际分发包义务审计；该审计保留给Commit16。

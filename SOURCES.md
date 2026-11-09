@@ -75,3 +75,11 @@ Delta 及 wire 扩展是依据格式事实的独立 MoonBit 实现，不移植 C
 实际读取固定core async/fs的File.kind/size/read_at/write/sync/close、kind(follow_symlink=false)、realpath和rename接口，以及runtime/fs.c的Windows/Linux重命名后端。runtime/fs.c原Copyright 2025 International Digital Economy Academy / Apache-2.0，其他core文件原声明及既有LICENSE/NOTICE保留，不复制或修改其实现。Windows使用FileRenameInfoEx Flags=0、旧系统MoveFileEx无REPLACE_EXISTING，Linux调用renameat2/RENAME_NOREPLACE，未知支持时失败；不据参数名空泛宣称所有文件系统安全。
 
 新增CLI参数、限量读取、独占临时发布及烟雾编排为原创LGPL-2.1-or-later适配，算法只调用原三项公开API。Python ctypes与PowerShell权限设置仅在受控测试中证明当前身份不可写并恢复，不进入产品算法，也不修改全局设置。无新增C librsync FFI或第三方运行依赖；实际平台与文件系统边界见docs/cli.md。
+
+## Commit 15 基准与设计说明来源
+
+scripts/benchmark.py、tests/benchmarks/config.json为本项目原创LGPL-2.1-or-later工具/计划。输入用Python标准库hashlib.shake_256的显式域和长度生成，取不相交字节集合及固定修改；不复制外部数据集或Python哈希实现。计时使用标准库perf_counter_ns/subprocess/statistics，运行依赖不进入MoonBit核心。独立new在所有恢复前已确定。既有严格delta检查器复用，不把上游结果当作生成输入的定义。
+
+参考仍为固定librsync2.3.4，Release构建只供对比，不链接进核心，原许可/版权不变。正式CLI和运行库、锁、资源默认值及正式夹具未改。环境、帮助、实际构建命令、可执行文件哈希、原始测量与运行文件指纹见docs/benchmarks.md及忽略产物；基准不是之前阶段已有的证据。
+
+2026-11-09实际读取niuniu513-ask/moon-sync-delta的main/README.md（blob dadc91b71b36bad983d97c34766ce2f7a6a21d2b）用于描述文档中声明的交集，不复制其源码、不宣称执行验证或认可；两个moon_vcdiff候选链接本次404，限制已写入docs/design.md。正式分发包仍须按实际内容进行许可证审计。

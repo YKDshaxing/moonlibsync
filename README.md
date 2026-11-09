@@ -2,7 +2,16 @@
 
 MoonBit 纯字节远端签名差分库，提供 `signature(old, options, limits)`、`delta(signature, new, limits)`、`patch(old, delta, limits)`。发送端只持有标准签名与新字节即可生成增量。附 Windows／Linux Native 单文件 CLI；全量字节缓冲，不含网络或目录同步。
 
-模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。元数据 `0.1.0` 是开发目标，**Mooncakes 尚未发布**，没有注册表安装消费证明，尚未完成首版冻结及正式分发包审计。
+模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。元数据 `0.1.0` 是开发目标，**Mooncakes 尚未发布**，没有注册表安装消费证明。Commit 15 已冻结首版功能、接口与行为范围，正式分发包审计仍待 Commit 16。
+
+## 获取源码与本地导入
+
+```text
+git clone https://github.com/YKDshaxing/moonlibsync.git
+cd moonlibsync
+```
+
+当前从源码运行；仓库内消费者的 `moon.pkg` 导入 `"YKDshaxing/moonlibsync" @lib`。完整可运行代码、三项API输入/返回/错误及完整性责任见[使用与设计](docs/design.md)与[纯字节示例](examples/basic/main.mbt)。没有提供假定0.1.0已经发布的精确版本安装结果。
 
 ## 固定工具链与源码运行
 
@@ -95,12 +104,26 @@ python3 scripts/file_exchange.py
 
 `failure_gates.py` 只破坏可运行临时源码副本：原参考夹具、opcode夹具及示例预期字节错误必须使 CI 实际入口非零；恢复正常内容后对应入口必须成功。另删除受检接口验证生成前拒绝。异常、超时或工具缺失不会被当作预期通过；分离日志与报告在 `_build/gates/`。CI沿用一个Linux参考任务和两个平台基础任务，任何必需检查失败阻断任务，`always()` 仅用于保存证据。
 
+## 有限基准与功能冻结
+
+Linux Native选择固定工具链、安装参考构建依赖后：
+
+```bash
+bash scripts/build-reference.sh
+python3 scripts/benchmark.py --self-check
+python3 scripts/benchmark.py
+```
+
+固定五类场景、64KiB/1MiB、2048/32，预热2轮、正式7轮，release CLI与固定rdiff Release在ext4上交替执行；patch比较使用同一rdiff delta。计时包含启动和文件流程，Moon还含sync与无覆盖提交；不是纯算法耗时。全异场景实际零COPY且delta大于new，本机Moon进程流程比rdiff慢，结论限于这次环境。原始轮次、输入/可执行文件哈希及最终源码关联保存在 `_build/benchmarks/`，完整方法/结果见[基准](docs/benchmarks.md)。CI只运行工具正确性检查，不设置硬件性能门槛。
+
+冻结三项API/公开类型、默认值、RK+BLAKE2 profile、标准delta宽度、错误与资源契约、CLI语法及文件保证、已验证目标和范围外能力；详见[冻结记录](docs/compatibility.md#commit-15首版功能冻结)。冻结不表示源码包候选、发布或0.1.0整体交付已经完成。
+
 ## 支持与交付边界
 
 支持签名 profile `RS_RK_BLAKE2_SIG_MAGIC`，BLAKE2b先计算32字节再截取1–32字节；delta解析覆盖全部标准 literal/COPY 参数宽度，严格拒绝END后尾随数据。其他签名profile返回明确错误。详见[格式与兼容性](docs/compatibility.md)、[资源契约](docs/resources.md)。各项预算是逻辑字节/记录/工作上限，不是进程峰值内存或CPU时间保证；不承诺OOM恢复。
 
 CLI已验证 Windows Native/NTFS、Linux Native/ext4。WSL DrvFS `/mnt/d` 不支持所需无覆盖提交时明确失败并清理，不退回覆盖；本机WSL正向CLI运行设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`。未验证所有文件系统、网络盘、恶意路径替换或断电持久化。
 
-[九项阶段验收表](docs/contest-acceptance.md) 区分实现、目标、证据、阶段归属与未完成项。基准、首版冻结、最终源码包/许可证分发审计、Mooncakes发布及独立注册表消费仍待后续阶段。历史记录保留在 [Commit 1–13 快照](docs/history.md)，不作为当前能力声明。
+[九项阶段验收表](docs/contest-acceptance.md) 区分实现、目标、证据、阶段归属与未完成项。有限基准与首版功能冻结已完成；[基准报告](docs/benchmarks.md)包含10组实际数据量、COPY及三项操作中位数/最小/最大值。最终源码包/许可证分发审计、Mooncakes发布及独立注册表消费仍待Commit 16。历史记录保留在 [Commit 1–13 快照](docs/history.md)，不作为当前能力声明。
 
 采用 LGPL-2.1-or-later；[LGPL文本](COPYING.LESSER)、[GPL文本](COPYING)、[来源](SOURCES.md)、[第三方说明](THIRD_PARTY_NOTICES.md) 以实际文件为准；源码说明存在不代表正式分发包义务审计已经完成。

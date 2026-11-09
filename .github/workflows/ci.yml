@@ -32,6 +32,8 @@ jobs:
       - name: Bidirectional rdiff interoperability and deterministic regression
         timeout-minutes: 10
         run: bash scripts/interop.sh
+      - name: Benchmark generator and statistics correctness (no timed performance gate)
+        run: python scripts/benchmark.py --self-check
       - name: Linux Native product CLI and pinned rdiff file exchange
         run: python scripts/file_exchange.py
       - name: Preserve Linux file exchange evidence

@@ -1,6 +1,6 @@
-# 当前兼容范围（Commit 14）
+# 当前兼容范围（Commit 15 功能冻结）
 
-三项公开字节API已实现，核心Native/JS/Wasm-GC检查与Linux Native固定rdiff互操作分别执行；当前入口与边界见[README](../README.md)、[资源契约](resources.md)、[CLI](cli.md)、[九项验收表](contest-acceptance.md)。固定工具链不表示全部更高版本兼容；Mooncakes未发布，最终包审计及注册表消费未完成。
+三项公开字节API已实现，核心Native/JS/Wasm-GC检查与Linux Native固定rdiff互操作分别执行；当前入口与边界见[README](../README.md)、[资源契约](resources.md)、[CLI](cli.md)、[九项验收表](contest-acceptance.md)。固定工具链不表示全部更高版本兼容；Commit15已完成有限基准与功能冻结，Mooncakes未发布，最终包审计及注册表消费未完成。
 
 以下各Commit章节保留对应阶段事实，“当前/未完成”仅指该阶段，不作为当前能力限制；原README早期阶段全文另存[历史快照](history.md)。
 
@@ -144,3 +144,24 @@ CLI默认读上限OLD/NEW64MiB、SIG16MiB、DELTA80MiB，已知大小先拒绝�
 CI使用check_fixtures.py包装真实verify_fixtures.py；参考及opcode副本损坏均要求预期诊断和非零，未刷新manifest。预期字节损坏运行真实check_example.py，实际恢复断言输出BASIC_RESTORE_MISMATCH后非零，check_returncode继续失败；外层check.py及CI无容错步骤继续失败。仅临时副本被改动；恢复原始字节后同一正常入口须通过，损坏和复验日志独立。Wasm-GC abort本身只显示unreachable，因此示例在失败分支先明确打印断言诊断，再中止。
 
 文件交换使用正式Native CLI，不用probes/signature替代，固定rdiff身份与原始文件均核对；新目录中实际执行两条链，独立new逐字节比较，保留命令及交换文件。Linux/ext4正向运行，DrvFS边界不变；演示不新增完整矩阵，正常互操作计划与原消费次数完整保留。产物路径与分项计数见验收表。
+
+## Commit 15：首版功能冻结
+
+冻结基于Commit14执行代码925d47979549da4e8e3c32b742806513478346e6。本笔只新增有限基准配置/驱动、工具正确性CI步骤及文档，未改变运行库、CLI执行代码、公开接口、默认预算、依赖锁或正式夹具。被测20个运行库/CLI/构建配置/锁文件的逐文件SHA-256在 `tests/benchmarks/runtime-baseline.json`；测量时HEAD/dirty如实保留，提交后交付记录提供最终冻结SHA、干净同SHA必需CI和运行库哈希关联，不为自身SHA增加循环提交。
+
+| 冻结项 | 首版固定范围 | 权威文件／证据 |
+| --- | --- | --- |
+| 主API | signature(Bytes,SignatureOptions,Limits)、delta(Bytes,Bytes,Limits)、patch(Bytes,Bytes,Limits)，均返回Bytes并raise SyncError | pkg.generated.mbti、api.mbt、examples/basic |
+| 公开类型 | SignatureOptions的block_len/strong_sum_len，Limits九个Int64字段及default/validate；SyncError十个既有变体（InvalidOptions带String，其余无载荷） | pkg.generated.mbti、docs/design.md |
+| 默认参数 | 签名2048/32；支持强摘要1–32；默认Limits原值不变 | api.mbt、limits.mbt、docs/resources.md |
+| 签名 | 标准0x72730147 RK+BLAKE2；BLAKE2b(len=32)前缀，不补齐尾块；无私有身份/尾长字段 | docs/signature-format.md、SOURCES.md |
+| delta/patch | 标准0x72730236、literal/COPY/END、1/2/4/8字节参数；END完整且无尾随；COPY只读原basis，解析/区间预检后分配恢复 | delta.mbt、patch.mbt、docs/design.md |
+| 匹配 | 仅凭签名和new；稳定弱校验/块序号顺序、首个强匹配；EOF真实窗口逐字节收缩；不保证最优delta | index.mbt、delta.mbt及资源契约 |
+| 错误与资源 | 现有分类和检查顺序；单次delta共享工作预算，容量费用；超限失败，无不收费literal退路；全量缓冲及中间/转换副本边界 | docs/resources.md、99项核心测试 |
+| CLI | 三命令，signature独有block-size/sum-size，--语义；用法2、文件/核心1、成功0；有界读、现存输出拒绝、独占临时、sync、无覆盖提交、显式清理错误 | docs/cli.md、两平台集成与6项Native辅助测试 |
+| 目标/文件系统 | 核心Native/JS/Wasm-GC；CLI Windows/NTFS、Linux/ext4；DrvFS不支持提交时明确失败；不承诺断电持久化/任意文件系统/恶意路径替换防护 | 同SHA三任务与CLI报告 |
+| 首版之外 | 其他profile、网络/SSH协议、目录同步、权限/时间戳同步、流式调度、压缩加密、浏览器服务、更多CLI选项 | 本冻结表与原规划边界 |
+
+[基准](benchmarks.md)为本次WSL2/ext4、两个规模/五场景的进程文件流程实测，不是算法内核或全平台性能保证。运行代码未因性能数字优化，文件提交保证未放宽。源码早期“provisional”等注释保留其阶段来源；本次冻结以这里列出的实际公开声明和行为契约为准，不据此暗示过去已经冻结。
+
+Commit16仍须：核对精确版本和发布身份/权限；审计实际源码包及许可证分发内容；在干净目录重建；关联发布源SHA与必需CI；实际发布Mooncakes；通过无本地替换的独立注册表消费者；归档发布后证据。功能冻结不是已审计包候选，也不是版本已发布；这七项本笔没有执行。
