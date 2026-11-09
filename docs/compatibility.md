@@ -1,5 +1,11 @@
 # 0.1.0 兼容范围与发布归属
 
+## Commit 19 开发源码准备对象（尚未发布）
+
+新增 prepare_signature 与不透明 PreparedSignature；完整解析及受限稳定索引复用既有实现，内部保留真实签名字节数、签名元数据/记录及最终排序，外部不暴露字段或构造器。无basis、MatchWork或扫描状态；默认值、原六项操作、检查CLI、错误顺序及一次性delta预算不变。公开黑盒持有与三目标内部只读查询验证生命周期及封装，不宣称线程安全。
+
+本笔尚无 PreparedSignature::delta，复用生成和有限基准留待Commit20；不加入新CLI、清单或流式处理。注册表0.1.0不含此API，元数据版本与原包归档不变，不修改历史基准或发布证明。下文各Commit段的未实现项仍指当时范围。
+
 ## Commit 18 开发源码检查 CLI（尚未发布）
 
 新增 inspect-signature、inspect-delta、check-patch 三个只读命令，及检查专用 --json。核心 API 与 Commit 17 一致，原三个文件命令、默认值、输出保护、退出0/2/1与输入链接策略保留。检查不创建输出文件；check-patch 只取 OLD 元数据，有界读取 DELTA，不认证内容或提供快照。schema 1 的 Int64 全为精确十进制字符串；失败仍 stderr 诊断、stdout 为空，stdout 通道失败非零。详细字段与路径选项语义见[CLI说明](cli.md#commit-18开发源码检查命令)。

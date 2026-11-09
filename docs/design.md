@@ -1,5 +1,17 @@
 # 字节库使用与设计
 
+## Commit 19：不透明签名准备
+
+开发源码新增 `prepare_signature(signature_bytes: Bytes, limits: Limits) -> PreparedSignature raise SyncError`；这是准备操作，不是增量生成或签名真实性认证。外部包能接收、持有和传递对象，但不能构造对象、访问记录/排序/摘要数组，也没有 setter。生成的接口为 `pub struct PreparedSignature { // private fields }`，仅新增该类型与一个函数；原六项操作与检查CLI不变。
+
+准备顺序固定：验证全部 Limits → 完整 parse_signature → 创建本次 MatchWork → 现有 build_signature_index → 返回完整对象。签名字节、profile、字段、对齐、表示范围、块长、记录数及名义偏移检查沿用原优先级。实际适用 max_signature_bytes、max_signature_records、max_block_bytes、max_match_work；其他合法但不适用限制为零不会误限准备。空签名允许零工作预算；非空索引先预收3n，再逐比较/写入计量。解析记录可能在索引预算不足前已分配，不是“零预算零分配”。
+
+对象只保留真实输入字节数和 SignatureIndex。后者拥有完整 Signature（magic、块长、摘要长、全部记录及各自拥有的摘要Bytes）与最终序号数组；不保留原始签名缓冲、排序临时数组、第二份强摘要索引、basis、文件句柄、MatchWork、扫描窗口或全局缓存。字段不可由外部访问，现有内部查询仅只读访问；GC所有权保持跨函数生命周期，不用悬空视图或裸指针。多个对象各自保留这些存储，并非免费共享缓存；只读封装不构成线程安全承诺。
+
+原始输入字节数与索引中块长/记录数等信息足以在 Commit 20 重新检查每次调用的适用 Limits，防止宽松准备绕过严格调用。届时每次扫描需新建独立状态和工作预算，不重复收费未执行的索引建设；**本笔尚未提供 PreparedSignature::delta**，没有复用生成结果或加速结论。原一次性 delta 仍走原共享索引/扫描/指令工作预算路径，未改成调用 prepare。
+
+prepared_test.mbt 的5项公开测试与 prepared_wbtest.mbt 的7项白盒测试，覆盖封装后的持有、完整错误顺序、独立推导的预算边界、稳定序号、6442450941 的名义偏移、跨作用域查询、多对象及失败后独立性、16个上游夹具完整块与短尾。没有将查询白盒帮助函数开放成公共接口。该能力只在开发源码，注册表0.1.0不含它，不改发布版本元数据或旧基准。下文 Commit 18/17 的未完成项保留各阶段历史归属。
+
 ## Commit 18：检查 CLI
 
 当前开发源码将下列三项检查 API 接到正式 Native CLI，命令为 inspect-signature、inspect-delta、check-patch，支持人类文本及 schema_version=1 JSON；详见[CLI 契约](cli.md#commit-18开发源码检查命令)。核心公开接口与 Commit 17 完全一致。检查计划不携带输出路径，不走写文件准备/提交；check-patch 持有 OLD 只读句柄、仅查询种类/大小，读取 DELTA 后调用公开预检并复核 OLD 大小。所有检查成功后才格式化/写出，stdout 写失败传播为非零。Int64 直接格式化为十进制字符串，不经过浮点。

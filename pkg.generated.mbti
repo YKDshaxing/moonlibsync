@@ -12,6 +12,8 @@ pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
+pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
+
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
 
 // Errors
@@ -56,6 +58,10 @@ pub fn Limits::validate(Self) -> Unit raise SyncError
 pub(all) struct PatchCheck {
   basis_bytes : Int64
   summary : DeltaSummary
+}
+
+pub struct PreparedSignature {
+  // private fields
 }
 
 pub(all) struct SignatureOptions {

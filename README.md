@@ -6,6 +6,8 @@ MoonLibSync 0.1.0 是 MoonBit 纯字节远端签名差分库，提供 `signature
 
 ## 获取源码与本地导入
 
+Commit 19 开发源码还增加 `prepare_signature(signature_bytes, limits) -> PreparedSignature raise SyncError`。它只解析签名并建立受限稳定索引，不接收 basis；返回不透明、拥有独立生命周期的只读对象，不公开内部记录或数组。**尚无 `PreparedSignature::delta`**，复用生成与有限性能对照留待 Commit 20，不能据此宣称已验证加速或线程安全。准备的预算与保留存储见[设计说明](docs/design.md#commit-19不透明签名准备)。注册表0.1.0不含此 API，元数据版本未改。
+
 当前开发源码在已发布三项 API 之外新增 `inspect_signature`、`inspect_delta`、`check_patch`（Commit 17），并提供对应检查 CLI 和 JSON 输出（Commit 18），属于拟定 0.2.0 阶段，尚未发布。注册表 **0.1.0 仍只有 `signature`、`delta`、`patch` 三项 API 及原三个文件命令**；仓库版本元数据暂仍为 0.1.0，不能用它证明新能力已在注册表可用。新入口接收 `Limits`，返回只含精确整数的不可变摘要；格式检查不恢复输出，长度预检不认证 basis 内容。字段、错误顺序和内存边界见[开发接口说明](docs/design.md#commit-17开发源码只读检查)。
 
 ```text
@@ -108,7 +110,7 @@ python scripts/verify_fixtures.py
 python scripts/failure_gates.py
 ```
 
-`check.py` 执行格式、生成前后接口保护、锁定依赖、Native/JS/Wasm-GC check/build/根包115项测试（原80项、19项资源测试、新增16项检查测试）与各目标实际示例，不重复核心矩阵来生成统计。示例、接口与资源证据分别在 `_build/examples/`、`_build/interfaces/`、`_build/resources/`。CLI 独立执行 `./scripts/cli-smoke.ps1` 或 `bash scripts/cli-smoke.sh`；12项 Native 辅助测试（原6项与新增6项）不混入115项根包测试，新增集成场景亦在 CLI 报告中单列。
+`check.py` 执行格式、生成前后接口保护、锁定依赖、Native/JS/Wasm-GC check/build/根包127项测试（原80项、19项资源测试、16项检查测试、12项准备测试）与各目标实际示例，不重复核心矩阵来生成统计。示例、接口与资源证据分别在 `_build/examples/`、`_build/interfaces/`、`_build/resources/`。CLI 独立执行 `./scripts/cli-smoke.ps1` 或 `bash scripts/cli-smoke.sh`；12项 Native 辅助测试（原6项与检查新增6项）不混入127项根包测试，CLI集成场景亦在报告中单列。
 
 Linux 参考任务先安装 `build-essential cmake libpopt-dev`，在支持无覆盖提交的文件系统运行：
 

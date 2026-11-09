@@ -1,4 +1,4 @@
-"""Real Native CLI tests. Separate from library115 and Python interop-tool6."""
+"""Real Native CLI tests. Separate from library127 and Python interop-tool6."""
 import ctypes
 import hashlib
 import json
@@ -19,7 +19,7 @@ OUTPUT = ROOT / os.environ.get('MOONLIBSYNC_BUILD_DIR', '_build') / 'cli'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 report = dict(format=1, status='running', platform=platform.platform(), cases=[],
               native_helper_tests=dict(expected=12, baseline=6, inspection_added=6, passed=0, status='not_executed'),
-              baseline_core_library_tests=115, baseline_python_interop_tool_tests=6,
+              baseline_core_library_tests=127, baseline_python_interop_tool_tests=6,
               cleanup='not_completed', unsupported=[])
 log = (OUTPUT/'commands.log').open('w', encoding='utf-8')
 root = None
