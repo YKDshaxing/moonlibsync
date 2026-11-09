@@ -1,8 +1,8 @@
 # MoonLibSync
 
-MoonBit 纯字节远端签名差分库，提供 `signature(old, options, limits)`、`delta(signature, new, limits)`、`patch(old, delta, limits)`。发送端只持有标准签名与新字节即可生成增量。附 Windows／Linux Native 单文件 CLI；全量字节缓冲，不含网络或目录同步。
+MoonLibSync 0.1.0 是 MoonBit 纯字节远端签名差分库，提供 `signature(old, options, limits)`、`delta(signature, new, limits)`、`patch(old, delta, limits)`。发送端只持有标准签名与新字节即可生成增量。附 Windows／Linux Native 单文件 CLI；全量字节缓冲，不含网络或目录同步。
 
-模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。元数据 `0.1.0` 是开发目标，**Mooncakes 尚未发布**，没有注册表安装消费证明。Commit 15 已冻结首版功能、接口与行为范围，正式分发包审计仍待 Commit 16。
+模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。0.1.0 的功能、接口与行为范围已冻结；实际上传、注册表消费及其源码归属按[发布验收说明](docs/release.md)和独立交付记录核对，能力说明本身不代表上传或消费已成功。
 
 ## 获取源码与本地导入
 
@@ -11,7 +11,15 @@ git clone https://github.com/YKDshaxing/moonlibsync.git
 cd moonlibsync
 ```
 
-当前从源码运行；仓库内消费者的 `moon.pkg` 导入 `"YKDshaxing/moonlibsync" @lib`。完整可运行代码、三项API输入/返回/错误及完整性责任见[使用与设计](docs/design.md)与[纯字节示例](examples/basic/main.mbt)。没有提供假定0.1.0已经发布的精确版本安装结果。
+仓库内消费者的 `moon.pkg` 导入 `"YKDshaxing/moonlibsync" @lib`。完整可运行代码、三项API输入/返回/错误及完整性责任见[使用与设计](docs/design.md)与[纯字节示例](examples/basic/main.mbt)。注册表依赖声明与真实解析/运行结果分别核验，见下节。
+
+## 模块包与仓库开发的区别
+
+0.1.0 模块包交付字节库、`cmd/moonlibsync` Native CLI源码、`examples/basic`、完整许可证/来源说明及配套开发测试/夹具。没有预编译CLI二进制。对已取得的模块源码，可在模块根选择固定工具链、安装依赖后运行 `moon run examples/basic --target native`（也可js/wasm-gc），或构建前述CLI。对注册表下载源码的构建，应称为“注册表包源码构建”。
+
+使用公开注册表版本的消费者，其 `moon.mod` 声明 `import { "YKDshaxing/moonlibsync@0.1.0", }`，包配置导入 `"YKDshaxing/moonlibsync" @lib`；本地候选消费者另用明确的workspace替换。版本声明不是下载成功证明，必须核对实际解析路径、版本与结果，不能将候选本地替换计作注册表消费。
+
+下面安装器、Git接口保护、互操作、基准及发布工具命令属于**完整Git检出开发流程**，需要Git元数据及相应参考工具。脚本和完整测试资料随包保留以便审查，不能据此在没有.git的注册表依赖目录中直接执行仓库CI入口。基础示例/CLI构建与仓库CI入口分开使用。
 
 ## 固定工具链与源码运行
 
@@ -80,7 +88,7 @@ cli="$PWD/_build/native/debug/build/cmd/moonlibsync/moonlibsync.exe"
 
 Linux ELF 产物也保留 `.exe` 后缀。默认签名参数2048/32，CLI只读两个相应输入；所有输出必须不存在，父目录须已存在。用法错误退出2、文件/核心错误退出1。参数、受限读取、链接策略、无覆盖提交、清理及保证边界见 [CLI 文档](docs/cli.md)。
 
-## 自动检查和参考交换
+## 仓库开发：自动检查和参考交换
 
 ```text
 python scripts/check.py
@@ -104,7 +112,7 @@ python3 scripts/file_exchange.py
 
 `failure_gates.py` 只破坏可运行临时源码副本：原参考夹具、opcode夹具及示例预期字节错误必须使 CI 实际入口非零；恢复正常内容后对应入口必须成功。另删除受检接口验证生成前拒绝。异常、超时或工具缺失不会被当作预期通过；分离日志与报告在 `_build/gates/`。CI沿用一个Linux参考任务和两个平台基础任务，任何必需检查失败阻断任务，`always()` 仅用于保存证据。
 
-## 有限基准与功能冻结
+## 仓库开发：有限基准与功能冻结
 
 Linux Native选择固定工具链、安装参考构建依赖后：
 
@@ -124,6 +132,6 @@ python3 scripts/benchmark.py
 
 CLI已验证 Windows Native/NTFS、Linux Native/ext4。WSL DrvFS `/mnt/d` 不支持所需无覆盖提交时明确失败并清理，不退回覆盖；本机WSL正向CLI运行设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`。未验证所有文件系统、网络盘、恶意路径替换或断电持久化。
 
-[九项阶段验收表](docs/contest-acceptance.md) 区分实现、目标、证据、阶段归属与未完成项。有限基准与首版功能冻结已完成；[基准报告](docs/benchmarks.md)包含10组实际数据量、COPY及三项操作中位数/最小/最大值。最终源码包/许可证分发审计、Mooncakes发布及独立注册表消费仍待Commit 16。历史记录保留在 [Commit 1–13 快照](docs/history.md)，不作为当前能力声明。
+[九项阶段验收表](docs/contest-acceptance.md) 区分实现、目标、证据、阶段归属与未完成项。有限基准与首版功能冻结已完成；[基准报告](docs/benchmarks.md)包含10组实际数据量、COPY及三项操作中位数/最小/最大值。Commit16的实际归档审计、发布源、注册表获取与消费证据按[发布验收说明](docs/release.md)独立归档。历史记录保留在 [Commit 1–13 快照](docs/history.md)，不作为当前能力声明。
 
 采用 LGPL-2.1-or-later；[LGPL文本](COPYING.LESSER)、[GPL文本](COPYING)、[来源](SOURCES.md)、[第三方说明](THIRD_PARTY_NOTICES.md) 以实际文件为准；源码说明存在不代表正式分发包义务审计已经完成。

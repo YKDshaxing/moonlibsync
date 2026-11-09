@@ -83,3 +83,7 @@ scripts/benchmark.py、tests/benchmarks/config.json为本项目原创LGPL-2.1-or
 参考仍为固定librsync2.3.4，Release构建只供对比，不链接进核心，原许可/版权不变。正式CLI和运行库、锁、资源默认值及正式夹具未改。环境、帮助、实际构建命令、可执行文件哈希、原始测量与运行文件指纹见docs/benchmarks.md及忽略产物；基准不是之前阶段已有的证据。
 
 2026-11-09实际读取niuniu513-ask/moon-sync-delta的main/README.md（blob dadc91b71b36bad983d97c34766ce2f7a6a21d2b）用于描述文档中声明的交集，不复制其源码、不宣称执行验证或认可；两个moon_vcdiff候选链接本次404，限制已写入docs/design.md。正式分发包仍须按实际内容进行许可证审计。
+
+## Commit 16 分发检查及消费者
+
+新增发布审计/独立消费者模板为本项目原创LGPL-2.1-or-later代码，复用既有严格delta检查器，仅调用公开API；不复制算法实现或引入第三方运行依赖。正式归档保留完整GPL/LGPL、core Apache许可证/NOTICE、来源/第三方说明及原移植版权；既有自有输入、参考输出和手写opcode数据仍与完整测试/生成来源一起交付。固定rdiff和工具链二进制、依赖缓存、凭据、构建/测量产物不入包。各实际成员的内容/许可归属在release审计索引中逐项记录，第三方许可证不统一改标。

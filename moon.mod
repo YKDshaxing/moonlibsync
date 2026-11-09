@@ -12,7 +12,7 @@ keywords = [ "librsync", "delta", "sync" ]
 
 preferred_target = "wasm-gc"
 
-description = "In-development librsync-compatible byte-buffer library and Native single-file CLI."
+description = "Librsync-compatible byte-buffer library and Native single-file CLI."
 
 import {
   "moonbitstack/mooncrypt@0.4.5",

@@ -1,3 +1,7 @@
+# MoonLibSync 0.1.0 Native CLI
+
+0.1.0 提供下述单文件命令与保证边界。Commit16只将版本输出改为 `MoonLibSync 0.1.0` 并同步相应检查；下方Commit13/15的development/not released字样属于当时历史输出，不能作为本版当前输出。模块包交付CLI源码；从注册表下载包构建时明确称为“注册表包源码构建”，不代表预编译二进制安装。发布/消费证据见[发布验收](release.md)。
+
 # Commit 13：Native 单文件 CLI
 
 基线d7f4f05f3dd3392418eccf089c31748ffe7f21f3。CLI包为cmd/moonlibsync，仅支持Native，通过三项公开字节API计算；核心API、默认Limits、标准格式及JS/Wasm-GC依赖保持不变。probes/signature仍只用于参考互操作，不是产品CLI。

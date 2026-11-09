@@ -1,10 +1,10 @@
 # 字节库使用与设计（Commit 15 功能冻结）
 
-本记录冻结 Commit 14 已实现的执行行为，Commit 15 只增加测量工具和文档，不修改核心执行代码。源码可运行，Mooncakes 未发布，尚无独立注册表消费者证明；首版功能冻结不是 0.1.0 全部交付完成。
+本记录冻结 Commit 14 已实现的执行行为，Commit 15 只增加测量工具和文档，不修改核心执行代码。0.1.0提供本页三项字节API和Native单文件CLI；实际发布/注册表消费证据按[发布验收](release.md)核对，功能冻结本身不是上传证明。
 
 ## 从源码调用
 
-先按根 README 克隆源码、选择固定工具链并执行 `moon update`。当前可运行的消费者就是仓库内 `examples/basic`：其 `moon.pkg` 仅导入 `"YKDshaxing/moonlibsync" @lib`，没有给出假定已经发布的 `moon add ...@0.1.0` 命令。在源码工作区新增消费者包时沿用这个导入；模块名来自根 moon.mod。工具链固定不等于已验证所有更高版本。
+先按根 README 克隆源码、选择固定工具链并执行 `moon update`。随包提供的可运行源码示例为 `examples/basic`，其 `moon.pkg` 仅导入 `"YKDshaxing/moonlibsync" @lib`，注册表消费者声明目标版本后，仍须独立核对下载的实际版本与内容。在源码工作区新增消费者包时沿用这个导入；模块名来自根 moon.mod。工具链固定不等于已验证所有更高版本。
 
 以下完整 `main.mbt` 与仓库内已实际编译运行的 [basic示例](../examples/basic/main.mbt) 一致，使用该包的 `moon.pkg`（仅导入公开根库）。从根目录运行 `moon run examples/basic --target native`，也分别运行js与wasm-gc；没有另提供未经执行的新示例。
 

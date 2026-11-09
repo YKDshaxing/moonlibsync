@@ -1,0 +1,12 @@
+# Single archive policy. Keep the complete development test/fixture closure.
+/.git/
+/.github/
+/.toolchain/
+/.mooncakes/
+/_build/
+/target/
+**/__pycache__/
+*.pyc
+*.tmp
+*.log
+!/.moonignore

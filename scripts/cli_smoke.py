@@ -135,7 +135,7 @@ try:
     foreign = root/'.moonlibsync-foreign.tmp'; foreign.write_bytes(b'FOREIGN')
     module = re.search(r'^version = "([^"]+)"$',(ROOT/'moon.mod').read_text(),re.M)[1]
     case('help',['--help'],text=True,contains='-- ends option parsing')
-    case('version',['--version'],text=True,contains=module+' (development; not released)')
+    case('version',['--version'],text=True,contains='MoonLibSync '+module+'\n')
     # Independent new bytes; each roundtrip calls the actual product executable.
     old = bytes((i*73+19+i//2048*11)%256 for i in range(8197))
     examples = [('default-spaces',old,old[:4096]+b'\x00\x80\xff'+old[4096:],None),

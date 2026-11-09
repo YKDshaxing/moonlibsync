@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+///|
+fn sender(signature_bytes : Bytes, new_bytes : Bytes) -> Bytes raise @lib.SyncError {
+  @lib.delta(signature_bytes, new_bytes, @lib.Limits::default())
+}
+
+///|
+fn hex(bytes : Bytes) -> String {
+  let digits = "0123456789abcdef"
+  let mut output = ""
+  for byte in bytes {
+    let n = byte.to_int()
+    let hi = n >> 4
+    let lo = n & 15
+    output = output + digits[hi:hi + 1].to_owned() + digits[lo:lo + 1].to_owned()
+  }
+  output
+}
+
+///|
+fn main {
+  let limits = @lib.Limits::default()
+  let options = @lib.SignatureOptions::default()
+  guard options.block_len == 2048L && options.strong_sum_len == 32L else {
+    abort("CONSUMER_DEFAULTS")
+  }
+  let old = Bytes::makei(16384, i => (0x10 + i / 2048).to_byte())
+  let changed = old[0:4113].to_owned() + Bytes::makei(64, i => (128 + i).to_byte()) + old[4177:].to_owned()
+  for (name, expected) in [("same", old), ("small", changed)] {
+    let signature_bytes = @lib.signature(old, options, limits) catch { _ => abort("CONSUMER_SIGNATURE") }
+    let encoded = sender(signature_bytes, expected) catch { _ => abort("CONSUMER_DELTA") }
+    let restored = @lib.patch(old, encoded, limits) catch { _ => abort("CONSUMER_PATCH") }
+    guard restored == expected && encoded.length() < expected.length() else {
+      abort("CONSUMER_RESTORE_OR_SIZE")
+    }
+    println("consumer_case=\{name} signature_bytes=\{signature_bytes.length()} delta_hex=\{hex(encoded)}")
+  }
+  let caught = try {
+    let _ = @lib.patch(old, b"", limits)
+    false
+  } catch {
+    @lib.SyncError::TruncatedInput => true
+    _ => false
+  }
+  guard caught else { abort("CONSUMER_PUBLIC_ERROR") }
+  println("consumer_defaults_and_error=passed")
+}
