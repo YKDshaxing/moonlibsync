@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
+// Registry 0.1.0 exposes the three operations below. Development-only read-only
+// inspection and length preflight APIs/types are defined in inspect.mbt.
+
 ///|
 /// Options for the standard RK+BLAKE2 signature profile. Zero never means auto.
 pub(all) struct SignatureOptions {

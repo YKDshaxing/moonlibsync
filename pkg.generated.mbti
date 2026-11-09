@@ -2,7 +2,13 @@
 package "YKDshaxing/moonlibsync"
 
 // Values
+pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
+
 pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
+pub fn inspect_delta(Bytes, Limits) -> DeltaSummary raise SyncError
+
+pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
@@ -23,6 +29,16 @@ pub(all) suberror SyncError {
 }
 
 // Types and methods
+pub(all) struct DeltaSummary {
+  delta_bytes : Int64
+  instruction_count : Int64
+  literal_commands : Int64
+  copy_commands : Int64
+  literal_bytes : Int64
+  copy_bytes : Int64
+  output_bytes : Int64
+}
+
 pub(all) struct Limits {
   max_old_bytes : Int64
   max_new_bytes : Int64
@@ -37,11 +53,24 @@ pub(all) struct Limits {
 pub fn Limits::default() -> Self
 pub fn Limits::validate(Self) -> Unit raise SyncError
 
+pub(all) struct PatchCheck {
+  basis_bytes : Int64
+  summary : DeltaSummary
+}
+
 pub(all) struct SignatureOptions {
   block_len : Int64
   strong_sum_len : Int64
 }
 pub fn SignatureOptions::default() -> Self
+
+pub(all) struct SignatureSummary {
+  magic : UInt32
+  block_len : Int64
+  strong_sum_len : Int64
+  record_count : Int64
+  signature_bytes : Int64
+}
 
 // Type aliases
 

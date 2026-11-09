@@ -1,4 +1,24 @@
-# 字节库使用与设计（Commit 15 功能冻结）
+# 字节库使用与设计
+
+## Commit 17：开发源码只读检查
+
+注册表 0.1.0 的公开操作仍为 `signature`、`delta`、`patch`。下列三项仅在当前开发源码可用，属于拟定 0.2.0 阶段；不修改发布版本元数据，不代表新版本已经发布。
+
+| 入口 | 输入 | 返回（字段均不可变） |
+| --- | --- | --- |
+| `inspect_signature` | `Bytes, Limits` | `SignatureSummary`：`magic: UInt32`；`block_len, strong_sum_len, record_count, signature_bytes: Int64` |
+| `inspect_delta` | `Bytes, Limits` | `DeltaSummary`：`delta_bytes, instruction_count, literal_commands, copy_commands, literal_bytes, copy_bytes, output_bytes: Int64` |
+| `check_patch` | `basis_len: Int64, Bytes, Limits` | `PatchCheck`：`basis_bytes: Int64, summary: DeltaSummary` |
+
+三项均 `raise SyncError`，每次先验证所有 Limits 字段。`inspect_signature` 完整复用签名解析器：签名字节预算、完整头部/profile、参数、记录对齐、数值与记录预算，错误顺序不变。只支持 RK+BLAKE2 `0x72730147`；12 字节头部的记录数为零。签名没有实际 basis 长度、真实尾块长度或文件身份信息；检查不计算摘要。
+
+`inspect_delta` 完整解析后统计：全部 literal 编码、16 种 COPY 宽度、合法非最短编码、输入/指令/输出预算以及严格 END/尾随策略均沿用原解析器。END 不计指令；literal 内的零字节按 payload 消费。指令数为 literal 与 COPY 数之和，输出字节为两者字节之和；空 delta 为5字节、其余统计为零。高位 UInt64 offset 只涉及格式，在没有 basis 的检查中不返回范围错误。
+
+`check_patch` 固定顺序为：Limits 验证 → 负长度 `InvalidOptions("basis_len")` → basis 预算 `LimitExceeded` → 完整 delta 解析 → 共用 `patch_size` 的所有 COPY 范围及输出长度预检 → 摘要。范围在 UInt64 域检查 `offset <= basis_len && length <= basis_len - offset`，不先做加法或窄化。完整解析错误优先于合法前缀中的坏 COPY；零长度/巨大长度遵循原解析错误顺序。通过仅证明长度范围，不能证明恢复内容、旧文件身份或文件系统能提交。
+
+新入口不调用 patch，不创建虚拟 basis，不分配恢复输出。解析仍分配有界记录、摘要副本或指令元数据；这不等于零分配或常量内存。返回值不保留输入视图或指令数组。公开调用及独立字段预期见 `inspect_test.mbt`，随完整根包测试在 Native/JS/Wasm-GC 编译运行；`inspect_wbtest.mbt` 覆盖29个原 opcode 向量、16个参考夹具与共用预检帮助函数。JSON CLI 留待 Commit 18。
+
+## Commit 15 功能冻结历史
 
 本记录冻结 Commit 14 已实现的执行行为，Commit 15 只增加测量工具和文档，不修改核心执行代码。0.1.0提供本页三项字节API和Native单文件CLI；实际发布/注册表消费证据按[发布验收](release.md)核对，功能冻结本身不是上传证明。
 

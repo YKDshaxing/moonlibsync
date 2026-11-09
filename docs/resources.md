@@ -1,5 +1,21 @@
 # 0.1.0 资源契约
 
+## Commit 17 开发源码检查入口
+
+以下新增入口尚未进入注册表 0.1.0；九个 Limits 字段及默认值完全不变，所有入口仍先验证全部配置字段。
+
+| 入口 | 适用限制 | 检查时的存活结构 |
+| --- | --- | --- |
+| inspect_signature | max_signature_bytes、max_block_bytes、max_signature_records | 已存在的输入、精确容量记录数组、每条强摘要副本；不计算哈希 |
+| inspect_delta | max_delta_bytes、max_instructions、max_output_bytes | 已存在的输入、指令数组、借用 literal 视图；不读取 basis |
+| check_patch | max_old_bytes 加上 inspect_delta 的限制 | 同一完整解析数组，复用 patch_size 范围/输出预检，再生成整数摘要 |
+
+`check_patch` 在完整解析前先检查负 basis 长度及 basis 预算；先完成解析才检查 COPY 范围。三入口均不生成恢复缓冲，不需要 basis 内容，不收费匹配工作；不适用的限制字段仍须配置合法。Int64 统计受既有共同集合上限约束，字节累积在 UInt64 域先检查上限再加，COPY offset 在范围证明前不窄化。返回类型只有标量和嵌套标量摘要，不保留输入或解析结构。
+
+“不恢复输出”不表示零分配、常量内存或 RSS 上限：签名记录和摘要副本可与输入共存，delta 指令存储随受限指令数增长；调用者的输入早已分配。检查调用路径直接为 parse_signature / parse_delta、patch_size、summarize_delta，没有调用 patch 或创建虚拟 basis。白盒测试检验共用帮助函数，无大分配或墙钟速度断言。
+
+新增16项真实测试（13项公开黑盒、3项白盒），原80项和19项资源测试保留，各目标总数115。`check.py` 从这两个新增测试文件取得名称与数量，在同次无过滤根包执行中核对总数；资源19项继续单列，CLI/互操作/Python工具不并入库计数。下文99项计数均保留原阶段归属。
+
 本版沿用下列Commit12/15已验证的默认值、逻辑收费与内存边界，Commit16没有提高预算或改变执行路径。发布包的存在与资源保证分别核对；基准包括启动、I/O和同步，不是CPU/堆峰值证明。以下保留资源契约及其历史修复归属。
 
 # Commit 12：资源契约与全量缓冲内存模型

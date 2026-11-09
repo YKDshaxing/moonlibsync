@@ -1,5 +1,13 @@
 # 0.1.0 兼容范围与发布归属
 
+## Commit 17 开发源码增量（尚未发布）
+
+当前 Git 源码新增 `inspect_signature(Bytes, Limits)`、`inspect_delta(Bytes, Limits)`、`check_patch(Int64, Bytes, Limits)` 及三个不可变摘要类型，返回/字段见[设计说明](design.md#commit-17开发源码只读检查)。注册表 0.1.0、其正式源码 SHA 和归档仍保留原三项操作，不能将当前元数据中的 0.1.0 解释为这些新增接口已发布。拟定 0.2.0 仍在开发。
+
+新入口沿用固定工具链、RK+BLAKE2 profile、标准 delta 全部 opcode、严格 END 和原资源/错误策略；原三项公开声明、默认值、候选顺序、工作计量及 CLI 文件行为不变。格式检查接受结构合法的高位 UInt64 COPY offset，范围预检才按显式 basis 长度拒绝越界。签名不能推断真实 basis 长度；预检不认证身份或内容。Native/JS/Wasm-GC 使用原完整矩阵加入新测试，没有新增目标或文件系统保证。
+
+本笔只到核心检查 API；JSON CLI（Commit 18）、PreparedSignature、完整性清单、自动块长和流式处理均未实现，不进行发布、标签或 Release 操作。下文保留原阶段事实和冻结/发布归属。
+
 三项公开字节API已实现，核心Native/JS/Wasm-GC检查与Linux Native固定rdiff互操作分别执行；当前入口与边界见[README](../README.md)、[资源契约](resources.md)、[CLI](cli.md)、[九项验收表](contest-acceptance.md)。固定工具链不表示全部更高版本兼容；Commit15完成有限基准与功能冻结；Commit16的实际包审计、上传和独立注册表消费按[发布验收](release.md)及交付记录区分。
 
 以下各Commit章节保留对应阶段事实，“当前/未完成”仅指该阶段，不作为当前能力限制；原README早期阶段全文另存[历史快照](history.md)。
