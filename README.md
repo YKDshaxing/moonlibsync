@@ -6,7 +6,7 @@ MoonLibSync 0.1.0 是 MoonBit 纯字节远端签名差分库，提供 `signature
 
 ## 获取源码与本地导入
 
-Commit 19 开发源码还增加 `prepare_signature(signature_bytes, limits) -> PreparedSignature raise SyncError`。它只解析签名并建立受限稳定索引，不接收 basis；返回不透明、拥有独立生命周期的只读对象，不公开内部记录或数组。**尚无 `PreparedSignature::delta`**，复用生成与有限性能对照留待 Commit 20，不能据此宣称已验证加速或线程安全。准备的预算与保留存储见[设计说明](docs/design.md#commit-19不透明签名准备)。注册表0.1.0不含此 API，元数据版本未改。
+开发源码提供 `prepare_signature(signature_bytes, limits) -> PreparedSignature raise SyncError`（Commit 19）与 `prepared.delta(new_bytes, limits)`（Commit 20）。准备只解析签名并建立受限稳定索引，不接收 basis；对象不透明，每次生成重检当前限制、使用独立扫描状态与预算。原一次性 delta 的共享预算不变。[完整示例](examples/prepared/main.mbt) 准备一次、生成两个目标并分别恢复，运行 `moon run examples/prepared --target native`（也可 js/wasm-gc）。预算、保留存储和边界见[设计说明](docs/design.md#commit-20复用生成)；[有限进程内基准](docs/benchmarks-prepared.md)包含准备与实测总成本，本机没有稳定总耗时优势，不承诺线程安全。注册表0.1.0不含这些 API，元数据版本未改。
 
 当前开发源码在已发布三项 API 之外新增 `inspect_signature`、`inspect_delta`、`check_patch`（Commit 17），并提供对应检查 CLI 和 JSON 输出（Commit 18），属于拟定 0.2.0 阶段，尚未发布。注册表 **0.1.0 仍只有 `signature`、`delta`、`patch` 三项 API 及原三个文件命令**；仓库版本元数据暂仍为 0.1.0，不能用它证明新能力已在注册表可用。新入口接收 `Limits`，返回只含精确整数的不可变摘要；格式检查不恢复输出，长度预检不认证 basis 内容。字段、错误顺序和内存边界见[开发接口说明](docs/design.md#commit-17开发源码只读检查)。
 
@@ -110,7 +110,7 @@ python scripts/verify_fixtures.py
 python scripts/failure_gates.py
 ```
 
-`check.py` 执行格式、生成前后接口保护、锁定依赖、Native/JS/Wasm-GC check/build/根包127项测试（原80项、19项资源测试、16项检查测试、12项准备测试）与各目标实际示例，不重复核心矩阵来生成统计。示例、接口与资源证据分别在 `_build/examples/`、`_build/interfaces/`、`_build/resources/`。CLI 独立执行 `./scripts/cli-smoke.ps1` 或 `bash scripts/cli-smoke.sh`；12项 Native 辅助测试（原6项与检查新增6项）不混入127项根包测试，CLI集成场景亦在报告中单列。
+`check.py` 执行格式、生成前后接口保护、锁定依赖、Native/JS/Wasm-GC check/build/根包137项测试（原80项、19项资源测试、16项检查、12项准备、10项复用测试）与各目标 basic/prepared 实际示例，不重复核心矩阵来生成统计。另有三目标12次外部编译封装探针，方法可调用、字段读取/构造必须拒绝，单列于 `_build/prepared-encapsulation/`。示例、接口与资源证据分别在 `_build/examples/`、`_build/interfaces/`、`_build/resources/`。CLI 独立执行 `./scripts/cli-smoke.ps1` 或 `bash scripts/cli-smoke.sh`；12项 Native 辅助测试不混入137项根包测试，CLI集成场景亦在报告中单列。
 
 Linux 参考任务先安装 `build-essential cmake libpopt-dev`，在支持无覆盖提交的文件系统运行：
 

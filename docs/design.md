@@ -1,5 +1,17 @@
 # 字节库使用与设计
 
+## Commit 20：复用生成
+
+开发方法 `PreparedSignature::delta(self, new_bytes: Bytes, limits: Limits) -> Bytes raise SyncError` 直接把原索引交给 scan_signature_delta，共用匹配、EOF收缩、稳定候选、literal/COPY合并及最短编码。没有重新解析、编码签名、排序或复制索引/摘要，不读取 basis；对象继续不透明，不缓存新字节或输出。原一次性 delta 未修改，仍在非空路径用同一个预算覆盖索引、扫描、候选和指令建设，空新文件行为不变。
+
+每次调用顺序固定：①Limits.validate（全部字段）；②真实原签名字节数预算；③块长预算；④记录数预算；⑤new字节预算；⑥预计输出字节预算；⑦delta至少5字节；⑧创建本次MatchWork；⑨空目标编码标准空delta，非空进入共享扫描器。格式和表示范围在准备时已受检，不读取已不存在的原始签名。资源不足返回LimitExceeded，非法配置先返回InvalidOptions；合法max_old_bytes不推断不可见basis范围，也不误限复用。
+
+prepare预算与每次生成预算相互独立；每次生成内部所有窗口、EOF、摘要、比较、指令合并及容量增长仍共用一个余额。空目标通过当前限制后可用零扫描预算。失败丢弃本次扫描器与累积器，不退款、不回退全量literal，不改变对象、上次结果或另一个对象。多个存活对象仍各有驻留存储；交错调用验证不等于多线程安全，也不认证旧文件身份。
+
+完整可编译消费者为 [examples/prepared/main.mbt](../examples/prepared/main.mbt)，包仅导入根库：prepare一次，对 `!ABCDEFGHIJKLMN\x00\x80\xff` 与 `ABCDEFG!HIJKLMN\x00\x80\xff` 两个独立目标分别生成、patch及比较，并与一次性字节结果核对，每份COPY至少14字节。`moon run examples/prepared --target native`（或js/wasm-gc）实际执行该源码；已有basic示例保持不变。
+
+新增10项库测试在原127项基础上共137项，包含编辑、全异、重复块、短尾移到中间、严格当前限制和A成功/A失败/B成功/A再成功。单记录强摘要16字节样例：准备成本3，扫描成本30（窗口4+调度1+二分1+组存在1+摘要4+候选1+比较16+追加/容量2），原一次性仍为33。白盒以原索引/记录/顺序引用及余额验证复用，结合方法实际调用路径确认不建索引；不以耗时作为复用证明。三目标外部编译探针保留封装检查。上游和有限计时证据见[复用基准](benchmarks-prepared.md)。注册表0.1.0不含新方法，本笔不进入Commit21。下文Commit19的未实现项属于当时范围。
+
 ## Commit 19：不透明签名准备
 
 开发源码新增 `prepare_signature(signature_bytes: Bytes, limits: Limits) -> PreparedSignature raise SyncError`；这是准备操作，不是增量生成或签名真实性认证。外部包能接收、持有和传递对象，但不能构造对象、访问记录/排序/摘要数组，也没有 setter。生成的接口为 `pub struct PreparedSignature { // private fields }`，仅新增该类型与一个函数；原六项操作与检查CLI不变。

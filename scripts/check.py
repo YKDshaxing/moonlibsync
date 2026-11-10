@@ -31,11 +31,14 @@ inspection_names = [name for path in (ROOT / "inspect_test.mbt", ROOT / "inspect
                     for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 prepared_names = [name for path in (ROOT / "prepared_test.mbt", ROOT / "prepared_wbtest.mbt")
                   for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+prepared_delta_names = [name for path in (ROOT / "prepared_delta_test.mbt", ROOT / "prepared_delta_wbtest.mbt")
+                        for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 resource_report = {
     "format": 1, "status": "not_executed", "baseline_library_tests": 80,
     "resource_tests": len(resource_names), "resource_test_names": resource_names,
     "inspection_tests": len(inspection_names), "inspection_test_names": inspection_names,
     "prepared_tests": len(prepared_names), "prepared_test_names": prepared_names,
+    "prepared_delta_tests": len(prepared_delta_names), "prepared_delta_test_names": prepared_delta_names,
     "boundary_checks": {"signature": 4, "delta": 8, "patch": 4},
     "boundary_policy": "need-1 rejects; need and need+1 succeed; invalid configurations tested separately",
     "source_sha": subprocess.check_output(["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"], text=True).strip(),
@@ -53,7 +56,7 @@ def test_target(target):
     print(result.stdout, end="", flush=True)
     (resource_dir / (target + ".log")).write_text(result.stdout, encoding="utf-8")
     totals = re.search(r"Total tests: (\d+), passed: (\d+), failed: (\d+)\.", result.stdout)
-    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names)
+    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names)
     complete = bool(totals and tuple(map(int, totals.groups())) == (expected, expected, 0) and result.returncode == 0)
     resource_report["targets"][target] = {
         "command": command, "exit_code": result.returncode,
@@ -89,6 +92,8 @@ for target in ("native", "js", "wasm-gc"):
     test_target(target)
     moon("run", "probes/digest", "--target", target)
     run(sys.executable, "scripts/check_example.py", "--target", target)
+    moon("run", "examples/prepared", "--target", target)
+run(sys.executable, "scripts/check_prepared_interface.py")
 run(sys.executable, "scripts/native_probe.py")
 moon("info")
 interface_report = unchanged(ROOT, before)

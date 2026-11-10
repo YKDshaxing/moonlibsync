@@ -63,6 +63,7 @@ pub(all) struct PatchCheck {
 pub struct PreparedSignature {
   // private fields
 }
+pub fn PreparedSignature::delta(Self, Bytes, Limits) -> Bytes raise SyncError
 
 pub(all) struct SignatureOptions {
   block_len : Int64

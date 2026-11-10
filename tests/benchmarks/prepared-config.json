@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "domain": "moonlibsync-prepared-commit20-v1",
+  "sizes": [65536, 1048576],
+  "reuse_counts": [1, 4, 16],
+  "block_len": 2048,
+  "strong_sum_len": 32,
+  "warmups": 2,
+  "rounds": 7,
+  "order": "one-shot first on even round indices; prepared first on odd indices",
+  "versions": "i%4: middle replacement 64 at size/2+17; front insertion 32; middle deletion 64 at size/2+17; identical. Replacement/insertion bytes: 128+((i+j)%128). Old: SHAKE256(domain + ASCII(size) + /old), bytes masked with127."
+}

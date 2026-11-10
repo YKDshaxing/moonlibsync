@@ -34,6 +34,20 @@ jobs:
         run: bash scripts/interop.sh
       - name: Benchmark generator and statistics correctness (no timed performance gate)
         run: python scripts/benchmark.py --self-check
+      - name: Prepared benchmark tool correctness and pinned upstream reuse recovery
+        run: |
+          python scripts/benchmark_prepared.py --self-check
+          python scripts/benchmark_prepared.py --interop-only
+      - name: Preserve separate prepared interoperability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-${{ github.sha }}
+          path: |
+            _build/benchmarks-prepared/interop-check/manifest.json
+            _build/benchmarks-prepared/interop-check/interop-report.json
+            _build/benchmarks-prepared/interop-check/commands.log
+          if-no-files-found: error
       - name: Linux Native product CLI and pinned rdiff file exchange
         run: python scripts/file_exchange.py
       - name: Preserve Linux file exchange evidence
@@ -95,6 +109,7 @@ jobs:
           path: |
             _build/examples/
             _build/interfaces/
+            _build/prepared-encapsulation/
             _build/gates/
           if-no-files-found: error
       - name: PowerShell external-process exit handling
