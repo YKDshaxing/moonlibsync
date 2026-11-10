@@ -197,3 +197,15 @@ rdiff delta moon.sig new.bin upstream.delta
 用户默认debug构建及其真实路径保持前文不变。基准显式运行 `moon --target-dir RUN/build build cmd/moonlibsync --target native --release`，真实ELF路径为 `RUN/build/native/release/build/cmd/moonlibsync/moonlibsync.exe`，Linux仍保留.exe；脚本检查当前--help、实际路径、魔数和哈希，不回退到debug。Linux正向基准把两端可执行文件、输入和新输出均放在ext4临时目录，原始命令和构建身份见[基准](benchmarks.md)。
 
 计时包含本CLI的完整受限读取、计算、文件sync和无覆盖提交，与rdiff的文件保证不同。本笔没有关闭安全路径、改变预算或增加CLI参数来获取更好数字。冻结本页语法、退出码、输入稳定责任、链接及现存输出保护、失败清理和NTFS/ext4/DrvFS边界；最终源码包、安装器、Mooncakes发布及注册表消费未执行。
+
+## Commit 22：清单文件命令（仅开发源码）
+
+```text
+moonlibsync basis-info OLD SIG INFO
+moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST
+moonlibsync patch-verified OLD DELTA MANIFEST OUT
+```
+
+完整两端可运行流程、长度/SHA拒绝字段与读取上限见[清单说明](manifests.md#commit-22受校验应用与文件流程)。三项均仅一个最终输出，成功stdout/stderr为空；退出码沿用0/1/2。拒绝--json、重复/多余/未知参数；`--`和普通文件名`-`保持现有含义。错误诊断含操作及输入/输出路径。make-manifest不需要或查找OLD；patch-verified没有SIG输入，不声称实际验证SIG文件。必须可信地获取MANIFEST；不提供发布者认证。
+
+所有读取沿用bounded_read。验证前可只读检查输出路径，结果长度/摘要未通过绝不创建临时或最终文件。通过后复用原同步和无覆盖发布器，既有输入/输出别名、目录、符号链接、竞争、仅清理自有临时文件和NTFS/ext4/DrvFS边界均不变。新增3项Native辅助测试覆盖同步失败清理和后续成功、验证失败不调用发布器、参数路径解析；总15项（前述12项保留）。CLI新增文件流程独立统计为manifest_cases_passed，原original/inspection计数不混入新功能。

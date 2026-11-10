@@ -41,6 +41,16 @@ fn apply_patch_bytes(
   }
   let commands = parse_delta(delta_bytes, limits)
   let size = patch_size(basis.length().to_uint64(), commands, limits)
+  execute_patch_commands(basis, commands, size)
+}
+
+///|
+/// Inputs and exact size have already passed complete parsing and preflight.
+fn execute_patch_commands(
+  basis : Bytes,
+  commands : ArrayView[DeltaCommand],
+  size : Int32,
+) -> Bytes {
   let out = FixedArray::make(size, b'\x00')
   let mut cursor = 0
   for command in commands {

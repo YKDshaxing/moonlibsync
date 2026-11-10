@@ -4,7 +4,7 @@
 
 新增FileDigest、BasisInfo、UpdateManifest、独立ManifestError及六项create/parse/encode入口，详情见[清单契约与实际JSON](manifests.md)。底层SHA-256显式调用固定mooncrypt0.4.5的Sha256；接收端重建并比较OLD/SIG关联，发送端只持有info/SIG/NEW/DELTA，验证SIG长度/摘要及DELTA完整格式、声明basis范围、预计输出长度，不获取OLD。
 
-严格UTF-8、无BOM、完整JSON、重复键拒绝、两层容器与64KiB/16字段边界由固定core与受限适配完成；公开数据在编码/消费时重验。标准SIG/DELTA原字节、END、原SyncError、Limits及PreparedSignature的封装/独立预算不改，三个检查CLI的JSON schema也不改。没有verified patch或清单CLI；同长度但内容错误的合法delta仍可能制作清单，实际恢复后验证留待Commit22。SHA完整性不提供发布者认证，需要可信清单来源。20项新测试进入原三目标矩阵，性能结果保留Commit20原测量与源码归属，不重测换SHA。新增API仅为开发源码，尚未发布。
+严格UTF-8、无BOM、完整JSON、重复键拒绝、两层容器与64KiB/16字段边界由固定core与受限适配完成；公开数据在编码/消费时重验。标准SIG/DELTA原字节、END、原SyncError、Limits及PreparedSignature的封装/独立预算不改，三个检查CLI的JSON schema也不改。在Commit21阶段尚无受校验入口；同长度但内容错误的合法delta仍可能制作清单。Commit22现已补充实际恢复校验，见下节。SHA完整性不提供发布者认证，需要可信清单来源。20项新测试进入原三目标矩阵，性能结果保留Commit20原测量与源码归属，不重测换SHA。新增API仅为开发源码，尚未发布。
 
 ## Commit 20：复用生成
 
@@ -157,3 +157,7 @@ COPY始终从原始 basis 读取，不从正在增长的恢复输出读取。pat
 本项目差异是直接读写指定librsync签名/delta格式，并以固定librsync2.3.4真实rdiff做双向交换；不为标准字节添加私有身份封装。不能据此声称远端签名差分在MoonBit中为空白或性能普遍更优。规划中的 `yangxixi00/moon_vcdiff` 以及上述README链接的 `yangxixi00/moon-vcdiff` 本次读取均返回404，无法独立确认其当前仓库能力；不把旧调研当作本次验证。项目间格式、能力和许可应以各自实际来源为准。
 
 有限成本与数据量实测见 [基准](benchmarks.md)；本笔冻结范围及 Commit 16 交付条件见 [兼容性记录](compatibility.md#commit-15首版功能冻结)。
+
+## Commit 22：受校验恢复
+
+新增verified_patch及三条清单文件命令，完整调用、拒绝顺序和两端流程见[清单说明](manifests.md#commit-22受校验应用与文件流程)。一次parse_delta得到的命令数组同时用于patch_size与execute_patch_commands；普通patch也复用该复制器。每条COPY仅引用basis，未增加第二份指令解释器。预计长度先核对再分配；最终摘要失败只丢弃内部恢复Bytes，调用者和CLI均拿不到可提交输出。公开数据可自行构造，故每次消费重新验证所有描述符；没有SIG文件时仅验证signature元数据。完整性相对于可信清单成立，不含认证协议。9项新增库测试进入既有三目标矩阵，新增示例也按三目标运行；新能力仍未发布。

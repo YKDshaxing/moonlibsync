@@ -157,3 +157,9 @@ scripts/check.py现显式选择根库包完整99项，避免把Native CLI专属6
 ## Commit 15 冻结与测量口径
 
 本次冻结上述九字段原默认值、适用阶段、错误与共享收费，不提高预算或改用新资源模型。实际基准仅观测同一Linux Native文件流程耗时及字节/COPY/指令数量，原始轮次与方法见[基准](benchmarks.md)。没有测量运行时堆峰值、RSS峰值或CPU周期，不能用这些时间或文件大小替代本页的全量缓冲/中间结构推导。失败或未校验样本禁止进入成功统计；没有通过超限后丢弃样本改善数字。首版冻结不改变资源失败后的独立调用复用契约。
+
+## Commit 22：受校验补丁
+
+verified_patch先检查全部配置与声明预算、实际basis/delta预算、长度和两次输入SHA，再解析一次delta并预检指令数、COPY和累计输出；result长度在唯一共享复制器分配恢复缓冲之前核对。实际长度和输出SHA核验后返回。signature描述符使用max_signature_bytes但无实际SIG；result使用max_output_bytes，不以max_new_bytes误限接收端。SHA费用不消耗max_match_work，合法0仍允许恢复，所有无关配置仍须合法。
+
+输入Bytes、命令数组和literal视图、恢复FixedArray、Bytes转换副本与SHA依赖内部存储可同时存活；最后核验失败时这些内部存储已可能分配，只是不返回/提交。CLI还持有受限文件读取缓冲与转换副本、64KiB清单及JSON树。这里没有峰值RSS测量、流式或常量内存保证。新增文件命令保留同句柄大小/EOF检查、同步与无覆盖提交，不降低保证来绕过DrvFS。

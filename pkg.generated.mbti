@@ -28,6 +28,8 @@ pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
 
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
 
+pub fn verified_patch(Bytes, Bytes, UpdateManifest, Limits) -> Bytes raise ManifestError
+
 // Errors
 pub(all) suberror ManifestError {
   Core(SyncError)

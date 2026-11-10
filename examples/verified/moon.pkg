@@ -1,0 +1,5 @@
+import {
+  "YKDshaxing/moonlibsync" @lib,
+}
+
+pkgtype(kind: "executable")

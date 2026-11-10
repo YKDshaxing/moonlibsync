@@ -131,6 +131,7 @@ async fn publish_at(
   output : String,
   data : Bytes,
   writer~ : async (@fs.File, Bytes) -> Unit = write_content,
+  syncer~ : async (@fs.File) -> Unit = sync_content,
   before_commit~ : async () -> Unit = no_hook,
   cleanup~ : async (String) -> Unit = remove_owned,
 ) -> Unit {
@@ -144,7 +145,7 @@ async fn publish_at(
   let mut opened = true
   try {
     writer(file, data)
-    file.sync(only_data=false)
+    syncer(file)
     file.close()
     opened = false
     before_commit()
@@ -182,4 +183,9 @@ async fn publish_output(output : String, data : Bytes) -> Unit {
     .join(@path.Path(".moonlibsync-" + random + ".tmp"))
     .to_string()
   publish_at(temporary, output, data)
+}
+
+///|
+async fn sync_content(file : @fs.File) -> Unit {
+  file.sync(only_data=false)
 }

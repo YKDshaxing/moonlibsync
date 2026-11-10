@@ -209,3 +209,7 @@ Commit16仍须：核对精确版本和发布身份/权限；审计实际源码�
 0.1.0已实际发布并通过无本地替换的公开注册表Native/JS/Wasm-GC消费。功能冻结SHA为857aa981debc3ce0c1e54176621e84454733202e，正式发布源码SHA为f62958eceda9deecc4eae8a14007f5be76c59b0e；本段所在后续文档提交不改变发布包。实际成员、校验、服务端发布时间、固定客户端frozen校验限制及经用户允许的标准publish命令、独立目录/缓存/解析闭包和环境边界见[发布实证](release.md#010-实际发布与消费结果2026-11-09)。
 
 注册表三目标和下载源码CLI实测为Windows/NTFS；Linux/ext4有发布源同SHA候选包CI，包内容与公开下载一致。没有用单个目标代替三目标，也没有将源码构建说成预编译安装。前述Commit阶段未发布/未消费的状态仍属于当时历史，不能倒填为早期已交付。
+
+## Commit 22 开发范围
+
+在Commit21清单契约上新增verified_patch及basis-info/make-manifest/patch-verified，schema1、旧SyncError、ManifestError枚举、默认Limits和标准格式均保持。原patch不认证内容；新入口只对可信清单验证basis/delta/result长度和完整SHA-256。signature仅描述符受检，无实际SIG核验。支持现有Native/JS/Wasm-GC字节核心，文件命令仅Native，仍限已验证Windows NTFS / Linux ext4，DrvFS写入失败不能改称支持。新增能力未发布，不改变0.1.0历史归档；Commit23整合验收、后续发布不在本笔范围内。

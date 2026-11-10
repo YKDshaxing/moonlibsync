@@ -1,6 +1,6 @@
 # Commit 21：独立完整性清单（开发源码）
 
-本笔提供SHA-256适配、basis-info与update-manifest的制作/解析/编码。清单在标准.sig/.delta之外，不改变magic、头部、END或已有检查CLI的JSON schema。注册表0.1.0不含这些API；元数据版本不改。**尚无受校验patch、清单CLI或文件提交**，这些留给Commit22。
+本笔提供SHA-256适配、basis-info与update-manifest的制作/解析/编码。清单在标准.sig/.delta之外，不改变magic、头部、END或已有检查CLI的JSON schema。注册表0.1.0不含这些API；元数据版本不改。Commit 21 的数据层记录保留如下；Commit 22 现已补充受校验应用和文件流程，见末节。
 
 ## API与数据
 
@@ -52,7 +52,7 @@
 
 发送端create_update_manifest的参数只有basis-info、SIG、NEW、DELTA、Limits，**没有OLD参数或文件系统查找**。顺序为：配置 → 重验公开basis-info → 实际SIG/NEW/DELTA大小（NEW同时受new/output预算约束）→ SIG长度与声明相等 → SIG完整格式 → SIG实际SHA-256与basis-info比较 → 用声明basis长度调用check_patch完整格式/范围预检 → delta预计输出长度等于NEW长度 → 保存DELTA/NEW实际长度及SHA-256，携带basis信息。
 
-发送端并没有OLD，因此不能证明DELTA内容恢复成NEW。本笔测试刻意接受“合法literal xyz、NEW abc”的同长度清单，以明确这个边界；Commit22必须实际应用后对照结果摘要再返回/提交。伪造但格式合法的basis信息也不是认证凭证，SHA-256本身不提供发布者认证，清单必须来自可信来源；没有数字签名、密钥管理或认证协议。
+发送端并没有OLD，因此不能证明DELTA内容恢复成NEW。本笔测试刻意接受“合法literal xyz、NEW abc”的同长度清单，以明确这个边界；Commit22的verified_patch实际应用后对照结果摘要再返回/提交。伪造但格式合法的basis信息也不是认证凭证，SHA-256本身不提供发布者认证，清单必须来自可信来源；没有数字签名、密钥管理或认证协议。
 
 ## 错误、工作及内存
 
@@ -66,4 +66,31 @@ SHA-256来自固定mooncrypt0.4.5/hash/sha2，显式Kind::Sha256，输出必须�
 
 新增20项库测试（公开15、白盒5），保留原137项，各目标157项。SHA独立向量9组：空、abc、00/7f/80/ff，55/56/63/64/65/1024字节的(73*i+19)%256序列，完整输入hex和SHA-256预期在tests/integrity/vectors.json；`python scripts/verify_integrity_vectors.py`用hashlib/json独立复核，并由现有check.py调用。3组完整清单覆盖空/default、abc/default、one/非默认7/1参数；其编码逐字节对照独立预期。原正式16夹具、opcode、依赖锁及发布归档不刷新，性能基准不重跑。
 
-当前只完成清单数据、绑定及严格解析；新增接口尚未发布。Commit22受校验应用、结果摘要闭环和文件提交均未实现。
+以上为Commit21的157项测试归属；Commit22新增验证见下节。新增接口尚未发布。
+
+## Commit 22：受校验应用与文件流程
+
+`verified_patch(basis: Bytes, delta_bytes: Bytes, manifest: UpdateManifest, limits: Limits) -> Bytes raise ManifestError` 不接收 NEW、SIG 或路径。先验证全部 Limits、四个公开描述符及其预算、实际 basis/delta 字节上限，再核对实际长度（basis_length/delta_length）、完整 SHA-256（basis_sha256/delta_sha256），之后仅解析一次 delta，复用原 COPY 范围/累计输出预检和共享执行器。预计结果长度必须等于 result.byte_length（result_length），此检查位于恢复缓冲分配之前；执行后再次核对实际长度和完整 result_sha256，成功才返回 Bytes。所有错误不返回局部输出，不改变输入，没有跨调用工作状态。核心格式/范围错误封装为 ManifestError::Core，原 patch 的错误顺序不变。
+
+signature 描述符仍接受格式、最小12字节和预算检查，但本入口没有实际 SIG，不能验证 signature.sha256 对应某文件。清单须来自可信来源；攻击者若可同时替换清单和内容，SHA-256不提供发布者认证。标准 delta 的 COPY 始终从原 basis 读取。工厂仍可接受合法 literal xyz / NEW abc 的同长度声明；受校验应用会以 result_sha256 拒绝。
+
+字节调用见完整 [examples/verified/main.mbt](../examples/verified/main.mbt)，`moon run examples/verified --target native`（亦可 js / wasm-gc）。固定工具链 `check.py` 实际运行这三个目标的示例。CLI在固定工具链下用 `moon build cmd/moonlibsync --target native --release` 构建；默认路径 `_build/native/release/build/cmd/moonlibsync/moonlibsync.exe`，Linux ELF 同样保留 .exe 后缀。
+
+下面是接收端与发送端分离的命令序列。每项输出必须尚不存在；OLD只在接收端，发送端目录只有复制来的SIG、INFO以及NEW。`moonlibsync.exe` 代表上面的实际构建路径；Linux当前目录执行时加 `./` 或使用绝对路径。
+
+```text
+# 接收端：准备旧文件关联
+moonlibsync.exe signature OLD SIG
+moonlibsync.exe basis-info OLD SIG INFO
+# 将 SIG / INFO 送到发送端；此处不能获取 OLD
+moonlibsync.exe delta SIG NEW DELTA
+moonlibsync.exe make-manifest INFO SIG NEW DELTA MANIFEST
+# 通过可信通道向接收端交付 MANIFEST，并传输 DELTA
+moonlibsync.exe patch-verified OLD DELTA MANIFEST OUT
+```
+
+INFO与MANIFEST均以65536字节上限读取并复用严格解析器；OLD/SIG/NEW/DELTA分别使用现有 max_old/signature/new/delta_bytes。三条新增命令成功静默、退出0；用法错误2，文件/清单/核心错误1，stderr包含操作、输入路径、输出路径及错误分类。没有 --json、--force 或新参数，`--`之后按路径处理，单个 `-`是普通文件名。
+
+输出预检只读；只有制作/校验完全成功后，才进入已有 CreateNew临时文件→完整写入→文件同步→关闭→无覆盖提交的流程。每个输入与输出同路径（包括INFO/MANIFEST）、现存输出文件/目录/链接均拒绝。保留原NTFS/ext4保证；DrvFS不支持该提交原语时失败，不降级覆盖。失败只清理本次独占创建的临时路径；清理失败报告原错误及清理错误。并发路径替换、输入同大小变化、崩溃/断电和目录持久化边界仍见CLI文档，不承诺快照或事务。
+
+本笔新增9项库测试，原157项保留，各目标166项；覆盖16组上游参考、3组独立清单、18组参数/内容组合和伪造字段/格式/预算/结果拒绝。Native辅助新增3项，原12项保留，总15项，单列同步失败清理及失败后复用、验证失败零发布回调。CLI新增案例由独立hashlib/json核对绑定；真实移走OLD后执行delta和make-manifest，再恢复OLD校验OUT。新增案例与原214/215项分列，不计入库测试。现有部分写入、提交竞争及清理失败测试继续使用同一发布器。原0.1.0归档、默认预算、依赖锁及正式夹具未改，未重新测量性能；Commit23的完整功能矩阵整合仍待后续。

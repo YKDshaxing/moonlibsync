@@ -22,11 +22,14 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.1.0 (registry release); inspection commands are development-only
+  #|MoonLibSync 0.1.0 (registry release); inspection and manifest commands are development-only
   #|Usage:
   #|  moonlibsync signature OLD SIG [--block-size N] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA
   #|  moonlibsync patch OLD DELTA OUT
+  #|  moonlibsync basis-info OLD SIG INFO
+  #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST
+  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT
   #|  moonlibsync inspect-signature SIG [--json]
   #|  moonlibsync inspect-delta DELTA [--json]
   #|  moonlibsync check-patch OLD DELTA [--json]
@@ -73,7 +76,10 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard inspection ||
     operation == "signature" ||
     operation == "delta" ||
-    operation == "patch" else {
+    operation == "patch" ||
+    operation == "basis-info" ||
+    operation == "make-manifest" ||
+    operation == "patch-verified" else {
     raise Usage("unknown command: " + operation)
   }
   let limits = @lib.Limits::default()
@@ -83,6 +89,10 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     } else {
       1
     }
+  } else if operation == "make-manifest" {
+    5
+  } else if operation == "patch-verified" {
+    4
   } else if operation == "signature" {
     2
   } else {
