@@ -232,8 +232,15 @@ def cli_flow(folder, label, env=None):
     return {'kind': label, 'path': str(exe), 'sha256': digest(exe.read_bytes()), 'source_build': True, 'version': version, 'restored_equal': True, 'copy_bytes': copied}
 
 
+def release_temporary_directory(kind):
+    # Leave room for the fixed client's two SHA256 cache path components on
+    # Windows hosts where the legacy MAX_PATH limit is still enabled.
+    codes={'package':'p','clean':'c','registry':'r'}
+    return tempfile.TemporaryDirectory(prefix='mls-'+codes[kind]+'-')
+
+
 def candidate(actual):
-    with tempfile.TemporaryDirectory(prefix='moonlibsync-package-') as directory:
+    with release_temporary_directory('package') as directory:
         top = Path(directory).resolve()
         no_parent_workspace(top)
         assert not top.is_relative_to(ROOT)
@@ -276,9 +283,9 @@ def seed_toolchain_archives(bootstrap):
 
 
 def clean_source(actual):
-    with tempfile.TemporaryDirectory(prefix='moonlibsync-clean-') as directory:
+    with release_temporary_directory('clean') as directory:
         top = Path(directory).resolve(); no_parent_workspace(top)
-        fresh = top / 'source'
+        fresh = top / 's'
         run(['git', '-c', f'safe.directory={ROOT.as_posix()}/.git', '-c', f'safe.directory={ROOT.as_posix()}', 'clone', '--quiet', '--no-hardlinks', '--local', ROOT, fresh], 'clean-clone')
         # Pre-commit runs overlay the exact candidate files; final runs use clean HEAD.
         for name, data in actual.items():
@@ -301,11 +308,11 @@ def clean_source(actual):
 
 
 def registry(actual):
-    with tempfile.TemporaryDirectory(prefix='moonlibsync-registry-') as directory:
+    with release_temporary_directory('registry') as directory:
         top = Path(directory).resolve(); no_parent_workspace(top)
         client = top / 'consumer'; make_consumer(client)
         # Fresh toolchain home also gives a genuinely empty public-registry cache.
-        bootstrap = top / 'bootstrap'
+        bootstrap = top / 'b'
         (bootstrap / 'scripts').mkdir(parents=True)
         shutil.copyfile(ROOT / 'scripts/install_toolchain.py', bootstrap / 'scripts/install_toolchain.py')
         shutil.copyfile(ROOT / 'toolchain.lock.json', bootstrap / 'toolchain.lock.json')

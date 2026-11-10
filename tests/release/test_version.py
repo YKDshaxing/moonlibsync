@@ -29,6 +29,16 @@ class VersionWiring(unittest.TestCase):
             self.assertNotEqual(result.returncode,0)
             self.assertIn('Historical 0.1.0 evidence is read-only',result.stderr)
 
+    def test_fresh_sdk_cache_layout_can_be_created_and_cleaned(self):
+        for kind,child in [('clean','s'),('registry','b')]:
+            with release.release_temporary_directory(kind) as directory:
+                top=Path(directory)
+                cache=top/child/'.toolchain/selected/cache/registry/metadata/v1'/('a'*64)/('b'*64)/'releases/0.2.0.json'
+                cache.parent.mkdir(parents=True)
+                cache.write_text('Unicode diagnostic: \u2570\u2500',encoding='utf8')
+                self.assertTrue(cache.is_file())
+            self.assertFalse(top.exists())
+
     def test_archive_and_cli_assertions_track_module(self):
         root=Path(__file__).resolve().parents[2]
         self.assertEqual(ARCHIVE,'YKDshaxing-moonlibsync-'+VERSION+'.zip')
