@@ -38,6 +38,10 @@ class VersionWiring(unittest.TestCase):
                 cache.parent.mkdir(parents=True)
                 cache.write_text('Unicode diagnostic: \u2570\u2500',encoding='utf8')
                 self.assertTrue(cache.is_file())
+                packed=top/child/'.git/objects/pack/fixture.idx'
+                packed.parent.mkdir(parents=True)
+                packed.write_bytes(b'owned git pack index')
+                packed.chmod(0o444)
             self.assertFalse(top.exists())
 
     def test_archive_and_cli_assertions_track_module(self):

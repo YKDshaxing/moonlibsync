@@ -252,7 +252,15 @@ def release_temporary_directory(kind):
         # paths only for filesystem cleanup. No validation/cleanup is disabled.
         assert owned.parent==Path(tempfile.gettempdir()).resolve() and owned.name.startswith(prefix)
         assert not owned.is_symlink(),'Temporary cleanup root was replaced'
-        shutil.rmtree(filesystem_path(owned))
+        def remove_readonly(function,path,error):
+            target=filesystem_path(Path(path))
+            assert target.is_relative_to(filesystem_path(owned)), 'Cleanup escaped owned temporary root'
+            if os.name=='nt' and isinstance(error,PermissionError) and target.exists() and not target.stat().st_mode & stat.S_IWRITE:
+                target.chmod(target.stat().st_mode | stat.S_IWRITE)
+                function(path)
+            else:
+                raise error
+        shutil.rmtree(filesystem_path(owned), onexc=remove_readonly)
         assert not owned.exists(),'Temporary cleanup incomplete'
 
 
