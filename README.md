@@ -10,6 +10,8 @@ Commit 21 开发源码新增独立SHA-256完整性清单：接收端 `create_bas
 
 开发源码提供 `prepare_signature(signature_bytes, limits) -> PreparedSignature raise SyncError`（Commit 19）与 `prepared.delta(new_bytes, limits)`（Commit 20）。准备只解析签名并建立受限稳定索引，不接收 basis；对象不透明，每次生成重检当前限制、使用独立扫描状态与预算。原一次性 delta 的共享预算不变。[完整示例](examples/prepared/main.mbt) 准备一次、生成两个目标并分别恢复，运行 `moon run examples/prepared --target native`（也可 js/wasm-gc）。预算、保留存储和边界见[设计说明](docs/design.md#commit-20复用生成)；[有限进程内基准](docs/benchmarks-prepared.md)包含准备与实测总成本，本机没有稳定总耗时优势，不承诺线程安全。注册表0.1.0不含这些 API，元数据版本未改。
 
+Commit 23 将阶段 A 新功能加入独立18路径组合计划和仓库外候选消费：旧矩阵保留，新矩阵为28对输入、504次恢复；两平台候选包分别运行Native/JS/Wasm-GC公共消费者及包内构建的正式CLI。入口、拒绝矩阵与计数见[阶段 A 验证说明](tests/stage-a/README.md)。候选目录为 `_build/stage-a-candidate/`，使用明确本地workspace替换，**不是注册表消费或重新发布0.1.0**。
+
 Commit 22 开发源码增加 `verified_patch(basis, delta_bytes, manifest, limits)` 和 `basis-info`、`make-manifest`、`patch-verified` 文件命令。核验输入及恢复结果后才返回或提交；完整性依赖可信清单，不提供发布者认证，也不验证缺席的实际 SIG 文件。[可运行字节示例](examples/verified/main.mbt)与[两端文件流程](docs/manifests.md#commit-22受校验应用与文件流程)已加入固定工具链检查。新增能力尚未发布，注册表0.1.0不包含这些入口。
 
 当前开发源码在已发布三项 API 之外新增 `inspect_signature`、`inspect_delta`、`check_patch`（Commit 17），并提供对应检查 CLI 和 JSON 输出（Commit 18），属于拟定 0.2.0 阶段，尚未发布。注册表 **0.1.0 仍只有 `signature`、`delta`、`patch` 三项 API 及原三个文件命令**；仓库版本元数据暂仍为 0.1.0，不能用它证明新能力已在注册表可用。新入口接收 `Limits`，返回只含精确整数的不可变摘要；格式检查不恢复输出，长度预检不认证 basis 内容。字段、错误顺序和内存边界见[开发接口说明](docs/design.md#commit-17开发源码只读检查)。

@@ -213,3 +213,9 @@ Commit16仍须：核对精确版本和发布身份/权限；审计实际源码�
 ## Commit 22 开发范围
 
 在Commit21清单契约上新增verified_patch及basis-info/make-manifest/patch-verified，schema1、旧SyncError、ManifestError枚举、默认Limits和标准格式均保持。原patch不认证内容；新入口只对可信清单验证basis/delta/result长度和完整SHA-256。signature仅描述符受检，无实际SIG核验。支持现有Native/JS/Wasm-GC字节核心，文件命令仅Native，仍限已验证Windows NTFS / Linux ext4，DrvFS写入失败不能改称支持。新增能力未发布，不改变0.1.0历史归档；Commit23整合验收、后续发布不在本笔范围内。
+
+## Commit 23：阶段 A 组合验证（开发源码）
+
+新增的是验证覆盖，没有协议/默认预算/API变更。固定rdiff v2.3.4只消费标准SIG/DELTA，不理解本项目清单；上游与MoonBit delta无需字节相同，同参数SIG要求完整一致。两平台三目标的候选消费者实际使用包中公开API，包内源码构建产品CLI，仍限Windows NTFS / Linux ext4及原DrvFS失败边界。新旧覆盖和实际来源见[阶段A说明](../tests/stage-a/README.md)。
+
+候选消费使用明确本地workspace替换，不是注册表消费。复用未观察到稳定总耗时优势，仍为全量缓冲；本笔不重新计时、不改写0.1.0历史发布证据。Commit24的版本决定、冻结、最终包/许可证审计、发布SHA/CI绑定、Mooncakes新版本发布及无替换注册表消费仍待后续，不创建标签或Release。

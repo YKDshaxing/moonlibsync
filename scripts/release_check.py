@@ -220,7 +220,7 @@ def cli_flow(folder, label, env=None):
     assert copied >= 14336
     version = run([exe, '--version'], label + '-version', cwd=folder, env=env).strip()
     assert version == 'MoonLibSync 0.1.0'
-    return {'kind': label, 'path': str(exe), 'source_build': True, 'version': version, 'restored_equal': True, 'copy_bytes': copied}
+    return {'kind': label, 'path': str(exe), 'sha256': digest(exe.read_bytes()), 'source_build': True, 'version': version, 'restored_equal': True, 'copy_bytes': copied}
 
 
 def candidate(actual):
@@ -232,16 +232,23 @@ def candidate(actual):
         extract(actual, package)
         client = top / 'consumer'
         make_consumer(client)
-        (top / 'moon.work').write_text('members = ["./package", "./consumer"]\n', encoding='utf-8', newline='\n')
-        run(['moon', 'update'], 'candidate-update', cwd=client)
+        stage = top / 'stage-a-consumer'
+        make_consumer(stage)
+        (stage / 'moon.mod').write_text('name = "stage/a-consumer"\nversion = "0.0.0"\nimport { "YKDshaxing/moonlibsync@0.1.0", }\n', encoding='utf-8', newline='\n')
+        shutil.copyfile(ROOT / 'tests/stage-a/consumer.mbt.txt', stage / 'main.mbt')
+        (top / 'moon.work').write_text('members = ["./package", "./consumer", "./stage-a-consumer"]\n', encoding='utf-8', newline='\n')
+        if not os.environ.get('MOONLIBSYNC_OFFLINE_INDEX'):
+            run(['moon', 'update'], 'candidate-update', cwd=client)
         results = consumer(client, 'candidate')
         # Build the delivered example and product CLI from the extracted archive.
         for target in ('native', 'js', 'wasm-gc'):
             run(['moon', 'run', 'examples/basic', '--target', target], 'candidate-basic-' + target, cwd=package)
         cli = cli_flow(package, 'candidate-cli')
+        from stage_a_candidate import validate
+        stage_results = validate(stage, package, Path(cli['path']), run, OUT)
         unchanged_bytes(actual, package)
-        return {'status': 'passed', 'kind': 'candidate-package-local-workspace-consumption', 'outside_repository': True,
-                'workspace_members': ['package', 'consumer'], 'environment': environment(top), 'results': results, 'cli': cli, 'audited_source_unchanged': True}
+        return {'status': 'passed', 'kind': 'candidate-package-local-workspace-consumption', 'outside_repository': True, 'dependency_refresh': 'pinned cached index' if os.environ.get('MOONLIBSYNC_OFFLINE_INDEX') else 'moon update',
+                'workspace_members': ['package', 'consumer', 'stage-a-consumer'], 'stage_a': stage_results, 'environment': environment(top), 'results': results, 'cli': cli, 'audited_source_unchanged': True}
 
 
 def clean_source(actual):
@@ -318,7 +325,7 @@ def main():
     args = parser.parse_args()
     os.chdir(ROOT)
     (OUT / 'logs').mkdir(parents=True, exist_ok=True)
-    report = {'publication_status': 'unpublished-release-candidate', 'source': source(), 'status': 'incomplete'}
+    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-development-snapshot', 'source': source(), 'status': 'incomplete'}
     save(OUT / 'report.json', report)
     try:
         actual, audit = audit_package()

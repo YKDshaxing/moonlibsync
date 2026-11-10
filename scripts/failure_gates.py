@@ -77,6 +77,15 @@ with tempfile.TemporaryDirectory(prefix='moonlibsync-gates-') as directory:
     run_copy(copy, 'interface-deleted', ['-c', 'from pathlib import Path; import sys; sys.path.insert(0,"scripts"); from interface_guard import snapshot; snapshot(Path.cwd())'], 'INTERFACE_BASELINE_MISMATCH: probes/digest/pkg.generated.mbti')
     shutil.copyfile(ROOT / 'probes/digest/pkg.generated.mbti', copy / 'probes/digest/pkg.generated.mbti')
     run_copy(copy, 'interface-normal', ['-c', 'from pathlib import Path; import sys; sys.path.insert(0,"scripts"); from interface_guard import snapshot; snapshot(Path.cwd())'])
+    # Exercise the same real CLI wrapper with a corrupt result descriptor.
+    file = copy / 'tests/integrity/update.json'
+    original = file.read_bytes()
+    data = json.loads(original)
+    data['result']['sha256'] = '0' * 64
+    file.write_text(json.dumps(data), encoding='utf-8')
+    run_copy(copy, 'stage-a-manifest-broken', ['scripts/check_stage_a_gate.py'], 'BindingMismatch:result_sha256')
+    file.write_bytes(original)
+    run_copy(copy, 'stage-a-manifest-normal', ['scripts/check_stage_a_gate.py'])
 report['status'] = 'passed'
 (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 print('Isolated failure gates passed; broken and normal logs preserved separately.')

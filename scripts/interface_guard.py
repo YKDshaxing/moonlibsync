@@ -2,7 +2,7 @@
 from pathlib import Path
 import subprocess
 
-PACKAGES = ('', 'probes/digest', 'probes/native', 'probes/signature', 'probes/prepared', 'cmd/moonlibsync', 'examples/basic', 'examples/prepared', 'examples/verified')
+PACKAGES = ('', 'probes/digest', 'probes/native', 'probes/signature', 'probes/prepared', 'probes/stage_a', 'cmd/moonlibsync', 'examples/basic', 'examples/prepared', 'examples/verified')
 
 
 def snapshot(root):

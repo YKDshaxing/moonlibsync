@@ -163,3 +163,18 @@ scripts/check.py现显式选择根库包完整99项，避免把Native CLI专属6
 verified_patch先检查全部配置与声明预算、实际basis/delta预算、长度和两次输入SHA，再解析一次delta并预检指令数、COPY和累计输出；result长度在唯一共享复制器分配恢复缓冲之前核对。实际长度和输出SHA核验后返回。signature描述符使用max_signature_bytes但无实际SIG；result使用max_output_bytes，不以max_new_bytes误限接收端。SHA费用不消耗max_match_work，合法0仍允许恢复，所有无关配置仍须合法。
 
 输入Bytes、命令数组和literal视图、恢复FixedArray、Bytes转换副本与SHA依赖内部存储可同时存活；最后核验失败时这些内部存储已可能分配，只是不返回/提交。CLI还持有受限文件读取缓冲与转换副本、64KiB清单及JSON树。这里没有峰值RSS测量、流式或常量内存保证。新增文件命令保留同句柄大小/EOF检查、同步与无覆盖提交，不降低保证来绕过DrvFS。
+
+## Commit 23：阶段 A 资源契约汇总
+
+| 层次 | 检查阶段与逻辑预算 | 活跃/保留存储及限制 |
+|---|---|---|
+| inspect_signature | 全部Limits→完整签名解析→摘要；signature字节、记录数、block预算 | 解析记录与强摘要副本在调用期间存在；返回只保留整数统计 |
+| inspect_delta / check_patch | 完整delta解析→统计；check_patch再以实际basis长度检查全部COPY | 命令元数据与literal视图存在至调用结束；不读取OLD内容，不证明身份 |
+| prepare_signature | 输入签名与当前限制校验；准备的索引/排序工作使用本次预算 | 对象长期持有解析记录、摘要Bytes与序号索引，不持有basis、文件句柄、扫描窗口或全局预算 |
+| PreparedSignature::delta | 每次重检当前签名/记录/block预算；独立MatchWork计扫描、候选比较和命令增长 | 对象已付的准备预算不再收费；当前更严限制不能绕过，失败不修改对象或后续扫描预算 |
+| 清单解析 | 输入≤65536字节→严格UTF8/无BOM→JSON容器深度2和重复键拒绝→构造树后总字段≤16→schema/描述符 | 字段数是建树后检查；树先受字节与深度限制，不称为逐字段分配前计费；长度字符串受检到Int64后应用对应预算 |
+| SHA-256 | 实际输入大小预检后哈希，明确Kind::Sha256并要求32字节摘要 | 哈希费用不属于匹配工作单位；不提供总CPU上限或认证 |
+| verified_patch | 配置/四描述符→实际输入预算/长度→basis和delta哈希→单次完整解析/COPY预检→预计result长度→共享复制→实际结果长度/哈希 | 结果长度预检先于恢复缓冲分配；输入、解析数组/视图、恢复FixedArray、Bytes转换及哈希内部存储可共存；摘要失败后内部缓冲已经可能存在，但不返回 |
+| 正式CLI | 同句柄普通文件有界读取、大小与EOF复核；INFO/MANIFEST≤65536，其余沿用对应Limits | 验证前不创建临时文件；成功后CreateNew、完整写入、sync、close、无覆盖提交。NTFS/ext4已验证，DrvFS不支持提交时失败，不降级 |
+
+这些是逻辑字节、项目数和既有工作单位，不是进程RSS峰值、总CPU、常量内存或事务快照保证。并发同大小修改、恶意路径替换、断电与目录持久化边界不变。本笔未提高默认预算、未更改锁文件/协议，也未发现需要修改运行库执行代码的缺陷。

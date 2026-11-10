@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// External candidate consumer. Public imports only; independent expectations.
+
+///|
+fn reject_core(action : () -> Unit raise @lib.SyncError) -> Unit raise {
+  let result = try { action(); "success" } catch {
+    @lib.SyncError::LimitExceeded => "LimitExceeded"
+    _ => "other"
+  }
+  assert_eq(result,"LimitExceeded")
+  println("STAGE_A_REJECTION core:LimitExceeded")
+}
+
+///|
+fn reject_manifest(action : () -> Unit raise @lib.ManifestError, expected : String) -> Unit raise {
+  let result = try { action(); "success" } catch {
+    @lib.ManifestError::BindingMismatch(field) => "Binding:"+field
+    @lib.ManifestError::ResourceLimit(field) => "Resource:"+field
+    @lib.ManifestError::InvalidJson => "InvalidJson"
+    @lib.ManifestError::InvalidSchema => "InvalidSchema"
+    @lib.ManifestError::InvalidField(field) => "Field:"+field
+    _ => "other"
+  }
+  assert_eq(result,expected)
+  println("STAGE_A_REJECTION manifest:" + expected)
+}
+
+///|
+fn ascii(s : String) -> Bytes { Bytes::makei(s.length(),i => s[i].to_int().to_byte()) }
+
+///|
+fn run() -> Unit raise {
+  let d = @lib.Limits::default()
+  let old = b"ABCDEFGHIJKLMN"
+  let sig = @lib.signature(old,{block_len:7L,strong_sum_len:16L},d)
+  let summary = @lib.inspect_signature(sig,d)
+  assert_eq(summary.magic,0x72730147U)
+  assert_eq(summary.block_len,7L)
+  assert_eq(summary.strong_sum_len,16L)
+  assert_eq(summary.record_count,2L)
+  assert_eq(summary.signature_bytes,52L)
+  let copied = b"\x72\x73\x02\x36\x45\x00\x0e\x00"
+  let ds = @lib.inspect_delta(copied,d)
+  assert_eq(ds.delta_bytes,8L)
+  assert_eq(ds.instruction_count,1L)
+  assert_eq(ds.literal_commands,0L)
+  assert_eq(ds.copy_commands,1L)
+  assert_eq(ds.literal_bytes,0L)
+  assert_eq(ds.copy_bytes,14L)
+  assert_eq(ds.output_bytes,14L)
+  let check = @lib.check_patch(14L,copied,d)
+  assert_eq(check.basis_bytes,14L)
+  assert_eq(check.summary.copy_bytes,14L)
+  let p = @lib.prepare_signature(sig,d)
+  let first = b"!ABCDEFGHIJKLMN"
+  let second = b"ABCDEFGHIJKLMN?"
+  let a = p.delta(first,d)
+  let b = p.delta(second,d)
+  assert_eq(a,@lib.delta(sig,first,d))
+  assert_eq(b,@lib.delta(sig,second,d))
+  assert_eq(@lib.patch(old,a,d),first)
+  assert_eq(@lib.patch(old,b,d),second)
+  for strict in [{..d,max_signature_bytes:51L},{..d,max_signature_records:1L},{..d,max_block_bytes:6L},{..d,max_match_work:0L}] {
+    reject_core(() => { let _ = p.delta(first,strict) })
+  }
+  assert_eq(p.delta(first,d),a)
+  let info = @lib.create_basis_info(old,sig,d)
+  let info = @lib.parse_basis_info(@lib.encode_basis_info(info,d),d)
+  let m = @lib.create_update_manifest(info,sig,first,a,d)
+  let m = @lib.parse_update_manifest(@lib.encode_update_manifest(m,d),d)
+  let prior = @lib.verified_patch(old,a,m,d)
+  assert_eq(prior,first)
+  let other = b"abcdefghijklmn"
+  let other_sig = @lib.signature(other,{block_len:7L,strong_sum_len:16L},d)
+  reject_manifest(() => { let _ = @lib.create_basis_info(old,other_sig,d) },"Binding:basis_signature")
+  reject_manifest(() => { let _ = @lib.create_update_manifest(info,other_sig,first,a,d) },"Binding:signature_sha256")
+  reject_manifest(() => { let _ = @lib.verified_patch(other,a,m,d) },"Binding:basis_sha256")
+  reject_manifest(() => { let _ = @lib.verified_patch(old,Bytes::make(a.length(),b'\x00'),m,d) },"Binding:delta_sha256")
+  reject_manifest(() => { let _ = @lib.verified_patch(old,a,{..m,result:{..m.result,byte_length:14L}},d) },"Binding:result_length")
+  reject_manifest(() => { let _ = @lib.verified_patch(old,a,{..m,result:{..m.result,sha256:"0".repeat(64)}},d) },"Binding:result_sha256")
+  let literal = b"\x72\x73\x02\x36\x03xyz\x00"
+  let incorrect = @lib.create_update_manifest(info,sig,b"abc",literal,d)
+  reject_manifest(() => { let _ = @lib.verified_patch(old,literal,incorrect,d) },"Binding:result_sha256")
+  for (bytes,expected) in [
+    (b"{\"schema_version\":1,\"schema_version\":1}","InvalidJson"),
+    (ascii("{\"schema_version\":1.0,\"kind\":\"librsync-delta\",\"basis\":{\"byte_length\":\"0\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"signature\":{\"byte_length\":\"12\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"delta\":{\"byte_length\":\"5\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"result\":{\"byte_length\":\"0\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}"),"InvalidSchema"),
+    (ascii(" ".repeat(65537)),"Resource:manifest_bytes"),
+    (b"{\"x\":{\"y\":{}}}","Resource:manifest_depth"),
+    (b"{\"a\":0,\"b\":0,\"c\":0,\"d\":0,\"e\":0,\"f\":0,\"g\":0,\"h\":0,\"i\":0,\"j\":0,\"k\":0,\"l\":0,\"m\":0,\"n\":0,\"o\":0,\"p\":0,\"q\":0}","Resource:manifest_fields")
+  ] {
+    reject_manifest(() => { let _ = @lib.parse_update_manifest(bytes,d) },expected)
+  }
+  assert_eq(prior,first)
+  assert_eq(@lib.verified_patch(old,a,m,d),first)
+  assert_eq(p.delta(second,d),b)
+  assert_eq(old,b"ABCDEFGHIJKLMN")
+  assert_eq(sig,@lib.signature(old,{block_len:7L,strong_sum_len:16L},d))
+  println("STAGE_A_CONSUMER_OK statistics=3 preparations=1 targets=2 rejections=16 recovery_after_failure=true")
+}
+
+///|
+fn main {
+  run() catch { _ => { println("STAGE_A_CONSUMER_MISMATCH"); abort("STAGE_A_CONSUMER_MISMATCH") } }
+}

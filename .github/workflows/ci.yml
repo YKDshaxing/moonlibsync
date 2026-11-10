@@ -32,6 +32,15 @@ jobs:
       - name: Bidirectional rdiff interoperability and deterministic regression
         timeout-minutes: 10
         run: bash scripts/interop.sh
+      - name: Stage A public API combinations with fixed rdiff
+        run: python scripts/check_stage_a.py
+      - name: Preserve independent stage A combination evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-a-${{ github.sha }}
+          path: _build/stage-a/
+          if-no-files-found: error
       - name: Benchmark generator and statistics correctness (no timed performance gate)
         run: python scripts/benchmark.py --self-check
       - name: Prepared benchmark tool correctness and pinned upstream reuse recovery
@@ -90,14 +99,16 @@ jobs:
         run: python scripts/check.py
       - name: Release archive safety tools (separate count)
         run: python -m unittest discover -s tests/release -p 'test_*.py'
-      - name: Real module package audit and independent candidate consumer
+      - name: Development snapshot package and external public consumers
+        env:
+          MOONLIBSYNC_RELEASE_DIR: _build/stage-a-candidate
         run: python scripts/release_check.py
       - name: Preserve candidate package acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-candidate-${{ matrix.os }}-${{ github.sha }}
-          path: _build/release-0.1.0/
+          name: stage-a-candidate-${{ matrix.os }}-${{ github.sha }}
+          path: _build/stage-a-candidate/
           if-no-files-found: error
       - name: Isolated corrupt fixtures and false example expectation
         run: python scripts/failure_gates.py
