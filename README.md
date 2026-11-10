@@ -1,5 +1,7 @@
 # MoonLibSync 0.2.0
 
+**0.2.0已发布，两平台独立注册表消费通过。** 服务端时间`2026-11-10T12:21:05.748505+00:00`；正式发布源`069c126e2ea67c52a5759478edf480afa68f31a4`，[发布源同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/42813769983)三个任务成功。Windows/NTFS与Linux/ext4均从空模块缓存实际取得0.2.0，并完成Native/JS/Wasm-GC旧/阶段A消费者及包源码CLI验证。本文是发布后的Git文档；原包仍对应发布源，不会随本文更新。完整哈希与审计见[本版记录](docs/release-0.2.0.md)。
+
 MoonLibSync提供与librsync互操作的全量缓冲字节差分库及Native单文件CLI。自0.2.0提供检查API、可复用签名索引、完整性清单及受校验补丁流程。本页描述0.2.0契约；实际上传与独立注册表验收状态见[本版发布记录](docs/release-0.2.0.md)，版本字符串本身不是发布证明。
 
 | 层次 | 公开入口与用途 |

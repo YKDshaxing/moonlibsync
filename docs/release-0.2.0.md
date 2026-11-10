@@ -1,6 +1,6 @@
 # MoonLibSync 0.2.0冻结与发布验收
 
-状态：`unpublished-release-candidate`。这是发布前的冻结源码记录；Mooncakes实际上传、Windows与Linux独立注册表消费尚待执行，不能从元数据版本或候选CI推断成功。阶段A验证基线为4452eddcd27818b5852850f07085f454fe75b453，[同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/42806805432)三个任务通过；正式发布源SHA在提交后交付记录中固定，不通过反复改写本文件填入自身SHA。
+状态：`published-and-consumer-verified`。0.2.0实际发布及Windows/NTFS、Linux/ext4必需注册表消费均通过。阶段A验证基线为4452eddcd27818b5852850f07085f454fe75b453；正式发布源为`069c126e2ea67c52a5759478edf480afa68f31a4`，[发布源同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/42813769983)三个必需任务全部成功。本文属于发布后文档提交，文档SHA在交付记录中单列，不冒充发布源；原包不会随Git文档变更而更新。
 
 ## 冻结范围
 
@@ -37,3 +37,31 @@ check_patch仅预检长度范围；create_update_manifest不证明恢复内容�
 本机Windows关闭长路径支持时，固定客户端的双SHA256元数据缓存路径触发旧临时目录清理失败；发布工具使用短临时前缀/内部SDK目录，并在核对自有临时根目录后以Windows extended-length路径执行清理；回归实际创建双64字符目录及第三个64字符缓存文件名，确保超过MAX_PATH的文件也能删除。不关闭或忽略清理错误。工具测试合计10项（原4、版本/保护5、路径1），运行库及协议未涉及修复。本机WSL访问官方站点必要时经仅放行官方站点及其已核对CDN域名的临时CONNECT转发，客户端TLS和真实下载仍保留，不复制候选包进模块缓存。
 
 同一清理回归还包含Git克隆的只读pack索引；仅在Windows、仅对已验证自有临时根之内的只读文件恢复写位后重试原删除操作。其他权限/清理错误继续失败，不触碰原仓库或共享归档的权限。
+
+## 实际发布与独立消费结果（发布后补记）
+
+| 项目 | 实际结果 |
+|---|---|
+| 模块/版本 | YKDshaxing/moonlibsync@0.2.0 |
+| 发布状态 | published-and-consumer-verified |
+| 标准客户端 | moon publish --dry-run退出0；moon publish退出0，服务端200；未使用发布--frozen，也未绕过验证 |
+| 服务端created_at | 2026-11-10T12:21:05.748505+00:00 |
+| 正式发布源 | 069c126e2ea67c52a5759478edf480afa68f31a4 |
+| 正式源CI | [42813769983](https://github.com/YKDshaxing/moonlibsync/actions/runs/42813769983)，reference / Windows / Ubuntu全部成功 |
+| 实际模块包 | 官方moon package ZIP；232成员；归档387947字节，成员未压缩合计1039325字节 |
+| 实际上传/两端下载SHA256 | bb9a66b61be62fb377e011d822716c5b2d74b9e5301d6856da922729cb88f0b8 |
+| Linux候选ZIP SHA256 | bd93f401d0ce421a2746e043f1b8a44da3f4fe7d0c1f4471dd7e2f4a5b1345a8；成员内容与Windows逐字节一致，压缩容器字节不强求相同 |
+| 逐成员/许可 | audit.json记录路径、大小、压缩大小、SHA256和许可范围；Git原始字节对应、完整GPL/LGPL/Apache与core NOTICE/来源齐全；无凭据/SDK/缓存/参考二进制/运行报告入包 |
+| 干净重建/候选消费 | 两平台发布源同SHA CI及本机复验通过；新目录重新安装锁定SDK、构建core和三个示例，仓库外解包候选的三目标旧/阶段A消费者及包内CLI通过 |
+| Windows注册表消费 | NTFS，空模块缓存、新SDK、无workspace/path/Git替换，实际0.2.0原包与审计成员逐字节一致；旧/阶段A三目标、每目标16类公开拒绝、9项封装编译拒绝、24项下载源码CLI及错误后复用通过 |
+| Linux注册表消费 | ext4，空模块缓存、新SDK、无workspace/path/Git替换；与Windows相同三目标/封装/24项CLI通过；实际下载ZIP同哈希，全部四项依赖归档和源码对应锁定闭包 |
+| 原覆盖 | 每平台各目标166库测试，CLI314/315和各15辅助，496参数/3968恢复，82/29消费及32次Prepared恢复、6项Python互操作工具、原示例/12封装探针及全部门禁保留 |
+| 阶段A覆盖 | 28对/28参数/504恢复；38份SIG/38准备对象/112复用调用，计划指纹5f02d159961131c569582b306ae6a48ddf794bb10906f8d2492f204c913174e9不变 |
+| 发布工具 | 原4项ZIP安全、5项版本/归档保护、1项真实长路径/只读Git清理回归，共10项；CP1252 Unicode诊断回归保留 |
+| 标签/Release | 本笔未创建；远端标签及公开Release列表检查为空；没有安装器/预编译二进制交付 |
+
+[公开注册表0.2.0](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.2.0)；[版本元数据](https://mooncakes.io/api/v0/manifest/YKDshaxing/moonlibsync@0.2.0)。实际注册表消费是包源码构建，不是预编译二进制。完整发布命令/响应/时间、Windows和Linux报告、实际ZIP、逐成员审计、CI产物摘要、delivery.json及SHA256SUMS保存在_build/release-0.2.0/，0.1.0原归档/交付/校验清单未改。
+
+发布前Windows长路径/只读索引的验证工具故障均保留失败记录并增加真实回归；没有修改运行库或放宽校验。本机网络连接重置的失败尝试也保留，最终两平台消费真实通过；临时传输转发仅到官方服务/其核对的CDN，客户端TLS和官方实际下载未替换。
+
+阶段A 0.2.0必需交付已完成，无未完成的平台消费。仍不承诺其他SDK、所有文件系统、网络盘、恶意路径替换/断电事务保证、线程安全或稳定总耗时优势。未重新计时，不新增自动块长/Full/流式，不进入Commit25或阶段B。

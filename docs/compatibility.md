@@ -1,5 +1,7 @@
 # MoonLibSync 0.2.0：兼容范围与功能冻结
 
+0.2.0实际发布和Windows/NTFS、Linux/ext4的三目标独立注册表消费均通过，发布源为`069c126e2ea67c52a5759478edf480afa68f31a4`，同SHA三项CI成功。自0.2.0冻结阶段A全部接口/schema1/默认预算及文件边界，详情与实际包哈希见[发布后验收](release-0.2.0.md#实际发布与独立消费结果发布后补记)。本页为后续Git文档，严格包内容重放应检出发布源。
+
 自0.2.0提供三项检查API、PreparedSignature准备/复用、两种清单的制作/解析/编码、verified_patch和对应九条CLI命令。公开类型/错误、默认参数/预算、检查JSON schema1、清单schema1及严格解析/文件提交边界均冻结，详见[本版发布记录](release-0.2.0.md)。当前元数据和CLI版本为0.2.0；上传/注册表验证是否完成以该记录的实际状态为准。
 
 check_patch不认证内容身份；清单制作不证明恢复结果；verified_patch仅实际核验OLD、DELTA和结果，不实际核验缺席的SIG。清单必须可信，无发布者认证。全量缓冲、无稳定总耗时优势和Windows NTFS / Linux ext4 / DrvFS边界不变。
