@@ -40,3 +40,5 @@ PowerShell：`$env:MOONLIBSYNC_RELEASE_DIR='_build/stage-a-candidate'; python sc
 旧范围保留：两平台三目标各166库测试、CLI314/315和各15辅助、274对/496参数/3968恢复、82/29消费、32次Prepared恢复、Python工具/示例/封装及原失败门禁。基准仅原工具self-check及Prepared恢复，不重新计时。不合并这些不同计量为“案例总数”。
 
 Commit24尚待：精确版本与身份检查、功能/接口冻结、最终实际分发包及许可证审计、干净目录重建、发布源SHA/必需CI关联、Mooncakes实际新版本发布、无workspace替换的独立注册表消费及发布证据归档。本笔不创建标签或Release。
+
+Windows首次CI暴露新消费者诊断日志依赖系统CP1252编码的缺口；新工具文本读写显式使用UTF-8。候选消费步骤固定PYTHONUTF8=0、PYTHONIOENCODING=utf-8，仍实际编译并保存包含Unicode的三目标私有字段拒绝诊断，使该编码环境进入持续回归；不放宽任何拒绝或恢复检查。运行库不涉及此修复。

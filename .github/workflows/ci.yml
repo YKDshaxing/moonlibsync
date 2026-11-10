@@ -102,6 +102,8 @@ jobs:
       - name: Development snapshot package and external public consumers
         env:
           MOONLIBSYNC_RELEASE_DIR: _build/stage-a-candidate
+          PYTHONUTF8: "0"
+          PYTHONIOENCODING: utf-8
         run: python scripts/release_check.py
       - name: Preserve candidate package acceptance evidence
         if: always()

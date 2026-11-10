@@ -14,7 +14,7 @@ def digest(data): return dict(byte_length=str(len(data)),sha256=hashlib.sha256(d
 
 def main():
     OUT.mkdir(parents=True,exist_ok=True)
-    plan=json.loads(PLAN.read_text()); generated=groups(plan)
+    plan=json.loads(PLAN.read_text(encoding='utf-8')); generated=groups(plan)
     actual=[dict(id=g['id'],block=g['block'],strong=g['strong'],old_length=len(g['old']),old_sha256=hashlib.sha256(g['old']).hexdigest(),targets=[dict(id=t['id'],new_length=len(t['new']),new_sha256=hashlib.sha256(t['new']).hexdigest(),min_copy=t['min_copy']) for t in g['targets']]) for g in generated]
     assert actual==plan['input_manifest'],'STAGE_A_INPUT_PLAN_MISMATCH'
     assert all(hashlib.sha256((ROOT/name).read_bytes().replace(b'\r\n',b'\n')).hexdigest()==sha for name,sha in plan['generator_sha256'].items())
@@ -22,7 +22,7 @@ def main():
     if os.environ.get('GITHUB_SHA'): assert source['sha']==os.environ['GITHUB_SHA'] and not source['dirty']
     report=dict(status='incomplete',source=source,plan_sha256=hashlib.sha256(PLAN.read_bytes()).hexdigest(),expected=plan['expected'],executed={k:0 for k in plan['expected']},cases=[],groups=[],failures=[])
     (OUT/'plan.json').write_bytes(PLAN.read_bytes())
-    log=(OUT/'commands.log').open('w')
+    log=(OUT/'commands.log').open('w', encoding='utf-8')
     def run(cmd,cwd=ROOT,expect=0):
         p=subprocess.run(list(map(str,cmd)),cwd=cwd,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=120)
         log.write(json.dumps(dict(argv=list(map(str,cmd)),cwd=str(cwd),exit_code=p.returncode,stdout=p.stdout,stderr=p.stderr))+'\n');log.flush()
@@ -116,7 +116,7 @@ def main():
     except BaseException as e:
         report['status']='failed';report['failures'].append(repr(e));raise
     finally:
-        (OUT/'report.json').write_text(json.dumps(report,indent=2)+'\n');log.close()
+        (OUT/'report.json').write_text(json.dumps(report,indent=2)+'\n', encoding='utf-8');log.close()
     print('Stage A passed:',report['executed'],'plan_sha256='+report['plan_sha256'])
 
 if __name__=='__main__':main()

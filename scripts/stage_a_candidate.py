@@ -11,17 +11,17 @@ def validate(client,package,exe,runner,out):
     entry=[sys.executable,ROOT/'scripts/check_stage_a_consumer.py','--client',client,'--package',package,'--output',dest/'consumer']
     try:
         runner(entry,'stage-a-consumer',cwd=client)
-        report['consumer']=json.loads((dest/'consumer/report.json').read_text())
+        report['consumer']=json.loads((dest/'consumer/report.json').read_text(encoding='utf-8'))
         # Mutate the consumer's independent signature-byte expectation, not core code.
-        source=client/'main.mbt';original=source.read_text();assert original.count('summary.signature_bytes,52L')==1
-        source.write_text(original.replace('summary.signature_bytes,52L','summary.signature_bytes,53L'))
+        source=client/'main.mbt';original=source.read_text(encoding='utf-8');assert original.count('summary.signature_bytes,52L')==1
+        source.write_text(original.replace('summary.signature_bytes,52L','summary.signature_bytes,53L'), encoding='utf-8')
         try:
             runner([*entry,'--target','wasm-gc','--output',dest/'consumer-broken'],'stage-a-consumer-broken',cwd=client)
             raise AssertionError('broken consumer unexpectedly succeeded')
         except subprocess.CalledProcessError as error:
             assert 'STAGE_A_CONSUMER_ENTRY_FAILURE' in error.output and 'STAGE_A_CONSUMER_MISMATCH' in error.output,error.output
             report['failure_gates'].append(dict(id='independent-consumer-expectation',exit_code=error.returncode,status='passed'))
-        finally: source.write_text(original)
+        finally: source.write_text(original, encoding='utf-8')
         runner([*entry,'--target','wasm-gc','--output',dest/'consumer-restored'],'stage-a-consumer-restored',cwd=client)
         report['failure_gates'].append(dict(id='consumer-restored',status='passed'))
         work=package.parent/'stage-a-cli';work.mkdir()
@@ -71,7 +71,7 @@ def validate(client,package,exe,runner,out):
         for name,cmd,needle in [('basis_signature',['basis-info','old','wrong-sig','failed.out'],'basis_signature'),('info_signature',['make-manifest','info','wrong-sig','new','delta','failed.out'],'signature_sha256'),('basis_sha256',['patch-verified','wrong-old','delta','manifest','failed.out'],'basis_sha256'),('delta_sha256',['patch-verified','old','wrong-delta','manifest','failed.out'],'delta_sha256')]:
             call(name,cmd,1,needle)
         for name,field,value,needle in [('result_length','byte_length','14','result_length'),('result_sha256','sha256','0'*64,'result_sha256')]:
-            data=json.loads(json.dumps(base));data['result'][field]=value;(work/'bad.json').write_text(json.dumps(data))
+            data=json.loads(json.dumps(base));data['result'][field]=value;(work/'bad.json').write_text(json.dumps(data), encoding='utf-8')
             call(name,['patch-verified','old','delta','bad.json','failed.out'],1,needle)
         (work/'literal').write_bytes(bytes.fromhex('7273023603')+b'xyz'+b'\0');(work/'abc').write_bytes(b'abc')
         call('literal-manifest',['make-manifest','info','sig','abc','literal','literal.json'])
@@ -81,13 +81,13 @@ def validate(client,package,exe,runner,out):
             (work/'bad.json').write_bytes(data)
             call(name,['patch-verified','old','delta','bad.json','failed.out'],1,needle)
         # Corrupt a real produced manifest on disk and run the actual product CLI.
-        (work/'bad.json').write_text(json.dumps({**base,'result':{**base['result'],'sha256':'0'*64}}))
+        (work/'bad.json').write_text(json.dumps({**base,'result':{**base['result'],'sha256':'0'*64}}), encoding='utf-8')
         call('fault-manifest',['patch-verified','old','delta','bad.json','failed.out'],1,'result_sha256')
         report['failure_gates'].append(dict(id='manifest-corruption-product-cli',status='passed',no_output=True))
         call('restored-manifest',['patch-verified','old','delta','manifest','after-errors'])
         assert (work/'after-errors').read_bytes()==new and (work/'out').read_bytes()==new
         report['failure_gates'].append(dict(id='manifest-restored',status='passed'))
-        reject=json.loads((ROOT/'tests/stage-a/rejections.json').read_text())
+        reject=json.loads((ROOT/'tests/stage-a/rejections.json').read_text(encoding='utf-8'))
         assert len(reject['core'])==16 and len(reject['cli'])==12
         assert all(any(c['id']==r and c['actual_exit']==1 for c in report['cli']) for r in reject['cli'])
         report['rejections']=dict(core=dict(expected=16,executed=16,status='passed',ids=reject['core']),cli=dict(expected=12,executed=12,status='passed',ids=reject['cli']))
@@ -102,5 +102,5 @@ def validate(client,package,exe,runner,out):
         shutil.copyfile(client/'main.mbt',failures/'consumer.mbt.txt')
         if 'work' in locals():shutil.copytree(work,failures/'cli-inputs',dirs_exist_ok=True)
         raise
-    finally:(dest/'report.json').write_text(json.dumps(report,indent=2)+'\n')
+    finally:(dest/'report.json').write_text(json.dumps(report,indent=2)+'\n', encoding='utf-8')
     return report
