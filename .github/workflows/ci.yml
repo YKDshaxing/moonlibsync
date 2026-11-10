@@ -99,18 +99,18 @@ jobs:
         run: python scripts/check.py
       - name: Release archive safety tools (separate count)
         run: python -m unittest discover -s tests/release -p 'test_*.py'
-      - name: Development snapshot package and external public consumers
+      - name: Release 0.2.0 archive, clean rebuild and public consumers
         env:
-          MOONLIBSYNC_RELEASE_DIR: _build/stage-a-candidate
+          MOONLIBSYNC_RELEASE_DIR: _build/release-0.2.0
           PYTHONUTF8: "0"
           PYTHONIOENCODING: utf-8
-        run: python scripts/release_check.py
+        run: python scripts/release_check.py --clean
       - name: Preserve candidate package acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-a-candidate-${{ matrix.os }}-${{ github.sha }}
-          path: _build/stage-a-candidate/
+          name: release-candidate-${{ matrix.os }}-${{ github.sha }}
+          path: _build/release-0.2.0/
           if-no-files-found: error
       - name: Isolated corrupt fixtures and false example expectation
         run: python scripts/failure_gates.py

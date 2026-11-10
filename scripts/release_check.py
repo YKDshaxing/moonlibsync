@@ -20,11 +20,11 @@ import zipfile
 
 from interface_guard import snapshot, unchanged
 from interop_wire import inspect_delta, check_contents
+from release_version import MODULE, VERSION, ARCHIVE, consumer_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-0.1.0')
-MODULE = 'YKDshaxing/moonlibsync'
-VERSION = '0.1.0'
+OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-' + VERSION)
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.1.0').resolve()), 'Historical 0.1.0 evidence is read-only'
 
 
 def digest(data):
@@ -121,7 +121,7 @@ def audit_package():
     run(['moon', 'package', '--list', '--frozen'], 'package-list')
     run(['moon', 'package', '--frozen'], 'package')
     unchanged(ROOT, before)
-    archive = ROOT / '_build/publish/YKDshaxing-moonlibsync-0.1.0.zip'
+    archive = ROOT / '_build/publish' / ARCHIVE
     actual = members(archive)
     assert set(actual) == expected_paths(), {'unexpected': sorted(set(actual) - expected_paths()), 'missing': sorted(expected_paths() - set(actual))}
     for name, data in actual.items():
@@ -132,9 +132,15 @@ def audit_package():
                 'COPYING', 'COPYING.LESSER', 'LICENSE', 'SOURCES.md', 'THIRD_PARTY_NOTICES.md',
                 'licenses/Apache-2.0.txt', 'licenses/MoonBit-core-LICENSE', 'licenses/MoonBit-core-NOTICE',
                 'tests/fixtures/manifest.json', 'tests/fixtures/opcodes/vectors.json', 'scripts/verify_fixtures.py'}
+    required |= {'inspect.mbt','prepared.mbt','manifest.mbt','manifest_error.mbt','sha256.mbt','verified_patch.mbt',
+                 'examples/prepared/main.mbt','examples/verified/main.mbt','tests/stage-a/plan.json',
+                 'tests/stage-a/consumer.mbt.txt','scripts/release_version.py','docs/release-0.2.0.md'}
     assert required <= actual.keys()
+    forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
+    assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'
+    assert digest(actual['tests/stage-a/plan.json'])=='5f02d159961131c569582b306ae6a48ddf794bb10906f8d2492f204c913174e9'
     metadata = actual['moon.mod'].decode()
-    for text in ('name = "YKDshaxing/moonlibsync"', 'version = "0.1.0"', 'license = "LGPL-2.1-or-later"', 'moonbitstack/mooncrypt@0.4.5'):
+    for text in ('name = "YKDshaxing/moonlibsync"', f'version = "{VERSION}"', 'license = "LGPL-2.1-or-later"', 'moonbitstack/mooncrypt@0.4.5'):
         assert text in metadata
     for name in ('COPYING.LESSER', 'COPYING', 'licenses/Apache-2.0.txt'):
         assert len(actual[name]) > 10000, name
@@ -155,9 +161,12 @@ def audit_package():
             position += size + 1
         assert position == len(result)
         git_blob_verified = True
+    with zipfile.ZipFile(archive) as z:
+        compressed = {n: z.getinfo(n).compress_size for n in actual}
     audit = {'status': 'passed', 'source': current_source, 'git_blob_byte_identity_verified': git_blob_verified, 'archive': archive.name,
-             'bytes': archive.stat().st_size, 'sha256': digest(archive.read_bytes()),
-             'member_count': len(actual), 'members': {n: {'bytes': len(d), 'sha256': digest(d), 'license_scope': license_scope(n)} for n, d in sorted(actual.items())},
+             'bytes': archive.stat().st_size, 'uncompressed_bytes': sum(map(len, actual.values())), 'format': 'ZIP (moon package)', 'sha256': digest(archive.read_bytes()),
+             'member_count': len(actual), 'public_interface_sha256': digest(actual['pkg.generated.mbti']), 'stage_a_plan_sha256': digest(actual['tests/stage-a/plan.json']),
+             'members': {n: {'bytes': len(d), 'compressed_bytes': compressed[n], 'sha256': digest(d), 'license_scope': license_scope(n)} for n, d in sorted(actual.items())},
              'license_audit': 'Project LGPL-2.1-or-later, upstream copyright/port notices, GPL/LGPL texts, Apache-2.0 and core LICENSE/NOTICE present and byte-identical to reviewed source; dependency licenses remain with their sources.',
              'development_policy': 'Complete tests, generated fixture constants and all required fixture/tool/source files retained together; no cached binaries or reports.'}
     shutil.copyfile(archive, OUT / archive.name)
@@ -179,7 +188,7 @@ def unchanged_bytes(actual, folder):
 
 def make_consumer(folder):
     folder.mkdir()
-    (folder / 'moon.mod').write_text('name = "release/consumer"\nversion = "0.0.0"\nimport { "YKDshaxing/moonlibsync@0.1.0", }\n', encoding='utf-8', newline='\n')
+    (folder / 'moon.mod').write_text(consumer_metadata(), encoding='utf-8', newline='\n')
     (folder / 'moon.pkg').write_text('import { "YKDshaxing/moonlibsync" @lib, }\npkgtype(kind: "executable")\n', encoding='utf-8', newline='\n')
     shutil.copyfile(ROOT / 'tests/release-consumer/main.mbt.txt', folder / 'main.mbt')
 
@@ -219,7 +228,7 @@ def cli_flow(folder, label, env=None):
     copied = check_contents(inspect_delta((work / 'delta').read_bytes()), old, new)
     assert copied >= 14336
     version = run([exe, '--version'], label + '-version', cwd=folder, env=env).strip()
-    assert version == 'MoonLibSync 0.1.0'
+    assert version == 'MoonLibSync ' + VERSION
     return {'kind': label, 'path': str(exe), 'sha256': digest(exe.read_bytes()), 'source_build': True, 'version': version, 'restored_equal': True, 'copy_bytes': copied}
 
 
@@ -234,7 +243,7 @@ def candidate(actual):
         make_consumer(client)
         stage = top / 'stage-a-consumer'
         make_consumer(stage)
-        (stage / 'moon.mod').write_text('name = "stage/a-consumer"\nversion = "0.0.0"\nimport { "YKDshaxing/moonlibsync@0.1.0", }\n', encoding='utf-8', newline='\n')
+        (stage / 'moon.mod').write_text(consumer_metadata('stage/a-consumer'), encoding='utf-8', newline='\n')
         shutil.copyfile(ROOT / 'tests/stage-a/consumer.mbt.txt', stage / 'main.mbt')
         (top / 'moon.work').write_text('members = ["./package", "./consumer", "./stage-a-consumer"]\n', encoding='utf-8', newline='\n')
         if not os.environ.get('MOONLIBSYNC_OFFLINE_INDEX'):
@@ -251,6 +260,21 @@ def candidate(actual):
                 'workspace_members': ['package', 'consumer', 'stage-a-consumer'], 'stage_a': stage_results, 'environment': environment(top), 'results': results, 'cli': cli, 'audited_source_unchanged': True}
 
 
+def seed_toolchain_archives(bootstrap):
+    # Only SDK/core archives, never registry module caches or a candidate package.
+    lock=json.loads((ROOT/'toolchain.lock.json').read_text(encoding='utf8'))
+    spec=lock['platforms'][platform.system().lower()+'-x86_64']
+    origin=Path(os.environ.get('MOONLIBSYNC_TOOLCHAIN_ARCHIVE_CACHE',str(ROOT/'.toolchain/downloads')))
+    records=[]
+    for name,sha in [(spec['archive'],spec['sha256']),(spec['core_archive'],spec['core_sha256'])]:
+        src=origin/name
+        if src.is_file():
+            assert digest(src.read_bytes())==sha,'SDK archive cache mismatch: '+name
+            dest=bootstrap/'.toolchain/downloads'/name;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dest)
+            records.append({'archive':name,'sha256':sha,'source':str(src)})
+    return records
+
+
 def clean_source(actual):
     with tempfile.TemporaryDirectory(prefix='moonlibsync-clean-') as directory:
         top = Path(directory).resolve(); no_parent_workspace(top)
@@ -260,16 +284,20 @@ def clean_source(actual):
         for name, data in actual.items():
             path = fresh / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
         assert not (fresh / '_build').exists()
+        sdk_archives=seed_toolchain_archives(fresh)
         run([sys.executable, fresh / 'scripts/install_toolchain.py'], 'clean-install', cwd=fresh)
         home = fresh / '.toolchain/selected'
-        env = dict(os.environ, MOON_HOME=str(home), PATH=str(home / 'bin') + os.pathsep + os.environ['PATH'])
+        env = dict(os.environ, MOON_HOME=str(home), PATH=str(home / 'bin') + os.pathsep + os.environ['PATH'], MOON_REGISTRY_API='1')
         env.pop('MOONLIBSYNC_BUILD_DIR', None)
         run(['moon', 'update'], 'clean-update', cwd=fresh, env=env)
         for target in ('native', 'js', 'wasm-gc'):
             run(['moon', 'run', 'examples/basic', '--target', target], 'clean-example-' + target, cwd=fresh, env=env)
         cli = cli_flow(fresh, 'clean-cli', env)
+        for target in ('native','js','wasm-gc'):
+            for example in ('prepared','verified'):
+                run(['moon','run','examples/'+example,'--target',target],'clean-'+example+'-'+target,cwd=fresh,env=env)
         unchanged_bytes(actual, fresh)
-        return {'status': 'passed', 'fresh_toolchain_install': True, 'fresh_build_outputs': True, 'source_unchanged': True, 'environment': environment(top), 'cli': cli}
+        return {'status': 'passed', 'fresh_toolchain_install': True, 'fresh_build_outputs': True, 'registry_api_mode': True, 'sdk_archive_cache': sdk_archives, 'source_unchanged': True, 'environment': environment(top), 'cli': cli}
 
 
 def registry(actual):
@@ -281,15 +309,17 @@ def registry(actual):
         (bootstrap / 'scripts').mkdir(parents=True)
         shutil.copyfile(ROOT / 'scripts/install_toolchain.py', bootstrap / 'scripts/install_toolchain.py')
         shutil.copyfile(ROOT / 'toolchain.lock.json', bootstrap / 'toolchain.lock.json')
+        sdk_archives=seed_toolchain_archives(bootstrap)
         run([sys.executable, bootstrap / 'scripts/install_toolchain.py'], 'registry-install-toolchain', cwd=bootstrap)
         home = bootstrap / '.toolchain/selected'
         env = {k: v for k, v in os.environ.items() if not k.startswith('MOON')}
-        env.update(MOON_HOME=str(home), PATH=str(home / 'bin') + os.pathsep + os.environ['PATH'])
-        cached = home / 'registry/cache/YKDshaxing/moonlibsync/0.1.0.zip'
+        env.update(MOON_HOME=str(home), PATH=str(home / 'bin') + os.pathsep + os.environ['PATH'], MOON_REGISTRY_API='1')
+        cached = home / 'registry/cache' / MODULE / (VERSION + '.zip')
         assert not cached.exists(), 'Registry cache must be empty before actual fetch'
+        assert not list((home / 'registry/cache').rglob('*.zip')), 'Every module archive cache must initially be empty'
         run(['moon', 'update'], 'registry-update', cwd=client, env=env)
         results = consumer(client, 'registry', env)
-        run(['moon', 'view', 'YKDshaxing/moonlibsync@0.1.0', '--json'], 'registry-live-version', cwd=client, env=env)
+        run(['moon', 'view', MODULE + '@' + VERSION, '--json'], 'registry-live-version', cwd=client, env=env)
         assert cached.is_file(), 'No registry archive fetched'
         fetched = members(cached)
         assert fetched == actual, 'Registry member/content difference'
@@ -297,7 +327,7 @@ def registry(actual):
         module = client / '.mooncakes/YKDshaxing/moonlibsync'
         assert module.is_dir()
         metadata = (module / 'moon.mod').read_text(encoding='utf-8')
-        assert 'version = "0.1.0"' in metadata and 'name = "YKDshaxing/moonlibsync"' in metadata
+        assert f'version = "{VERSION}"' in metadata and 'name = "YKDshaxing/moonlibsync"' in metadata
         unchanged_bytes(actual, module)
         installed = {p.relative_to(module).as_posix() for p in module.rglob('*') if p.is_file()}
         assert installed == set(actual), {'extra': sorted(installed - actual.keys()), 'missing': sorted(actual.keys() - installed)}
@@ -308,14 +338,25 @@ def registry(actual):
         # Source build from the registry-downloaded package, no precompiled binary claim.
         cli = cli_flow(module, 'registry-source-cli', env)
         unchanged_bytes(actual, module)
+        shutil.copyfile(ROOT / 'tests/stage-a/consumer.mbt.txt', client / 'main.mbt')
+        from stage_a_candidate import validate
+        stage_results = validate(client, module, Path(cli['path']), run, OUT, env=env, registry=True)
+        unchanged_bytes(actual, module)
         closure = []
         for mod in (client / '.mooncakes').glob('*/*/moon.mod'):
             closure.append({'path': str(mod.parent), 'metadata_sha256': digest(mod.read_bytes()), 'metadata': mod.read_text(encoding='utf-8')})
-        return {'status': 'passed', 'kind': 'public-registry-no-local-replacement', 'resolved_version': '0.1.0',
+        locked = json.loads((ROOT / 'dependencies.lock.json').read_text(encoding='utf8'))['packages']
+        verified_closure = []
+        for name, item in locked.items():
+            dependency_archive = home / 'registry/cache' / name / (item['version'] + '.zip')
+            assert digest(dependency_archive.read_bytes()) == item['sha256'], 'Registry dependency archive drift: ' + name
+            unchanged_bytes(members(dependency_archive), client / '.mooncakes' / name)
+            verified_closure.append({'module': name, 'version': item['version'], 'sha256': item['sha256'], 'license': item['license'], 'source_bytes_verified': True})
+        return {'status': 'passed', 'kind': 'public-registry-no-local-replacement', 'resolved_version': VERSION,
                 'module_path': str(module), 'environment': environment(top), 'no_workspace': True, 'fresh_registry_home': str(home),
                 'public_registry': 'https://mooncakes.io', 'downloaded_archive_sha256': digest(cached.read_bytes()),
                 'downloaded_archive_bytes': cached.stat().st_size, 'results': results, 'closure': closure,
-                'source_and_metadata_match_candidate': True, 'cli': cli}
+                'source_and_metadata_match_candidate': True, 'cli': cli, 'stage_a': stage_results, 'registry_api_mode': True, 'verified_dependency_closure': verified_closure, 'sdk_archive_cache': sdk_archives}
 
 
 def main():
@@ -325,7 +366,7 @@ def main():
     args = parser.parse_args()
     os.chdir(ROOT)
     (OUT / 'logs').mkdir(parents=True, exist_ok=True)
-    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-development-snapshot', 'source': source(), 'status': 'incomplete'}
+    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-release-candidate', 'source': source(), 'status': 'incomplete'}
     save(OUT / 'report.json', report)
     try:
         actual, audit = audit_package()
@@ -343,6 +384,7 @@ def main():
         raise
     finally:
         save(OUT / 'report.json', report)
+        save(OUT / ('registry-report.json' if args.registry else 'candidate-report.json'), report)
     print(f'Release checks passed: {report["publication_status"]}; real package audit and public API evidence saved to {OUT}')
 
 

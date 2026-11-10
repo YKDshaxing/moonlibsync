@@ -1,17 +1,24 @@
 """Actual external stage A consumer entry; candidate workspace replacement only."""
 import argparse,json,os,platform,subprocess,sys,re
 from pathlib import Path
+from release_version import MODULE, VERSION
 ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--client',type=Path,required=True);p.add_argument('--package',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--target',choices=['native','js','wasm-gc']);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--client',type=Path,required=True);p.add_argument('--package',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--target',choices=['native','js','wasm-gc']);p.add_argument('--registry',action='store_true');a=p.parse_args()
     client=a.client.resolve();package=a.package.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     assert not client.is_relative_to(ROOT) and not package.is_relative_to(ROOT)
-    assert client.parent==package.parent
-    assert '"./stage-a-consumer"' in (client.parent/'moon.work').read_text(encoding='utf-8')
+    if a.registry:
+        for parent in (client,*client.parents):
+            assert not (parent/'moon.work').exists() and not (parent/'moon.work.json').exists()
+        assert package==(client/'.mooncakes'/MODULE).resolve()
+        assert not re.search(r'(?m)^\s*(?:replace|path|git)\b',(client/'moon.mod').read_text(encoding='utf8'))
+    else:
+        assert client.parent==package.parent
+        assert '"./stage-a-consumer"' in (client.parent/'moon.work').read_text(encoding='utf-8')
     targets=[a.target] if a.target else ['native','js','wasm-gc']
-    report=dict(status='incomplete',kind='development-candidate-local-workspace',registry_consumption=False,environment=platform.platform(),client=str(client),resolved_package=str(package),replacement='moon.work members package and stage-a-consumer',expected=dict(targets=len(targets),encapsulation=len(targets)*3),runs=[],encapsulation=[])
+    report=dict(status='incomplete',kind='public-registry-no-local-replacement' if a.registry else 'release-candidate-local-workspace',registry_consumption=a.registry,version=VERSION,environment=platform.platform(),client=str(client),resolved_package=str(package),replacement='none' if a.registry else 'moon.work members package and stage-a-consumer',expected=dict(targets=len(targets),encapsulation=len(targets)*3),runs=[],encapsulation=[])
     def run(cmd,label,expected=0,marker=None):
         result=subprocess.run(list(map(str,cmd)),cwd=client,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=180)
         text=result.stdout+result.stderr;(out/(label+'.log')).write_text(text, encoding='utf-8')
@@ -21,7 +28,11 @@ def main():
         return text
     tree=json.loads(run(['moon','tree','--json'],'resolved-dependencies'))
     module=[m for m in tree['modules'] if m['name']=='YKDshaxing/moonlibsync']
-    assert len(module)==1 and Path(module[0]['source']['path']).resolve()==package and module[0]['workspace_member'],module
+    assert len(module)==1 and module[0]['version']==VERSION,module
+    if a.registry:
+        assert module[0]['source']['kind']=='registry' and not module[0]['workspace_member'],module
+    else:
+        assert Path(module[0]['source']['path']).resolve()==package and module[0]['workspace_member'],module
     report['actual_resolution']=module[0]
     original=(client/'main.mbt').read_text(encoding='utf-8')
     try:

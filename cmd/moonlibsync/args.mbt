@@ -22,7 +22,7 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.1.0 (registry release); inspection and manifest commands are development-only
+  #|MoonLibSync 0.2.0; inspection, reusable signatures and integrity workflows since 0.2.0
   #|Usage:
   #|  moonlibsync signature OLD SIG [--block-size N] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA

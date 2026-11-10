@@ -1,3 +1,13 @@
+# MoonLibSync 0.2.0：完整性清单与受校验补丁
+
+自0.2.0提供三项检查API、PreparedSignature准备/复用、两种清单的制作/解析/编码、verified_patch和对应九条CLI命令。公开类型/错误、默认参数/预算、检查JSON schema1、清单schema1及严格解析/文件提交边界均冻结，详见[本版发布记录](release-0.2.0.md)。当前元数据和CLI版本为0.2.0；上传/注册表验证是否完成以该记录的实际状态为准。
+
+check_patch不认证内容身份；清单制作不证明恢复结果；verified_patch仅实际核验OLD、DELTA和结果，不实际核验缺席的SIG。清单必须可信，无发布者认证。全量缓冲、无稳定总耗时优势和Windows NTFS / Linux ext4 / DrvFS边界不变。
+
+下面按Commit保留的“尚未发布/开发源码/留待后续”均描述当时阶段状态，不是0.2.0能力限制；现行入口与调用语义沿用相应实现章节。
+
+---
+
 # Commit 21：独立完整性清单（开发源码）
 
 本笔提供SHA-256适配、basis-info与update-manifest的制作/解析/编码。清单在标准.sig/.delta之外，不改变magic、头部、END或已有检查CLI的JSON schema。注册表0.1.0不含这些API；元数据版本不改。Commit 21 的数据层记录保留如下；Commit 22 现已补充受校验应用和文件流程，见末节。

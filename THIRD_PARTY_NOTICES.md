@@ -42,3 +42,7 @@ Commit15新增原创有限基准工具和固定输入计划，采用项目LGPL-2
 ## Commit 16 分发检查及消费者
 
 新增发布审计/独立消费者模板为本项目原创LGPL-2.1-or-later代码，复用既有严格delta检查器，仅调用公开API；不复制算法实现或引入第三方运行依赖。正式归档保留完整GPL/LGPL、core Apache许可证/NOTICE、来源/第三方说明及原移植版权；既有自有输入、参考输出和手写opcode数据仍与完整测试/生成来源一起交付。固定rdiff和工具链二进制、依赖缓存、凭据、构建/测量产物不入包。各实际成员的内容/许可归属在release审计索引中逐项记录，第三方许可证不统一改标。
+
+## 0.2.0阶段A来源与分发
+
+阶段A检查/Prepared索引封装/完整性清单/受校验补丁及其原创适配、测试、消费者与发布版本布线均为本项目LGPL-2.1-or-later胶合和验证代码，没有新增算法移植。SHA-256显式调用固定mooncrypt0.4.5/hash/sha2的Sha256，JSON/UTF8使用固定MoonBit core；原Rabin–Karp/librsync、BLAKE2及core版权声明保持。mooncrypt0.4.5、moonbase0.4.2、moondate0.1.0、moonrand0.1.0均为Apache-2.0，实际归档哈希/闭包见dependencies.lock.json，依赖源码各自保留LICENSE，模块包不捆绑缓存或参考工具。完整Apache文本、core LICENSE/NOTICE及GPL/LGPL文本随包保留；逐成员来源与许可范围由本版实际包审计记录。未把第三方实现或许可改标为本项目原创。

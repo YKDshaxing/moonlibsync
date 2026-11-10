@@ -1,10 +1,20 @@
-# MoonLibSync 0.1.0 Native CLI
+# MoonLibSync 0.2.0：Native单文件CLI
+
+自0.2.0提供三项检查API、PreparedSignature准备/复用、两种清单的制作/解析/编码、verified_patch和对应九条CLI命令。公开类型/错误、默认参数/预算、检查JSON schema1、清单schema1及严格解析/文件提交边界均冻结，详见[本版发布记录](release-0.2.0.md)。当前元数据和CLI版本为0.2.0；上传/注册表验证是否完成以该记录的实际状态为准。
+
+check_patch不认证内容身份；清单制作不证明恢复结果；verified_patch仅实际核验OLD、DELTA和结果，不实际核验缺席的SIG。清单必须可信，无发布者认证。全量缓冲、无稳定总耗时优势和Windows NTFS / Linux ext4 / DrvFS边界不变。
+
+下面按Commit保留的“尚未发布/开发源码/留待后续”均描述当时阶段状态，不是0.2.0能力限制；现行入口与调用语义沿用相应实现章节。
+
+---
+
+# 历史归属：MoonLibSync 0.1.0 Native CLI
 
 0.1.0 提供下述单文件命令与保证边界。Commit16只将版本输出改为 `MoonLibSync 0.1.0` 并同步相应检查；下方Commit13/15的development/not released字样属于当时历史输出，不能作为本版当前输出。模块包交付CLI源码；从注册表下载包构建时明确称为“注册表包源码构建”，不代表预编译二进制安装。发布/消费证据见[发布验收](release.md)。
 
-## Commit 18：开发源码检查命令
+## Commit 18历史阶段：检查命令
 
-注册表 0.1.0 仍只有原 `signature`、`delta`、`patch` 文件命令。下列命令只属于当前开发源码，尚未发布为新版本；模块元数据与 `--version` 保留0.1.0。当前帮助明确区分注册表发布与开发检查功能。
+在Commit18阶段，注册表 0.1.0 只有原 `signature`、`delta`、`patch` 文件命令。当时下列命令只属于开发源码，模块元数据与 `--version` 保留0.1.0；自0.2.0已纳入冻结范围，现行版本/发布状态见顶部说明。
 
 ```text
 moonlibsync inspect-signature SIG [--json]

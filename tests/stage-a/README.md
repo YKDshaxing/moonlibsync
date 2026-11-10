@@ -1,6 +1,6 @@
 # 阶段 A 组合与候选消费
 
-Commit 23仅整合验证。公开API、默认Limits、检查JSON schema1、清单schema1与标准SIG/DELTA均不改；新增API仍未发布。五层边界见[设计说明](../../docs/design.md#commit-23阶段-a-组合验证开发源码)；资源检查的具体时机见[资源表](../../docs/resources.md#commit-23阶段-a-资源契约汇总)。
+该计划建立于Commit23，现作为0.2.0阶段A冻结验收的一部分；自0.2.0提供这些API。公开API、默认Limits、检查JSON schema1、清单schema1与标准SIG/DELTA均不改，实际发布状态见[本版记录](../../docs/release-0.2.0.md)。五层边界见[设计说明](../../docs/design.md#commit-23阶段-a-组合验证开发源码)；资源检查的具体时机见[资源表](../../docs/resources.md#commit-23阶段-a-资源契约汇总)。
 
 ## 固定计划
 
@@ -29,7 +29,7 @@ Commit 23仅整合验证。公开API、默认Limits、检查JSON schema1、清�
 
 ## 实际候选包消费与拒绝矩阵
 
-PowerShell：`$env:MOONLIBSYNC_RELEASE_DIR='_build/stage-a-candidate'; python scripts/release_check.py`。Linux：`MOONLIBSYNC_RELEASE_DIR=_build/stage-a-candidate python scripts/release_check.py`。目录配置只影响验证工具，不新增产品CLI参数。原工具默认release-0.1.0目录不用于本笔；CI也显式配置开发候选目录，不覆盖正式发布归档。仅本机已有锁定索引时可沿用MOONLIBSYNC_OFFLINE_INDEX=1；报告注明缓存模式，CI正常更新索引，依赖声明与工具链不变。
+PowerShell：`$env:MOONLIBSYNC_RELEASE_DIR='_build/release-0.2.0'; python scripts/release_check.py`。Linux：`MOONLIBSYNC_RELEASE_DIR=_build/release-0.2.0 python scripts/release_check.py`。目录配置只影响验证工具，不新增产品CLI参数。原工具默认release-0.1.0目录不用于本笔；CI也显式配置开发候选目录，不覆盖正式发布归档。仅本机已有锁定索引时可沿用MOONLIBSYNC_OFFLINE_INDEX=1；报告注明缓存模式，CI正常更新索引，依赖声明与工具链不变。
 
 实际moon package候选解压在仓库外的package目录；moon.work显式列出package与stage-a-consumer，公共程序只导入模块@lib，`moon tree --json`核对实际解析路径就是该解包目录。`consumer.mbt.txt`在两平台三个目标运行：三项统计有独立预期，准备一次处理两个目标，16种拒绝后再次成功；另有每目标3次私有字段/构造编译拒绝及正常复验。它们不计入166项根包测试，也不属于公开注册表消费。
 
@@ -39,6 +39,6 @@ PowerShell：`$env:MOONLIBSYNC_RELEASE_DIR='_build/stage-a-candidate'; python sc
 
 旧范围保留：两平台三目标各166库测试、CLI314/315和各15辅助、274对/496参数/3968恢复、82/29消费、32次Prepared恢复、Python工具/示例/封装及原失败门禁。基准仅原工具self-check及Prepared恢复，不重新计时。不合并这些不同计量为“案例总数”。
 
-Commit24尚待：精确版本与身份检查、功能/接口冻结、最终实际分发包及许可证审计、干净目录重建、发布源SHA/必需CI关联、Mooncakes实际新版本发布、无workspace替换的独立注册表消费及发布证据归档。本笔不创建标签或Release。
+Commit23时下列Commit24条件尚待；本版实际状态以release-0.2.0记录为准：精确版本与身份检查、功能/接口冻结、最终实际分发包及许可证审计、干净目录重建、发布源SHA/必需CI关联、Mooncakes实际新版本发布、无workspace替换的独立注册表消费及发布证据归档。本笔不创建标签或Release。
 
 Windows首次CI暴露新消费者诊断日志依赖系统CP1252编码的缺口；新工具文本读写显式使用UTF-8。候选消费步骤固定PYTHONUTF8=0、PYTHONIOENCODING=utf-8，仍实际编译并保存包含Unicode的三目标私有字段拒绝诊断，使该编码环境进入持续回归；不放宽任何拒绝或恢复检查。运行库不涉及此修复。

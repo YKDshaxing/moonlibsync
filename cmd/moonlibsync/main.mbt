@@ -89,7 +89,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.1.0\n")
+      @stdio.stdout.write(b"MoonLibSync 0.2.0\n")
     } else {
       execute(parse_plan(args[1:]))
     }

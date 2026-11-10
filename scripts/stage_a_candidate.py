@@ -5,33 +5,35 @@ from interop_wire import inspect_delta
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def validate(client,package,exe,runner,out):
+def validate(client,package,exe,runner,out,env=None,registry=False):
     report=dict(status='incomplete',consumer={},cli=[],failure_gates=[])
-    dest=out/'stage-a';dest.mkdir(exist_ok=True)
+    dest=out/('registry-stage-a' if registry else 'stage-a');dest.mkdir(exist_ok=True)
     entry=[sys.executable,ROOT/'scripts/check_stage_a_consumer.py','--client',client,'--package',package,'--output',dest/'consumer']
+    if registry: entry.append('--registry')
+    def invoke(command,label): return runner(command,label,cwd=client,env=env)
     try:
-        runner(entry,'stage-a-consumer',cwd=client)
+        invoke(entry,'stage-a-consumer')
         report['consumer']=json.loads((dest/'consumer/report.json').read_text(encoding='utf-8'))
         # Mutate the consumer's independent signature-byte expectation, not core code.
         source=client/'main.mbt';original=source.read_text(encoding='utf-8');assert original.count('summary.signature_bytes,52L')==1
         source.write_text(original.replace('summary.signature_bytes,52L','summary.signature_bytes,53L'), encoding='utf-8')
         try:
-            runner([*entry,'--target','wasm-gc','--output',dest/'consumer-broken'],'stage-a-consumer-broken',cwd=client)
+            invoke([*entry,'--target','wasm-gc','--output',dest/'consumer-broken'],'stage-a-consumer-broken')
             raise AssertionError('broken consumer unexpectedly succeeded')
         except subprocess.CalledProcessError as error:
             assert 'STAGE_A_CONSUMER_ENTRY_FAILURE' in error.output and 'STAGE_A_CONSUMER_MISMATCH' in error.output,error.output
             report['failure_gates'].append(dict(id='independent-consumer-expectation',exit_code=error.returncode,status='passed'))
         finally: source.write_text(original, encoding='utf-8')
-        runner([*entry,'--target','wasm-gc','--output',dest/'consumer-restored'],'stage-a-consumer-restored',cwd=client)
+        invoke([*entry,'--target','wasm-gc','--output',dest/'consumer-restored'],'stage-a-consumer-restored')
         report['failure_gates'].append(dict(id='consumer-restored',status='passed'))
-        work=package.parent/'stage-a-cli';work.mkdir()
+        work=client.parent/'stage-a-cli';work.mkdir()
         old=b'ABCDEFGHIJKLMN';new=b'!ABCDEFGHIJKLMN'
         (work/'old').write_bytes(old);(work/'new').write_bytes(new)
         def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
         def call(name,args,expected=0,needle=None):
             watched={p.name:sha(p) for p in work.iterdir() if p.is_file()}
             pending={p.name for p in work.glob('.moonlibsync-*.tmp')}
-            result=subprocess.run([str(exe),*map(str,args)],cwd=work,capture_output=True,timeout=120)
+            result=subprocess.run([str(exe),*map(str,args)],cwd=work,capture_output=True,timeout=120,env=env)
             (dest/(name+'.log')).write_bytes(result.stdout+result.stderr)
             assert result.returncode==expected,(name,result.stdout,result.stderr)
             if not expected:
@@ -93,7 +95,7 @@ def validate(client,package,exe,runner,out):
         report['rejections']=dict(core=dict(expected=16,executed=16,status='passed',ids=reject['core']),cli=dict(expected=12,executed=12,status='passed',ids=reject['cli']))
         report['failure_gates_expected']=4;assert len(report['failure_gates'])==4
         report['cli_expected']=24;assert len(report['cli'])==report['cli_expected']
-        report.update(status='passed',sender_old_unavailable=True,product_cli=dict(path=str(exe),sha256=sha(exe),built_from=str(package)),registry_consumption=False)
+        report.update(status='passed',sender_old_unavailable=True,product_cli=dict(path=str(exe),sha256=sha(exe),built_from=str(package)),registry_consumption=registry)
     except BaseException as error:
         report.update(status='failed',error=repr(error))
         # Candidate TemporaryDirectory will be cleaned: preserve all current inputs.

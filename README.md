@@ -1,35 +1,27 @@
-# MoonLibSync
+# MoonLibSync 0.2.0
 
-MoonLibSync 0.1.0 是 MoonBit 纯字节远端签名差分库，提供 `signature(old, options, limits)`、`delta(signature, new, limits)`、`patch(old, delta, limits)`。发送端只持有标准签名与新字节即可生成增量。附 Windows／Linux Native 单文件 CLI；全量字节缓冲，不含网络或目录同步。
+MoonLibSync提供与librsync互操作的全量缓冲字节差分库及Native单文件CLI。自0.2.0提供检查API、可复用签名索引、完整性清单及受校验补丁流程。本页描述0.2.0契约；实际上传与独立注册表验收状态见[本版发布记录](docs/release-0.2.0.md)，版本字符串本身不是发布证明。
 
-模块及公开仓库：[YKDshaxing/moonlibsync](https://github.com/YKDshaxing/moonlibsync)。**[0.1.0 已发布至 Mooncakes](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.1.0/)**，并通过仓库外、无本地替换的 Native／JS／Wasm-GC 注册表消费者验证。正式发布源码为 [`f62958eceda9deecc4eae8a14007f5be76c59b0e`](https://github.com/YKDshaxing/moonlibsync/commit/f62958eceda9deecc4eae8a14007f5be76c59b0e)；本仓库后续证据文档提交不改变注册表原包。审计、CI、实际下载及环境边界见[发布验收说明](docs/release.md)。
+| 层次 | 公开入口与用途 |
+|---|---|
+| 标准字节差分 | signature / delta / patch；发送端仅需远端签名与NEW |
+| 检查与预检 | inspect_signature / inspect_delta / check_patch；长度预检不认证内容身份 |
+| 可复用索引 | prepare_signature / PreparedSignature::delta；准备一次、逐次重检限制并独立计量 |
+| 格式外清单 | create/parse/encode_basis_info 与 create/parse/encode_update_manifest |
+| 校验后返回/提交 | verified_patch 与patch-verified实际核验OLD、DELTA及结果；未传入SIG，不实际核验SIG文件 |
 
-## 获取源码与本地导入
-
-Commit 21 开发源码新增独立SHA-256完整性清单：接收端 `create_basis_info(OLD, SIG, limits)` 会重新生成并比较签名；发送端 `create_update_manifest(info, SIG, NEW, DELTA, limits)` 不接收OLD。配套parse/encode入口采用严格schema、64 KiB输入、深度2、总字段16限制，具体字段、实际JSON及错误顺序见[清单说明](docs/manifests.md)。清单制作不等于恢复结果已验证，也不提供发布者认证；受校验patch与文件提交留待Commit22，注册表0.1.0不含这些API。
-
-开发源码提供 `prepare_signature(signature_bytes, limits) -> PreparedSignature raise SyncError`（Commit 19）与 `prepared.delta(new_bytes, limits)`（Commit 20）。准备只解析签名并建立受限稳定索引，不接收 basis；对象不透明，每次生成重检当前限制、使用独立扫描状态与预算。原一次性 delta 的共享预算不变。[完整示例](examples/prepared/main.mbt) 准备一次、生成两个目标并分别恢复，运行 `moon run examples/prepared --target native`（也可 js/wasm-gc）。预算、保留存储和边界见[设计说明](docs/design.md#commit-20复用生成)；[有限进程内基准](docs/benchmarks-prepared.md)包含准备与实测总成本，本机没有稳定总耗时优势，不承诺线程安全。注册表0.1.0不含这些 API，元数据版本未改。
-
-Commit 23 将阶段 A 新功能加入独立18路径组合计划和仓库外候选消费：旧矩阵保留，新矩阵为28对输入、504次恢复；两平台候选包分别运行Native/JS/Wasm-GC公共消费者及包内构建的正式CLI。入口、拒绝矩阵与计数见[阶段 A 验证说明](tests/stage-a/README.md)。候选目录为 `_build/stage-a-candidate/`，使用明确本地workspace替换，**不是注册表消费或重新发布0.1.0**。
-
-Commit 22 开发源码增加 `verified_patch(basis, delta_bytes, manifest, limits)` 和 `basis-info`、`make-manifest`、`patch-verified` 文件命令。核验输入及恢复结果后才返回或提交；完整性依赖可信清单，不提供发布者认证，也不验证缺席的实际 SIG 文件。[可运行字节示例](examples/verified/main.mbt)与[两端文件流程](docs/manifests.md#commit-22受校验应用与文件流程)已加入固定工具链检查。新增能力尚未发布，注册表0.1.0不包含这些入口。
-
-当前开发源码在已发布三项 API 之外新增 `inspect_signature`、`inspect_delta`、`check_patch`（Commit 17），并提供对应检查 CLI 和 JSON 输出（Commit 18），属于拟定 0.2.0 阶段，尚未发布。注册表 **0.1.0 仍只有 `signature`、`delta`、`patch` 三项 API 及原三个文件命令**；仓库版本元数据暂仍为 0.1.0，不能用它证明新能力已在注册表可用。新入口接收 `Limits`，返回只含精确整数的不可变摘要；格式检查不恢复输出，长度预检不认证 basis 内容。字段、错误顺序和内存边界见[开发接口说明](docs/design.md#commit-17开发源码只读检查)。
+清单需要可信来源，不提供发布者认证。签名profile为RK+BLAKE2，BLAKE2b先计算32字节再截取；默认2048/32，严格END及尾随数据策略不变。全量缓冲与转换副本的边界见[资源契约](docs/resources.md)。有限复用基准未观察到稳定总耗时优势，历史测量未重跑。
 
 ```text
 git clone https://github.com/YKDshaxing/moonlibsync.git
 cd moonlibsync
 ```
 
-仓库内消费者的 `moon.pkg` 导入 `"YKDshaxing/moonlibsync" @lib`。完整可运行代码、三项API输入/返回/错误及完整性责任见[使用与设计](docs/design.md)与[纯字节示例](examples/basic/main.mbt)。注册表依赖声明与真实解析/运行结果分别核验，见下节。
+消费者的moon.mod声明 `import { "YKDshaxing/moonlibsync@0.2.0", }`，moon.pkg导入 `"YKDshaxing/moonlibsync" @lib`。注册表消费必须核验实际解析路径与版本；本地候选包允许明确workspace替换，两者分别统计。[basic](examples/basic/main.mbt)、[prepared](examples/prepared/main.mbt)、[verified](examples/verified/main.mbt)均为可运行公共API示例。
 
-## 模块包与仓库开发的区别
+模块包交付库、九条CLI命令的源码、示例及许可/来源资料，不含预编译二进制或安装器。从注册表下载后构建CLI应称为“注册表包源码构建”。完整Git检出的参考、CI、基准与发布工具需要Git元数据和相应参考环境，不应在普通依赖目录直接当作库入口运行。
 
-0.1.0 模块包交付字节库、`cmd/moonlibsync` Native CLI源码、`examples/basic`、完整许可证/来源说明及配套开发测试/夹具。没有预编译CLI二进制。对已取得的模块源码，可在模块根选择固定工具链、安装依赖后运行 `moon run examples/basic --target native`（也可js/wasm-gc），或构建前述CLI。对注册表下载源码的构建，应称为“注册表包源码构建”。
-
-使用公开注册表版本的消费者，其 `moon.mod` 声明 `import { "YKDshaxing/moonlibsync@0.1.0", }`，包配置导入 `"YKDshaxing/moonlibsync" @lib`；本地候选消费者另用明确的workspace替换。版本声明不是下载成功证明，必须核对实际解析路径、版本与结果，不能将候选本地替换计作注册表消费。
-
-下面安装器、Git接口保护、互操作、基准及发布工具命令属于**完整Git检出开发流程**，需要Git元数据及相应参考工具。脚本和完整测试资料随包保留以便审查，不能据此在没有.git的注册表依赖目录中直接执行仓库CI入口。基础示例/CLI构建与仓库CI入口分开使用。
+0.1.0的原三项API发布源为f62958eceda9deecc4eae8a14007f5be76c59b0e，历史实际包/许可证、发布及消费证据完整保留于[0.1.0发布记录](docs/release.md)。本版不改写其179成员/268008字节或既有归档，也不把旧包称为包含阶段A接口。
 
 ## 固定工具链与源码运行
 
@@ -144,7 +136,7 @@ python3 scripts/benchmark.py
 
 固定五类场景、64KiB/1MiB、2048/32，预热2轮、正式7轮，release CLI与固定rdiff Release在ext4上交替执行；patch比较使用同一rdiff delta。计时包含启动和文件流程，Moon还含sync与无覆盖提交；不是纯算法耗时。全异场景实际零COPY且delta大于new，本机Moon进程流程比rdiff慢，结论限于这次环境。原始轮次、输入/可执行文件哈希及最终源码关联保存在 `_build/benchmarks/`，完整方法/结果见[基准](docs/benchmarks.md)。CI只运行工具正确性检查，不设置硬件性能门槛。
 
-冻结三项API/公开类型、默认值、RK+BLAKE2 profile、标准delta宽度、错误与资源契约、CLI语法及文件保证、已验证目标和范围外能力；详见[冻结记录](docs/compatibility.md#commit-15首版功能冻结)。冻结不表示源码包候选、发布或0.1.0整体交付已经完成。
+上段为Commit15首版基准的历史方法与结果，后续复用基准见[独立报告](docs/benchmarks-prepared.md)，均未重新计时。本版冻结全部阶段A入口、类型/错误、schema1及文件边界，见[0.2.0冻结记录](docs/release-0.2.0.md)。
 
 ## 支持与交付边界
 
@@ -154,4 +146,10 @@ CLI已验证 Windows Native/NTFS、Linux Native/ext4。WSL DrvFS `/mnt/d` 不支
 
 [九项阶段验收表](docs/contest-acceptance.md) 区分实现、目标、证据、阶段归属与未完成项。有限基准与首版功能冻结已完成；[基准报告](docs/benchmarks.md)包含10组实际数据量、COPY及三项操作中位数/最小/最大值。Commit16的实际归档审计、发布源、注册表获取与消费证据按[发布验收说明](docs/release.md)独立归档。历史记录保留在 [Commit 1–13 快照](docs/history.md)，不作为当前能力声明。
 
-采用 LGPL-2.1-or-later；[LGPL文本](COPYING.LESSER)、[GPL文本](COPYING)、[来源](SOURCES.md)、[第三方说明](THIRD_PARTY_NOTICES.md) 以实际文件为准；源码说明存在不代表正式分发包义务审计已经完成。
+采用 LGPL-2.1-or-later；[LGPL文本](COPYING.LESSER)、[GPL文本](COPYING)、[来源](SOURCES.md)、[第三方说明](THIRD_PARTY_NOTICES.md) 以实际文件为准；逐成员正式包审计及其实际状态以本版发布记录为准。
+
+## 0.2.0验证与正式发布边界
+
+`python scripts/release_check.py --clean`使用固定工具链的正式moon package，默认写入 `_build/release-0.2.0/`；三目标旧/阶段A公共消费者、私有字段拒绝与包内CLI均在仓库外运行。`--registry`仅在实际上传后运行，使用全新工具链/空模块缓存、公开注册表、禁止workspace/path/Git替换，复用同一阶段A消费与24项CLI流程。两平台结果分别保存，不能以候选CI抵扣注册表消费。0.1.0归档目录受只读保护。
+
+原矩阵保留各目标166库测试、CLI314/315与各15辅助、496参数/3968恢复、82/29消费及32Prepared恢复；[独立阶段A计划](tests/stage-a/README.md)为28对/28参数/504恢复、38份SIG、38个准备对象和112调用。发布工具测试由原4项加5项版本/归档保护回归单列，不混入库测试。新指纹、默认预算及两轮历史基准不变。
