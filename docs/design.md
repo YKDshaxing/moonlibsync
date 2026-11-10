@@ -1,5 +1,11 @@
 # 字节库使用与设计
 
+## Commit 21：格式外完整性清单
+
+新增FileDigest、BasisInfo、UpdateManifest、独立ManifestError及六项create/parse/encode入口，详情见[清单契约与实际JSON](manifests.md)。底层SHA-256显式调用固定mooncrypt0.4.5的Sha256；接收端重建并比较OLD/SIG关联，发送端只持有info/SIG/NEW/DELTA，验证SIG长度/摘要及DELTA完整格式、声明basis范围、预计输出长度，不获取OLD。
+
+严格UTF-8、无BOM、完整JSON、重复键拒绝、两层容器与64KiB/16字段边界由固定core与受限适配完成；公开数据在编码/消费时重验。标准SIG/DELTA原字节、END、原SyncError、Limits及PreparedSignature的封装/独立预算不改，三个检查CLI的JSON schema也不改。没有verified patch或清单CLI；同长度但内容错误的合法delta仍可能制作清单，实际恢复后验证留待Commit22。SHA完整性不提供发布者认证，需要可信清单来源。20项新测试进入原三目标矩阵，性能结果保留Commit20原测量与源码归属，不重测换SHA。新增API仅为开发源码，尚未发布。
+
 ## Commit 20：复用生成
 
 开发方法 `PreparedSignature::delta(self, new_bytes: Bytes, limits: Limits) -> Bytes raise SyncError` 直接把原索引交给 scan_signature_delta，共用匹配、EOF收缩、稳定候选、literal/COPY合并及最短编码。没有重新解析、编码签名、排序或复制索引/摘要，不读取 basis；对象继续不透明，不缓存新字节或输出。原一次性 delta 未修改，仍在非空路径用同一个预算覆盖索引、扫描、候选和指令建设，空新文件行为不变。

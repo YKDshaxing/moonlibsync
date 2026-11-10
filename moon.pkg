@@ -1,4 +1,8 @@
 // Pure byte-oriented core. Native filesystem imports belong only to probes/native.
 import {
   "moonbitstack/mooncrypt/hash/blake2",
+  "moonbitstack/mooncrypt/hash/sha2",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/encoding/hex",
 }

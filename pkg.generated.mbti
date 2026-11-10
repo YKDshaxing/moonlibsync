@@ -4,11 +4,23 @@ package "YKDshaxing/moonlibsync"
 // Values
 pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
+pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
+
+pub fn create_update_manifest(BasisInfo, Bytes, Bytes, Bytes, Limits) -> UpdateManifest raise ManifestError
+
 pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
+pub fn encode_basis_info(BasisInfo, Limits) -> Bytes raise ManifestError
+
+pub fn encode_update_manifest(UpdateManifest, Limits) -> Bytes raise ManifestError
 
 pub fn inspect_delta(Bytes, Limits) -> DeltaSummary raise SyncError
 
 pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
+
+pub fn parse_basis_info(Bytes, Limits) -> BasisInfo raise ManifestError
+
+pub fn parse_update_manifest(Bytes, Limits) -> UpdateManifest raise ManifestError
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
@@ -17,6 +29,17 @@ pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
 
 // Errors
+pub(all) suberror ManifestError {
+  Core(SyncError)
+  InvalidUtf8
+  InvalidJson
+  InvalidSchema
+  InvalidField(String)
+  BindingMismatch(String)
+  ResourceLimit(String)
+  HashFailure
+}
+
 pub(all) suberror SyncError {
   InvalidOptions(String)
   UnsupportedSignatureProfile
@@ -31,6 +54,11 @@ pub(all) suberror SyncError {
 }
 
 // Types and methods
+pub(all) struct BasisInfo {
+  basis : FileDigest
+  signature : FileDigest
+}
+
 pub(all) struct DeltaSummary {
   delta_bytes : Int64
   instruction_count : Int64
@@ -39,6 +67,11 @@ pub(all) struct DeltaSummary {
   literal_bytes : Int64
   copy_bytes : Int64
   output_bytes : Int64
+}
+
+pub(all) struct FileDigest {
+  byte_length : Int64
+  sha256 : String
 }
 
 pub(all) struct Limits {
@@ -77,6 +110,13 @@ pub(all) struct SignatureSummary {
   strong_sum_len : Int64
   record_count : Int64
   signature_bytes : Int64
+}
+
+pub(all) struct UpdateManifest {
+  basis : FileDigest
+  signature : FileDigest
+  delta : FileDigest
+  result : FileDigest
 }
 
 // Type aliases

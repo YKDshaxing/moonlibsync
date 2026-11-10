@@ -1,5 +1,13 @@
 # 来源与固定版本
 
+## Commit 21 直接使用范围补充
+
+固定moonbitstack/mooncrypt0.4.5的 `src/hash/sha2/sha2.mbt` / `hash/sha2` 现直接用于内部SHA-256适配，实际API为hash(BytesView, kind=Kind::Sha256)，输出检查32字节。该文件原声明 Copyright 2026 Leo Cheng / SPDX-License-Identifier: Apache-2.0；未复制、升级或重写算法，不采用SHA-512/256或BLAKE2替代。完整依赖压缩包与源码哈希仍由原dependencies.lock.json和verify_dependencies.py固定。
+
+配套core的encoding/utf8严格decode与json.parse现用于清单：实际核对parse.mbt中的容器深度消耗、reject_duplicate_keys及preserve_number_repr；固定深度2，不编写另一套JSON解析器。输入为Bytes，先字节预算再解码，拒绝BOM；原许可/NOTICE保留。
+
+scripts/verify_integrity_vectors.py用Python hashlib.sha256(data).hexdigest()与json.dumps产生独立9组SHA向量和3组清单预期，规则/完整输入在tests/integrity/vectors.json。abc签名实际由固定librsync2.3.4/e364852674780e43d578e4239128ff7014190ed3执行 `rdiff -H blake2 -R rabinkarp -b 2048 -S 32 signature` 得到，空与one向量复用原参考输出事实，未刷新原16夹具。JSON契约、绑定、预算和适配为本项目原创胶合层；本笔没有受校验恢复、文件提交或性能新结论。以下历史章节保持原阶段归属。
+
 本文件只记录实际来源和使用程度，不把参考版本等同于构建、移植或互操作验证。
 
 | 项目 | 固定版本 / 来源 | 本阶段使用 |

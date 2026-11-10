@@ -1,5 +1,11 @@
 # 0.1.0 兼容范围与发布归属
 
+## Commit 21 开发源码清单（尚未发布）
+
+新增独立basis-info/update-manifest schema1、FileDigest/BasisInfo/UpdateManifest及ManifestError，提供六项create/parse/encode入口。固定mooncrypt0.4.5提供真实SHA-256，固定core提供严格JSON/UTF-8；依赖锁、版本元数据和标准格式不改。原SyncError、操作、PreparedSignature、三个检查CLI schema、默认资源及旧夹具不变。
+
+JSON上限64KiB、容器深度2、后置总字段16、完整解析与重复键拒绝；字段集合精确、长度为规范Int64十进制字符串、摘要64个小写hex。接收端再生成SIG以绑定OLD，发送端无OLD参数，仅验证SIG绑定及DELTA格式/范围/输出长度。该清单不是可信凭证或已校验恢复结果；需要可信来源，不提供数字签名/密钥管理。受校验patch、清单CLI、文件提交仍属于Commit22。新能力只在开发源码，注册表0.1.0不含它，无发布、标签或Release操作。原阶段事实与基准归属保留下文。
+
 ## Commit 20 开发源码复用生成（尚未发布）
 
 只增加 PreparedSignature::delta 方法，类型字段继续不透明。复用扫描器及确定性输出，与一次性字节结果和独立patch恢复对照；当前Limits每次重检，准备预算与每次生成预算独立。原一次性共享预算、空目标、profile、错误、默认参数、产品CLI及所有旧矩阵不变。

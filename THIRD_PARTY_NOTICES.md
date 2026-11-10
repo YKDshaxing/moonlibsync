@@ -1,5 +1,7 @@
 # 第三方声明
 
+Commit21补充：固定mooncrypt0.4.5的hash/sha2现直接用于SHA-256（显式Kind::Sha256），实际源文件src/hash/sha2/sha2.mbt保留Copyright 2026 Leo Cheng / Apache-2.0，未复制或改写算法；不采用其他32字节摘要替代。固定MoonBit core的json与encoding/utf8用于受限严格解析，原Apache-2.0及NOTICE完整保留。Python hashlib/json仅用于独立测试预期，不链接进核心。新增manifest/sha256胶合层按项目LGPL-2.1-or-later声明，不改依赖锁或既有许可文本；详见SOURCES.md的本笔来源记录。
+
 本项目原创文件的 LGPL-2.1-or-later 声明不适用于第三方作品及其许可文本。下载的源码和工具链保存在忽略目录中；以下是已采用的依赖和实际调用范围。
 
 | 作品 | 版本 | 原始声明 | 用途 |

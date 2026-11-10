@@ -1,0 +1,79 @@
+{
+  "source": "Python hashlib.sha256 + json; rdiff v2.3.4/e364852674780e43d578e4239128ff7014190ed3 fixed SIG bytes",
+  "sha256": [
+    {
+      "id": "empty",
+      "input_hex": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "abc",
+      "input_hex": "616263",
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    },
+    {
+      "id": "binary",
+      "input_hex": "007f80ff",
+      "sha256": "89273d2f70b93285bb7ddb4bcee86a5347ca7159352e3cbdd20c23e9d1e507d3"
+    },
+    {
+      "id": "55",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079",
+      "sha256": "0c43a30970ee9525a6603d5656803c325bded148fa65bbd363df54cb3ac3dee5"
+    },
+    {
+      "id": "56",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c2",
+      "sha256": "f4dcdc09c846d1b3621701516b300055c1e7875e216ba019dd4423f5a420f2d0"
+    },
+    {
+      "id": "63",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c1",
+      "sha256": "ba3bb62c4369fe74e7b94392d0f04ed284a7b5d7295bfa48fabdb25c01d85ab7"
+    },
+    {
+      "id": "64",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a",
+      "sha256": "cb6862268ca7c02e7b6af558f0e3d236ce9ec7ff41cc746b2848c04c582da94e"
+    },
+    {
+      "id": "65",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a53",
+      "sha256": "b68af55df9ce8ee60870e45d10e36b2e8363c9896f6e62478dcb6f593a4d7133"
+    },
+    {
+      "id": "1024",
+      "input_hex": "135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03982cb145da6ef3881ca135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03982cb145da6ef3881ca135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03982cb145da6ef3881ca135ca5ee3780c9125ba4ed367fc8115aa3ec357ec71059a2eb347dc60f58a1ea337cc50e57a0e9327bc40d569fe8317ac30c559ee73079c20b549de62f78c10a539ce52e77c009529be42d76bf08519ae32c75be075099e22b74bd064f98e12a73bc054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc256eb7004992db246db6ff4891da236cb5fe4790d9226bb4fd468fd8216ab3fc458ed72069b2fb448dd61f68b1fa438cd51e67b0f9428bd41d66aff8418ad31c65aef74089d21b64adf63f88d11a63acf53e87d01962abf43d86cf1861aaf33c85ce1760a9f23b84cd165fa8f13a83cc155ea7f03982cb145da6ef3881ca",
+      "sha256": "e051d1007607de494c073da3c29903d6c0abfee7a4c0609f560a340a1947b470"
+    }
+  ],
+  "manifests": [
+    {
+      "id": "empty-default",
+      "old_hex": "",
+      "signature_hex": "727301470000080000000020",
+      "new_hex": "",
+      "delta_hex": "7273023600",
+      "basis_json": "{\"schema_version\":1,\"kind\":\"moonlibsync-basis-info\",\"basis\":{\"byte_length\":\"0\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"signature\":{\"byte_length\":\"12\",\"sha256\":\"62269816b4c1a3072b360e21c13eaba37e328d6a3d1c506b720ed598da2cecba\"}}\n",
+      "update_json": "{\"schema_version\":1,\"kind\":\"librsync-delta\",\"basis\":{\"byte_length\":\"0\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},\"signature\":{\"byte_length\":\"12\",\"sha256\":\"62269816b4c1a3072b360e21c13eaba37e328d6a3d1c506b720ed598da2cecba\"},\"delta\":{\"byte_length\":\"5\",\"sha256\":\"99bda669e1803fb643f9d14e63bb7d5bfca917c603b4e7d1673d4e35b30a8acb\"},\"result\":{\"byte_length\":\"0\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}}\n"
+    },
+    {
+      "id": "abc-default",
+      "old_hex": "616263",
+      "signature_hex": "72730147000008000000002066298923bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319",
+      "new_hex": "616263",
+      "delta_hex": "7273023645000300",
+      "basis_json": "{\"schema_version\":1,\"kind\":\"moonlibsync-basis-info\",\"basis\":{\"byte_length\":\"3\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"},\"signature\":{\"byte_length\":\"48\",\"sha256\":\"59a030db700124f21acc20a3563329bb1d90b64c8e8de59f19cbc0ead26c9573\"}}\n",
+      "update_json": "{\"schema_version\":1,\"kind\":\"librsync-delta\",\"basis\":{\"byte_length\":\"3\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"},\"signature\":{\"byte_length\":\"48\",\"sha256\":\"59a030db700124f21acc20a3563329bb1d90b64c8e8de59f19cbc0ead26c9573\"},\"delta\":{\"byte_length\":\"8\",\"sha256\":\"22120222ab5b762c88d44e81d72884fcd4ff5f2d82b02a6ae5edb0f56b3b1b53\"},\"result\":{\"byte_length\":\"3\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}}\n"
+    },
+    {
+      "id": "one-nondefault",
+      "old_hex": "00",
+      "signature_hex": "7273014700000007000000010810422503",
+      "new_hex": "00",
+      "delta_hex": "7273023645000100",
+      "basis_json": "{\"schema_version\":1,\"kind\":\"moonlibsync-basis-info\",\"basis\":{\"byte_length\":\"1\",\"sha256\":\"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d\"},\"signature\":{\"byte_length\":\"17\",\"sha256\":\"9de1cfdaa5b1e607a49f12d608f19b4e87c4c3cdcbb7aa56b6341526966c1ee1\"}}\n",
+      "update_json": "{\"schema_version\":1,\"kind\":\"librsync-delta\",\"basis\":{\"byte_length\":\"1\",\"sha256\":\"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d\"},\"signature\":{\"byte_length\":\"17\",\"sha256\":\"9de1cfdaa5b1e607a49f12d608f19b4e87c4c3cdcbb7aa56b6341526966c1ee1\"},\"delta\":{\"byte_length\":\"8\",\"sha256\":\"dd54e7436fbe3f657ff2007fa1a3ab2461cd6353a22532ea02c980de373e2db3\"},\"result\":{\"byte_length\":\"1\",\"sha256\":\"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d\"}}\n"
+    }
+  ]
+}
