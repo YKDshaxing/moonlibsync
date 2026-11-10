@@ -4,6 +4,7 @@ Never uploads. --registry verifies a published version without workspace/path
 replacement; --clean rebuilds a fresh source checkout with a fresh toolchain.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -232,11 +233,27 @@ def cli_flow(folder, label, env=None):
     return {'kind': label, 'path': str(exe), 'sha256': digest(exe.read_bytes()), 'source_build': True, 'version': version, 'restored_equal': True, 'copy_bytes': copied}
 
 
+def filesystem_path(path):
+    text=str(path.resolve())
+    if os.name!='nt' or text.startswith('\\\\?\\'):
+        return Path(text)
+    return Path('\\\\?\\UNC\\'+text[2:] if text.startswith('\\\\') else '\\\\?\\'+text)
+
+
+@contextmanager
 def release_temporary_directory(kind):
-    # Leave room for the fixed client's two SHA256 cache path components on
-    # Windows hosts where the legacy MAX_PATH limit is still enabled.
     codes={'package':'p','clean':'c','registry':'r'}
-    return tempfile.TemporaryDirectory(prefix='mls-'+codes[kind]+'-')
+    prefix='mls-'+codes[kind]+'-'
+    owned=Path(tempfile.mkdtemp(prefix=prefix)).resolve()
+    try:
+        yield str(owned)
+    finally:
+        # Verify the exclusively created cleanup root, then use Win32 extended
+        # paths only for filesystem cleanup. No validation/cleanup is disabled.
+        assert owned.parent==Path(tempfile.gettempdir()).resolve() and owned.name.startswith(prefix)
+        assert not owned.is_symlink(),'Temporary cleanup root was replaced'
+        shutil.rmtree(filesystem_path(owned))
+        assert not owned.exists(),'Temporary cleanup incomplete'
 
 
 def candidate(actual):

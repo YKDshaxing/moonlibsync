@@ -10,7 +10,7 @@ def validate(client,package,exe,runner,out,env=None,registry=False):
     dest=out/('registry-stage-a' if registry else 'stage-a');dest.mkdir(exist_ok=True)
     entry=[sys.executable,ROOT/'scripts/check_stage_a_consumer.py','--client',client,'--package',package,'--output',dest/'consumer']
     if registry: entry.append('--registry')
-    def invoke(command,label): return runner(command,label,cwd=client,env=env)
+    def invoke(command,label): return runner(command,('registry-' if registry else '')+label,cwd=client,env=env)
     try:
         invoke(entry,'stage-a-consumer')
         report['consumer']=json.loads((dest/'consumer/report.json').read_text(encoding='utf-8'))

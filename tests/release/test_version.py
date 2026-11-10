@@ -33,7 +33,8 @@ class VersionWiring(unittest.TestCase):
         for kind,child in [('clean','s'),('registry','b')]:
             with release.release_temporary_directory(kind) as directory:
                 top=Path(directory)
-                cache=top/child/'.toolchain/selected/cache/registry/metadata/v1'/('a'*64)/('b'*64)/'releases/0.2.0.json'
+                cache=top/child/'.toolchain/selected/cache/registry/metadata/v1'/('a'*64)/('b'*64)/'releases'/('c'*64+'.json')
+                cache=release.filesystem_path(cache)
                 cache.parent.mkdir(parents=True)
                 cache.write_text('Unicode diagnostic: \u2570\u2500',encoding='utf8')
                 self.assertTrue(cache.is_file())
