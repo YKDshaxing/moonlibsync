@@ -1,6 +1,6 @@
 # MoonLibSync 0.3.0：阶段 B 冻结与发布验收
 
-状态：`unpublished-release-candidate`。本文件随候选源码打包，不宣称已经上传或注册表验收成功；实际发布源SHA、同SHA CI、最终包索引及两平台下载证据在提交后 `_build/release-0.3.0/delivery.json` 保存。阶段B功能基线为 `82d2f98e69a95bbce2d125635b27890a02cfb0fa`，[基线CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/43020414564)三任务成功。发布后文档提交与正式publication_source_sha分别记录，文档HEAD不代替上传原包。
+状态：`published-and-consumer-verified`。0.3.0已实际上传，并通过Windows/NTFS与Linux/ext4的全部必需独立注册表消费。阶段B功能基线为`82d2f98e69a95bbce2d125635b27890a02cfb0fa`；正式publication_source_sha为`35b2225e56747c0d7568dd117017c25e6c658146`，[发布源同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/43025252619)三个任务全部成功。本段为发布后文档，文档SHA在delivery.json单列，不冒充发布源；上传原包保留当时的候选状态描述，不随文档HEAD变化。
 
 ## 本版冻结范围
 
@@ -43,3 +43,19 @@ schema2与schema1分别严格解析，未知kind/字段混用拒绝，不以扩�
 发布后每平台从正式发布源独立检出执行release_check.py --registry：新SDK、空模块缓存、公开下载0.3.0，无workspace/path/Git/候选替换；核对全部依赖闭包，原/阶段A/阶段B三目标及下载源码CLI，前后成员字节保持一致。任一平台未完成，状态保持published-consumption-pending；两端均通过才published-and-consumer-verified。候选CI不能抵扣注册表实测。
 
 参考官方[模块发布与版本规则](https://docs.moonbitlang.com/en/latest/toolchain/moon/package-manage-tour.html#publish-your-module)，实际选项以固定客户端help为准。本笔不创建标签、Release或安装器，止于Commit27，不进入阶段C。
+
+## 实际发布与两平台验收（2026-11-11）
+
+标准moon publish --dry-run及moon publish均退出0；服务端created_at为`2026-11-11T13:10:20.787881+00:00`，来自公开版本元数据，不用本机时间替代。发布前既有0.2.0查询成功、0.3.0明确404、YKDshaxing身份及namespace权限由服务器dry-run验证；网络查询失败独立记录，不当作版本不存在。版本在上传前再次确认可用；没有重复上传、标签、Release或安装器操作。
+
+实际上传ZIP为YKDshaxing-moonlibsync-0.3.0.zip，266成员，压缩443781字节，未压缩1184417字节；SHA-256为`f96d2d93f305286b7cd761db6504d7c5590e06a0453a7df0ce71941a30fddfd7`。Windows和Linux公开下载都为这一大小及SHA，逐成员内容与发布Git原始blob一致，编译后重新核对未改变。GPL/LGPL、Apache-2.0、core LICENSE/NOTICE及来源说明完整，闭包四项固定依赖的归档哈希与源码全部核对。SDK、缓存和凭据未入模块包。
+
+CI的Windows候选ZIP同上传哈希；Ubuntu候选SHA为`7eeefefb03681146ee6287f32d9be7939a817c8c58d4345c091606ae4df0ef03`。两平台266个成员路径、原始内容及逐成员哈希相同；容器字节不同，不据此判源码差异。本地Linux包审计也单列保存，不拿它替代实际下载ZIP。
+
+两平台都从正式发布源干净检出执行release_check.py --registry，安装新SDK到独立临时目录，初始模块缓存为空，从公开注册表真实取得0.3.0，未用workspace/path/Git/候选替换。原消费者、阶段A、阶段B分别在Native/JS/Wasm-GC运行。下载源码CLI保留旧流程和48项transfer，另有2项auto/显式数字字节一致检查（32769字节选128，摘要32签名9264字节）；API模板则验证摘要16的5152字节签名、计划决策字段、Delta/Full、收益阈值、错误、schema1兼容和schema2交叉拒绝。两平台各执行阶段A/B坏消费者非零与恢复门禁；日志中的预期断言失败不是正常消费失败。
+
+保留两平台三目标各194库测试、Windows392/Linux393 CLI、各19辅助、3968/504/32恢复、82/29消费、auto35签名/70恢复、Commit26的2 Delta/6 Full，原Python互操作工具6项、包安全10项、五例和全部失败门禁。新增组合实际13输入、13签名对照、26候选/应用，分别16次Delta上游恢复、10次Full原始校验，9项拒绝检查；不把这些数量累加成库测试，也没有跨生成器强求相同delta或选择。
+
+本地初次干净重建与部分只读查询遇到TLS握手EOF；失败日志保留，通过本机已配置代理重试成功，TLS校验、SDK/依赖及文件保证不变。本机Windows两组链接能力不可用，372项可执行CLI场景通过；同SHA Windows CI完整392项，Linux完整393项。最初预提交检查发现工具尾随空格，已在发布源提交前修正并重验。没有新计时、峰值内存或阶段C工作。
+
+[Mooncakes 0.3.0](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.3.0)、[公开元数据](https://mooncakes.io/api/v0/manifest/YKDshaxing/moonlibsync@0.3.0)。实际包、逐成员许可索引、两平台候选与注册表报告、15项发布源CI产物ZIP校验、组合计划/命令/失败记录、delivery.json和SHA256SUMS保存在_build/release-0.3.0/。旧发布与基准1541文件逐项保护，无新增或改写。发布后文档CI另行记录，不能用其候选重建包替代本版上传原包。

@@ -1,6 +1,6 @@
 # MoonLibSync 0.3.0
 
-0.3.0能力已冻结，当前为发布候选；实际上传和两平台注册表验收状态以[0.3.0发布记录](docs/release-0.3.0.md)为准，版本字符串不是发布证明。自0.3.0提供显式自动块长、Delta／Full更新规划及schema2受校验应用。0.2.0的历史发布源与注册表实证保留于[原版记录](docs/release-0.2.0.md)。
+**0.3.0已发布，两平台独立注册表消费通过。** 服务端时间`2026-11-11T13:10:20.787881+00:00`；正式发布源`35b2225e56747c0d7568dd117017c25e6c658146`，[发布源同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/43025252619)三个任务成功。Windows/NTFS与Linux/ext4均使用新SDK、空模块缓存实际下载0.3.0，完成旧版/阶段A/阶段B的Native、JS、Wasm-GC消费者及下载源码CLI验收。本文是发布后Git文档，原上传包不会随本文更新。完整索引、哈希及限制见[0.3.0发布记录](docs/release-0.3.0.md)，0.2.0历史证据保留于[原版记录](docs/release-0.2.0.md)。
 
 MoonLibSync提供与librsync互操作的全量缓冲字节差分库及Native单文件CLI。自0.2.0提供检查API、可复用签名索引、完整性清单及受校验补丁流程。本页保留0.2.0能力并增加0.3.0阶段B契约；实际上传与独立注册表验收状态见[本版发布记录](docs/release-0.3.0.md)，版本字符串本身不是发布证明。
 
@@ -19,7 +19,7 @@ git clone https://github.com/YKDshaxing/moonlibsync.git
 cd moonlibsync
 ```
 
-本版消费者依赖声明如下，用于发布后的注册表验收；实际可用状态见发布记录。moon.mod声明 `import { "YKDshaxing/moonlibsync@0.3.0", }`，moon.pkg导入 `"YKDshaxing/moonlibsync" @lib`。注册表消费必须核验实际解析路径与版本；本地候选包允许明确workspace替换，两者分别统计。[basic](examples/basic/main.mbt)、[prepared](examples/prepared/main.mbt)、[verified](examples/verified/main.mbt)均为可运行公共API示例。
+两平台注册表消费已实际验证本版依赖。消费者moon.mod声明 `import { "YKDshaxing/moonlibsync@0.3.0", }`，moon.pkg导入 `"YKDshaxing/moonlibsync" @lib`。注册表消费必须核验实际解析路径与版本；本地候选包允许明确workspace替换，两者分别统计。[basic](examples/basic/main.mbt)、[prepared](examples/prepared/main.mbt)、[verified](examples/verified/main.mbt)均为可运行公共API示例。
 
 模块包交付库、十一条CLI命令的源码、示例及许可/来源资料，不含预编译二进制或安装器。从注册表下载后构建CLI应称为“注册表包源码构建”。完整Git检出的参考、CI、基准与发布工具需要Git元数据和相应参考环境，不应在普通依赖目录直接当作库入口运行。
 
