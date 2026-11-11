@@ -24,7 +24,7 @@ from interop_wire import inspect_delta, check_contents
 from release_version import MODULE, VERSION, ARCHIVE, consumer_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/stage-b-candidate')
+OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-'+VERSION+'/'+platform.system().lower())
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.1.0').resolve()), 'Historical 0.1.0 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.2.0').resolve()), 'Historical 0.2.0 evidence is read-only'
 
@@ -137,7 +137,7 @@ def audit_package():
     required |= {'inspect.mbt','prepared.mbt','manifest.mbt','manifest_error.mbt','sha256.mbt','verified_patch.mbt',
                  'examples/prepared/main.mbt','examples/verified/main.mbt','tests/stage-a/plan.json',
                  'tests/stage-a/consumer.mbt.txt','scripts/release_version.py','docs/release-0.2.0.md'}
-    required |= {'update.mbt','transfer.mbt','examples/transfer/main.mbt','examples/transfer/pkg.generated.mbti','docs/updates.md'}
+    required |= {'update.mbt','transfer.mbt','examples/transfer/main.mbt','examples/transfer/pkg.generated.mbti','docs/updates.md','tests/stage-b/consumer.mbt.txt','tests/stage-b/plan.json','docs/release-0.3.0.md'}
     assert required <= actual.keys()
     forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
     assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'
@@ -282,7 +282,7 @@ def candidate(actual):
         transfer = top / 'transfer-consumer'
         make_consumer(transfer)
         (transfer / 'moon.mod').write_text(consumer_metadata('transfer/consumer'),encoding='utf8',newline='\n')
-        shutil.copyfile(ROOT / 'examples/transfer/main.mbt', transfer / 'main.mbt')
+        shutil.copyfile(ROOT / 'tests/stage-b/consumer.mbt.txt', transfer / 'main.mbt')
         (top / 'moon.work').write_text('members = ["./package", "./consumer", "./stage-a-consumer", "./transfer-consumer"]\n', encoding='utf-8', newline='\n')
         if not os.environ.get('MOONLIBSYNC_OFFLINE_INDEX'):
             run(['moon', 'update'], 'candidate-update', cwd=client)
@@ -383,6 +383,10 @@ def registry(actual):
         from stage_a_candidate import validate
         stage_results = validate(client, module, Path(cli['path']), run, OUT, env=env, registry=True)
         unchanged_bytes(actual, module)
+        shutil.copyfile(ROOT / 'tests/stage-b/consumer.mbt.txt', client / 'main.mbt')
+        from transfer_candidate import validate as validate_transfer
+        transfer_results = validate_transfer(client, module, Path(cli['path']), run, OUT, env=env, registry=True)
+        unchanged_bytes(actual, module)
         closure = []
         for mod in (client / '.mooncakes').glob('*/*/moon.mod'):
             closure.append({'path': str(mod.parent), 'metadata_sha256': digest(mod.read_bytes()), 'metadata': mod.read_text(encoding='utf-8')})
@@ -397,7 +401,7 @@ def registry(actual):
                 'module_path': str(module), 'environment': environment(top), 'no_workspace': True, 'fresh_registry_home': str(home),
                 'public_registry': 'https://mooncakes.io', 'downloaded_archive_sha256': digest(cached.read_bytes()),
                 'downloaded_archive_bytes': cached.stat().st_size, 'results': results, 'closure': closure,
-                'source_and_metadata_match_candidate': True, 'cli': cli, 'stage_a': stage_results, 'registry_api_mode': True, 'verified_dependency_closure': verified_closure, 'sdk_archive_cache': sdk_archives}
+                'source_and_metadata_match_candidate': True, 'cli': cli, 'stage_a': stage_results, 'stage_b': transfer_results, 'registry_api_mode': True, 'verified_dependency_closure': verified_closure, 'sdk_archive_cache': sdk_archives}
 
 
 def main():
@@ -407,7 +411,7 @@ def main():
     args = parser.parse_args()
     os.chdir(ROOT)
     (OUT / 'logs').mkdir(parents=True, exist_ok=True)
-    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-development-snapshot', 'source': source(), 'status': 'incomplete'}
+    report = {'publication_status': 'published-consumption-pending' if args.registry else 'unpublished-release-candidate', 'source': source(), 'status': 'incomplete'}
     save(OUT / 'report.json', report)
     try:
         actual, audit = audit_package()

@@ -1,5 +1,10 @@
-# 显式自动块长：开发源码 policy v1
+# 显式自动块长：自0.3.0提供
 
+recommend_block_len与signature --block-size auto自0.3.0提供。默认2048/32与policy v1规则保持下述实现约定；必须显式启用，不保证签名、delta或时间更小。 实际发布状态与冻结范围见[0.3.0记录](release-0.3.0.md)，不以元数据版本代替上传证明。
+
+## 以下为原阶段实施记录（历史归属）
+
+### 显式自动块长：开发源码 policy v1
 Commit 25 增加 `recommend_block_len(basis_len: Int64, strong_sum_len: Int64, limits: Limits) -> Int64 raise SyncError` 和 `signature --block-size auto`。仅当前阶段 B Git 开发源码具备；已发布 0.2.0 原包不包含它。元数据仍为 0.2.0，不表示新能力已经发布。默认仍为 2048/32，零不是 auto，数字选项沿用原行为。
 
 ## 完整整数规则

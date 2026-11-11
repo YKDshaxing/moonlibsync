@@ -1,8 +1,8 @@
-# MoonLibSync 0.2.0
+# MoonLibSync 0.3.0
 
-**0.2.0已发布，两平台独立注册表消费通过。** 服务端时间`2026-11-10T12:21:05.748505+00:00`；正式发布源`069c126e2ea67c52a5759478edf480afa68f31a4`，[发布源同SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/42813769983)三个任务成功。Windows/NTFS与Linux/ext4均从空模块缓存实际取得0.2.0，并完成Native/JS/Wasm-GC旧/阶段A消费者及包源码CLI验证。本文是发布后的Git文档；原包仍对应发布源，不会随本文更新。完整哈希与审计见[本版记录](docs/release-0.2.0.md)。
+0.3.0能力已冻结，当前为发布候选；实际上传和两平台注册表验收状态以[0.3.0发布记录](docs/release-0.3.0.md)为准，版本字符串不是发布证明。自0.3.0提供显式自动块长、Delta／Full更新规划及schema2受校验应用。0.2.0的历史发布源与注册表实证保留于[原版记录](docs/release-0.2.0.md)。
 
-MoonLibSync提供与librsync互操作的全量缓冲字节差分库及Native单文件CLI。自0.2.0提供检查API、可复用签名索引、完整性清单及受校验补丁流程。本页的已发布能力描述0.2.0契约；实际上传与独立注册表验收状态见[本版发布记录](docs/release-0.2.0.md)，版本字符串本身不是发布证明。
+MoonLibSync提供与librsync互操作的全量缓冲字节差分库及Native单文件CLI。自0.2.0提供检查API、可复用签名索引、完整性清单及受校验补丁流程。本页保留0.2.0能力并增加0.3.0阶段B契约；实际上传与独立注册表验收状态见[本版发布记录](docs/release-0.3.0.md)，版本字符串本身不是发布证明。
 
 | 层次 | 公开入口与用途 |
 |---|---|
@@ -19,15 +19,15 @@ git clone https://github.com/YKDshaxing/moonlibsync.git
 cd moonlibsync
 ```
 
-消费者的moon.mod声明 `import { "YKDshaxing/moonlibsync@0.2.0", }`，moon.pkg导入 `"YKDshaxing/moonlibsync" @lib`。注册表消费必须核验实际解析路径与版本；本地候选包允许明确workspace替换，两者分别统计。[basic](examples/basic/main.mbt)、[prepared](examples/prepared/main.mbt)、[verified](examples/verified/main.mbt)均为可运行公共API示例。
+本版消费者依赖声明如下，用于发布后的注册表验收；实际可用状态见发布记录。moon.mod声明 `import { "YKDshaxing/moonlibsync@0.3.0", }`，moon.pkg导入 `"YKDshaxing/moonlibsync" @lib`。注册表消费必须核验实际解析路径与版本；本地候选包允许明确workspace替换，两者分别统计。[basic](examples/basic/main.mbt)、[prepared](examples/prepared/main.mbt)、[verified](examples/verified/main.mbt)均为可运行公共API示例。
 
-模块包交付库、九条CLI命令的源码、示例及许可/来源资料，不含预编译二进制或安装器。从注册表下载后构建CLI应称为“注册表包源码构建”。完整Git检出的参考、CI、基准与发布工具需要Git元数据和相应参考环境，不应在普通依赖目录直接当作库入口运行。
+模块包交付库、十一条CLI命令的源码、示例及许可/来源资料，不含预编译二进制或安装器。从注册表下载后构建CLI应称为“注册表包源码构建”。完整Git检出的参考、CI、基准与发布工具需要Git元数据和相应参考环境，不应在普通依赖目录直接当作库入口运行。
 
 0.1.0的原三项API发布源为f62958eceda9deecc4eae8a14007f5be76c59b0e，历史实际包/许可证、发布及消费证据完整保留于[0.1.0发布记录](docs/release.md)。本版不改写其179成员/268008字节或既有归档，也不把旧包称为包含阶段A接口。
 
-## 阶段 B 开发源码：显式自动块长（未发布）
+## 自0.3.0：显式自动块长
 
-当前 Git 源码新增 `recommend_block_len` 和 `signature OLD SIG --block-size auto`，已发布0.2.0原包不含此入口。必须显式启用，默认2048/32、数字选项及标准签名格式不变；元数据保持0.2.0并非新能力发布证明。policy v1按长度和预算使用整数规则推荐，目标约512条记录，不保证更小delta或更快。完整规则、预算边界和固定/自动数据量对照见[自动块长](docs/auto-block.md)。[公开API示例](examples/auto/main.mbt)可用 `moon run examples/auto --target native`（也可js/wasm-gc）运行，需本地源码，不能从原0.2.0注册表包导入新API。
+自0.3.0新增 `recommend_block_len` 和 `signature OLD SIG --block-size auto`，已发布0.2.0原包不含此入口。必须显式启用，默认2048/32、数字选项及标准签名格式不变；本版实际发布状态见发布记录。policy v1按长度和预算使用整数规则推荐，目标约512条记录，不保证更小delta或更快。完整规则、预算边界和固定/自动数据量对照见[自动块长](docs/auto-block.md)。[公开API示例](examples/auto/main.mbt)可用 `moon run examples/auto --target native`（也可js/wasm-gc）运行，原0.2.0注册表包不含新API，本版发布状态单列。
 
 ## 固定工具链与源码运行
 
@@ -96,7 +96,7 @@ cli="$PWD/_build/native/debug/build/cmd/moonlibsync/moonlibsync.exe"
 
 Linux ELF 产物也保留 `.exe` 后缀。默认签名参数2048/32，CLI按相应命令读取输入；所有输出必须不存在，父目录须已存在。用法错误退出2、文件/核心错误退出1。参数、受限读取、链接策略、无覆盖提交、清理及保证边界见 [CLI 文档](docs/cli.md)。
 
-当前开发源码还支持（`$cli` 为上文构建路径）：
+本版还支持（`$cli` 为上文构建路径）：
 
 ```powershell
 & $cli inspect-signature old.sig --json
@@ -142,7 +142,7 @@ python3 scripts/benchmark.py
 
 固定五类场景、64KiB/1MiB、2048/32，预热2轮、正式7轮，release CLI与固定rdiff Release在ext4上交替执行；patch比较使用同一rdiff delta。计时包含启动和文件流程，Moon还含sync与无覆盖提交；不是纯算法耗时。全异场景实际零COPY且delta大于new，本机Moon进程流程比rdiff慢，结论限于这次环境。原始轮次、输入/可执行文件哈希及最终源码关联保存在 `_build/benchmarks/`，完整方法/结果见[基准](docs/benchmarks.md)。CI只运行工具正确性检查，不设置硬件性能门槛。
 
-上段为Commit15首版基准的历史方法与结果，后续复用基准见[独立报告](docs/benchmarks-prepared.md)，均未重新计时。本版冻结全部阶段A入口、类型/错误、schema1及文件边界，见[0.2.0冻结记录](docs/release-0.2.0.md)。
+上段为Commit15首版基准的历史方法与结果，后续复用基准见[独立报告](docs/benchmarks-prepared.md)，均未重新计时。本版保留阶段A契约并冻结阶段B入口、类型、schema2及文件边界，见[0.3.0冻结记录](docs/release-0.3.0.md)。
 
 ## 支持与交付边界
 
@@ -154,12 +154,10 @@ CLI已验证 Windows Native/NTFS、Linux Native/ext4。WSL DrvFS `/mnt/d` 不支
 
 采用 LGPL-2.1-or-later；[LGPL文本](COPYING.LESSER)、[GPL文本](COPYING)、[来源](SOURCES.md)、[第三方说明](THIRD_PARTY_NOTICES.md) 以实际文件为准；逐成员正式包审计及其实际状态以本版发布记录为准。
 
-## 0.2.0验证与正式发布边界
+## 0.3.0验证与正式发布边界
 
-`python scripts/release_check.py --clean`使用固定工具链的正式moon package，默认写入 `_build/release-0.2.0/`；三目标旧/阶段A公共消费者、私有字段拒绝与包内CLI均在仓库外运行。`--registry`仅在实际上传后运行，使用全新工具链/空模块缓存、公开注册表、禁止workspace/path/Git替换，复用同一阶段A消费与24项CLI流程。两平台结果分别保存，不能以候选CI抵扣注册表消费。0.1.0归档目录受只读保护。
+`python scripts/release_check.py --clean`审计实际moon package并在仓库外完成旧版、阶段A、阶段B三目标消费；默认写 `_build/release-0.3.0/windows` 或 `linux`，也可用MOONLIBSYNC_RELEASE_DIR显式分目录。`--registry`只在上传后运行，用新SDK和空模块缓存真实下载本版，禁止workspace/path/Git替换，并从下载源码构建CLI。候选和注册表共用48项transfer、2项auto检查与相同阶段B模板，来源类型单列；旧消费者和阶段A检查保留。错误消费者必须使工具非零，恢复后通过。0.1.0/0.2.0归档只读；两平台实际消费不能由候选CI抵扣。完整门禁、许可与状态见[发布记录](docs/release-0.3.0.md)。
 
-原矩阵保留各目标166库测试、CLI314/315与各15辅助、496参数/3968恢复、82/29消费及32Prepared恢复；[独立阶段A计划](tests/stage-a/README.md)为28对/28参数/504恢复、38份SIG、38个准备对象和112调用。发布工具测试由原4项加5项版本/归档保护回归及1项真实缓存路径清理回归单列，不混入库测试。新指纹、默认预算及两轮历史基准不变。
+## 自0.3.0：更新负载选择
 
-## 阶段 B 开发源码：更新负载选择（未发布）
-
-新增 `plan_update`、schema2 `TransferManifest` 制作/编解码和 `apply_update`，以及 `make-transfer-manifest` / `apply-update` 两条单输出CLI。只有实际delta严格更小且达到min_savings_bytes（默认0）才选Delta，其余Full；生成错误仍传播。原delta、schema1和默认参数不变。先生成再选择不免除计算/内存成本。完整[API、协议、错误及文件流程](docs/updates.md)与[三目标可运行示例](examples/transfer/main.mbt)供本地源码使用；已发布0.2.0原包没有这些入口，未发布新版本。
+自0.3.0提供 `plan_update`、schema2 `TransferManifest` 制作/编解码和 `apply_update`，以及 `make-transfer-manifest` / `apply-update` 两条单输出CLI。只有实际delta严格更小且达到min_savings_bytes（默认0）才选Delta，其余Full；生成错误仍传播。原delta、schema1和默认参数不变。先生成再选择不免除计算/内存成本。完整[API、协议、错误及文件流程](docs/updates.md)与[三目标可运行示例](examples/transfer/main.mbt)展示本版公开API；0.2.0原包没有这些入口，实际上传状态见本版发布记录。

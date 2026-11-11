@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+///|
+fn run() -> Unit raise {
+  let d = @lib.Limits::default()
+  let old = Bytes::makei(32769, i => (i % 251).to_byte())
+  let block = @lib.recommend_block_len(32769L, 16L, d)
+  assert_eq(block, 128L)
+  let sig = @lib.signature(old, { block_len: block, strong_sum_len: 16L }, d)
+  let summary = @lib.inspect_signature(sig, d)
+  assert_eq(summary.block_len, 128L)
+  assert_eq(summary.record_count, 257L)
+  assert_eq(summary.signature_bytes, 5152L)
+  let info = @lib.create_basis_info(old, sig, d)
+  let prepared = @lib.prepare_signature(sig, d)
+  for (new, expected) in [(old, "librsync-delta"), (b"xyz", "full-file")] {
+    let options = @lib.UpdateOptions::default()
+    let plan = @lib.plan_update(sig, new, options, d)
+    assert_eq(plan.decision.kind, expected)
+    let candidate = prepared.delta(new, d)
+    let once = @lib.delta(sig, new, d)
+    assert_eq(candidate, once)
+    let selected = match plan.payload { Delta(p) | Full(p) => p }
+    assert_eq(plan.decision.new_bytes, new.length().to_int64())
+    assert_eq(plan.decision.delta_bytes, once.length().to_int64())
+    assert_eq(plan.decision.payload_bytes, selected.length().to_int64())
+    assert_eq(plan.decision.savings_bytes, new.length().to_int64() - selected.length().to_int64())
+    assert_eq(plan.decision.min_savings_bytes, 0L)
+    assert_eq(plan.decision.reason, if expected == "librsync-delta" { "minimum-savings-met" } else { "delta-not-smaller" })
+    let manifest = @lib.create_transfer_manifest(info, sig, new, candidate, options, d)
+    let parsed = @lib.parse_transfer_manifest(@lib.encode_transfer_manifest(manifest, d), d)
+    let basis = if expected == "librsync-delta" { Some(old) } else { None }
+    assert_eq(@lib.apply_update(basis, selected, parsed, d), new)
+    let legacy = @lib.create_update_manifest(info, sig, new, once, d)
+    let legacy_wire = @lib.encode_update_manifest(legacy, d)
+    assert_eq(@lib.verified_patch(old, once, @lib.parse_update_manifest(legacy_wire, d), d), new)
+    let rejected = try { let _ = @lib.parse_transfer_manifest(legacy_wire, d); false } catch { _ => true }
+    assert_true(rejected)
+    let rejected = try { let _ = @lib.parse_update_manifest(@lib.encode_transfer_manifest(manifest, d), d); false } catch { _ => true }
+    assert_true(rejected)
+    println("STAGE_B_KIND_OK kind=\{expected}")
+  }
+  let tiny_old = b"abcdefghijklmnop"
+  let tiny_sig = @lib.signature(tiny_old, { block_len: 8L, strong_sum_len: 32L }, d)
+  for (minimum, expected) in [(8L,"librsync-delta"),(9L,"full-file")] {
+    let plan = @lib.plan_update(tiny_sig, tiny_old, { min_savings_bytes: minimum }, d)
+    assert_eq(plan.decision.delta_bytes, 8L)
+    assert_eq(plan.decision.kind, expected)
+  }
+  let tie = @lib.plan_update(tiny_sig,b"abcdefgh",@lib.UpdateOptions::default(),d)
+  assert_eq(tie.decision.new_bytes,8L)
+  assert_eq(tie.decision.delta_bytes,8L)
+  assert_eq(tie.decision.kind,"full-file")
+  let invalid = try { let _ = @lib.plan_update(tiny_sig,b"xyz",{min_savings_bytes: -1L},d); false } catch {
+    @lib.SyncError::InvalidOptions(field) => field == "min_savings_bytes"
+    _ => false
+  }
+  assert_true(invalid)
+  let work = try { let _ = @lib.plan_update(tiny_sig,tiny_old,@lib.UpdateOptions::default(),{..d,max_match_work:0L}); false } catch {
+    @lib.SyncError::LimitExceeded => true
+    _ => false
+  }
+  assert_true(work)
+  let bad = try { let _ = @lib.plan_update(b"",b"xyz",@lib.UpdateOptions::default(),d); false } catch { _ => true }
+  assert_true(bad)
+  println("STAGE_B_CONSUMER_OK auto=128 records=257 signature=5152 kinds=2 thresholds=2 errors=3 schema1=true")
+}
+
+///|
+fn main {
+  run() catch {
+    _ => {
+      println("STAGE_B_CONSUMER_FAILED")
+      abort("STAGE_B_CONSUMER_FAILED")
+    }
+  }
+}

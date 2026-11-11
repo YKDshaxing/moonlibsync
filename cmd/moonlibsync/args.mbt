@@ -31,7 +31,7 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.2.0; inspection, reusable signatures and integrity workflows since 0.2.0
+  #|MoonLibSync 0.3.0; inspection, reusable signatures and integrity workflows since 0.2.0
   #|Usage:
   #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA
@@ -52,9 +52,9 @@ let help_text : String =
   #|Range checks do not authenticate basis identity or verify recovered content.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
   #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..1048576, sum 1..32.
-  #|auto is explicit policy v1 (development source only, absent from registry 0.2.0).
+  #|auto is explicit policy v1, available since 0.3.0; default remains 2048.
   #|Selected block length is stored normally in SIG; inspect-signature shows it.
-  #|Transfer options are development-only: min-savings is nonnegative Int64 (default 0).
+  #|Transfer options since 0.3.0: min-savings is nonnegative Int64 (default 0).
   #|apply-update requires basis for Delta and forbids it for Full; no publisher authentication.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
   #|Existing output entries (including links) are refused; no overwrite option.

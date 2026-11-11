@@ -59,6 +59,15 @@ jobs:
           name: transfer-${{ github.sha }}
           path: _build/commit26/reference/
           if-no-files-found: error
+      - name: Stage B finite combinations and rejection checks
+        run: python scripts/check_stage_b.py
+      - name: Preserve stage B combination evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b-${{ github.sha }}
+          path: _build/stage-b/
+          if-no-files-found: error
       - name: Benchmark generator and statistics correctness (no timed performance gate)
         run: python scripts/benchmark.py --self-check
       - name: Prepared benchmark tool correctness and pinned upstream reuse recovery
@@ -117,9 +126,9 @@ jobs:
         run: python scripts/check.py
       - name: Release archive safety tools (separate count)
         run: python -m unittest discover -s tests/release -p 'test_*.py'
-      - name: Stage B candidate archive, clean rebuild and public consumers
+      - name: Release 0.3.0 archive, clean rebuild and all public consumers
         env:
-          MOONLIBSYNC_RELEASE_DIR: _build/stage-b-candidate
+          MOONLIBSYNC_RELEASE_DIR: _build/release-0.3.0/${{ matrix.os }}
           PYTHONUTF8: "0"
           PYTHONIOENCODING: utf-8
         run: python scripts/release_check.py --clean
@@ -127,8 +136,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-b-candidate-${{ matrix.os }}-${{ github.sha }}
-          path: _build/stage-b-candidate/
+          name: release-candidate-${{ matrix.os }}-${{ github.sha }}
+          path: _build/release-0.3.0/${{ matrix.os }}/
           if-no-files-found: error
       - name: Isolated corrupt fixtures and false example expectation
         run: python scripts/failure_gates.py

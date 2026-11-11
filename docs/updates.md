@@ -1,5 +1,10 @@
-# Commit 26：Delta／完整文件选择（开发源码，尚未发布）
+# 更新规划与schema2：自0.3.0提供
 
+plan_update、TransferManifest与受校验应用自0.3.0提供，公开类型与下述Commit26契约一致。先生成实际delta，仅严格更小并达到收益阈值才选择Delta；Full是原始NEW，API忽略basis，CLI拒绝--basis。 实际发布状态与冻结范围见[0.3.0记录](release-0.3.0.md)，不以元数据版本代替上传证明。
+
+## 以下为原阶段实施记录（历史归属）
+
+### Commit 26：Delta／完整文件选择（开发源码，尚未发布）
 当前 Git 源码增加更新规划及 schema 2；已发布0.2.0原包不包含这些接口。版本保持0.2.0。本笔不发布、不建标签或Release，止于Commit26，版本决定、阶段B最终验收及注册表消费留待Commit27。
 
 ## 公开 API 与固定选择规则
