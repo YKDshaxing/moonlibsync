@@ -233,3 +233,7 @@ moonlibsync patch-verified OLD DELTA MANIFEST OUT
 当前Git构建的 `signature OLD SIG --block-size auto [--sum-size N]` 支持小写auto；0.2.0注册表原包没有该选项。默认仍2048/32，数字不变，零不是auto。sum-size auto、大小写变体、空值、负数及重复数字/auto均为用法错误。选项位置、`--`和字面`-`规则不变。
 
 有界OLD读取及输入变化校验后，以实际Bytes长度调用推荐API；成功stdout仍为空，通过 `inspect-signature SIG --json` 查看实际数字块长，schema不变。沿用全部文件保护、临时清理、退出码以及NTFS/ext4/DrvFS边界；Linux产物仍是带.exe后缀的ELF。规则、数据量和可运行API示例见[自动块长](auto-block.md)。
+
+## Commit 26 开发源码：单输出传输流程
+
+`make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N]`读取并验证已有候选，只写schema2清单，不重新生成delta或复制NEW。按清单kind传DELTA或NEW。`apply-update PAYLOAD MANIFEST OUT [--basis OLD]`先解析清单，再按kind有界读取；Delta要求basis，Full明确拒绝basis且不读OLD。全部校验成功才进入原临时文件、sync、关闭、无覆盖提交流程；0/2/1退出码、空stdout、stderr诊断、选项位置/分隔符/字面-及文件系统边界不变。完整[语义与示例](updates.md)。原0.2.0注册表包没有这两条命令。

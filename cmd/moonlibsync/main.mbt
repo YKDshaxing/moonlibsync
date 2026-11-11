@@ -21,7 +21,10 @@ fn core_error_tag(error : Error) -> String {
 async fn execute(plan : Plan) -> Unit {
   match plan.mode {
     WriteFile(output) =>
-      if plan.operation == "basis-info" ||
+      if plan.operation == "make-transfer-manifest" ||
+        plan.operation == "apply-update" {
+        execute_transfer_write(plan, output)
+      } else if plan.operation == "basis-info" ||
         plan.operation == "make-manifest" ||
         plan.operation == "patch-verified" {
         execute_manifest_write(plan, output)

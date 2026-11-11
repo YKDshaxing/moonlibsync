@@ -2,15 +2,21 @@
 package "YKDshaxing/moonlibsync"
 
 // Values
+pub fn apply_update(Bytes?, Bytes, TransferManifest, Limits) -> Bytes raise ManifestError
+
 pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
 pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
+
+pub fn create_transfer_manifest(BasisInfo, Bytes, Bytes, Bytes, UpdateOptions, Limits) -> TransferManifest raise ManifestError
 
 pub fn create_update_manifest(BasisInfo, Bytes, Bytes, Bytes, Limits) -> UpdateManifest raise ManifestError
 
 pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn encode_basis_info(BasisInfo, Limits) -> Bytes raise ManifestError
+
+pub fn encode_transfer_manifest(TransferManifest, Limits) -> Bytes raise ManifestError
 
 pub fn encode_update_manifest(UpdateManifest, Limits) -> Bytes raise ManifestError
 
@@ -20,9 +26,13 @@ pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
 pub fn parse_basis_info(Bytes, Limits) -> BasisInfo raise ManifestError
 
+pub fn parse_transfer_manifest(Bytes, Limits) -> TransferManifest raise ManifestError
+
 pub fn parse_update_manifest(Bytes, Limits) -> UpdateManifest raise ManifestError
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
+pub fn plan_update(Bytes, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 
 pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
 
@@ -116,11 +126,41 @@ pub(all) struct SignatureSummary {
   signature_bytes : Int64
 }
 
+pub(all) enum TransferManifest {
+  Delta(UpdateManifest)
+  Full(FileDigest, FileDigest)
+}
+
+pub(all) struct UpdateDecision {
+  kind : String
+  reason : String
+  new_bytes : Int64
+  delta_bytes : Int64
+  payload_bytes : Int64
+  savings_bytes : Int64
+  min_savings_bytes : Int64
+}
+
 pub(all) struct UpdateManifest {
   basis : FileDigest
   signature : FileDigest
   delta : FileDigest
   result : FileDigest
+}
+
+pub(all) struct UpdateOptions {
+  min_savings_bytes : Int64
+}
+pub fn UpdateOptions::default() -> Self
+
+pub(all) enum UpdatePayload {
+  Delta(Bytes)
+  Full(Bytes)
+}
+
+pub(all) struct UpdatePlan {
+  payload : UpdatePayload
+  decision : UpdateDecision
 }
 
 // Type aliases

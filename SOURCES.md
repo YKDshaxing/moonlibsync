@@ -99,3 +99,7 @@ scripts/benchmark.py、tests/benchmarks/config.json为本项目原创LGPL-2.1-or
 ## 0.2.0阶段A来源与分发
 
 阶段A检查/Prepared索引封装/完整性清单/受校验补丁及其原创适配、测试、消费者与发布版本布线均为本项目LGPL-2.1-or-later胶合和验证代码，没有新增算法移植。SHA-256显式调用固定mooncrypt0.4.5/hash/sha2的Sha256，JSON/UTF8使用固定MoonBit core；原Rabin–Karp/librsync、BLAKE2及core版权声明保持。mooncrypt0.4.5、moonbase0.4.2、moondate0.1.0、moonrand0.1.0均为Apache-2.0，实际归档哈希/闭包见dependencies.lock.json，依赖源码各自保留LICENSE，模块包不捆绑缓存或参考工具。完整Apache文本、core LICENSE/NOTICE及GPL/LGPL文本随包保留；逐成员来源与许可范围由本版实际包审计记录。未把第三方实现或许可改标为本项目原创。
+
+## Commit 26 原创更新规划与传输胶合
+
+update.mbt、transfer.mbt及新增CLI/消费者/验证为本项目LGPL-2.1-or-later原创胶合代码；复用既有delta、verified_patch、SHA-256与严格JSON适配，未新增第三方算法/profile或依赖。tests/transfer两个schema2样例由独立Python JSON规则结合原hashlib固定向量构造，非生产编码器自生预期；旧来源与许可证归属保留。

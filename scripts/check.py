@@ -39,12 +39,15 @@ verified_names = [name for path in (ROOT / "verified_patch_test.mbt", ROOT / "ve
                   for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 auto_names = [name for path in (ROOT / "auto_block_test.mbt", ROOT / "auto_block_wbtest.mbt")
               for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+transfer_names = [name for path in (ROOT / "transfer_test.mbt", ROOT / "update_wbtest.mbt", ROOT / "transfer_wbtest.mbt")
+                  for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 resource_report = {
     "format": 1, "status": "not_executed", "baseline_library_tests": 80,
     "resource_tests": len(resource_names), "resource_test_names": resource_names,
     "inspection_tests": len(inspection_names), "inspection_test_names": inspection_names,
     "prepared_tests": len(prepared_names), "prepared_test_names": prepared_names,
     "prepared_delta_tests": len(prepared_delta_names), "prepared_delta_test_names": prepared_delta_names,
+    "transfer_tests": len(transfer_names), "transfer_test_names": transfer_names,
     "auto_block_tests": len(auto_names), "auto_block_test_names": auto_names,
     "verified_patch_tests": len(verified_names), "verified_patch_test_names": verified_names,
     "manifest_tests": len(manifest_names), "manifest_test_names": manifest_names,
@@ -65,7 +68,7 @@ def test_target(target):
     print(result.stdout, end="", flush=True)
     (resource_dir / (target + ".log")).write_text(result.stdout, encoding="utf-8")
     totals = re.search(r"Total tests: (\d+), passed: (\d+), failed: (\d+)\.", result.stdout)
-    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names)
+    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names) + len(transfer_names)
     complete = bool(totals and tuple(map(int, totals.groups())) == (expected, expected, 0) and result.returncode == 0)
     resource_report["targets"][target] = {
         "command": command, "exit_code": result.returncode,
@@ -105,6 +108,7 @@ for target in ("native", "js", "wasm-gc"):
     moon("run", "examples/prepared", "--target", target)
     moon("run", "examples/verified", "--target", target)
     moon("run", "examples/auto", "--target", target)
+    moon("run", "examples/transfer", "--target", target)
 run(sys.executable, "scripts/check_prepared_interface.py")
 run(sys.executable, "scripts/native_probe.py")
 moon("info")
@@ -113,4 +117,4 @@ interface_dir = ROOT / os.environ.get("MOONLIBSYNC_BUILD_DIR", "_build") / "inte
 interface_dir.mkdir(parents=True, exist_ok=True)
 (interface_dir / "report.json").write_text(json.dumps(interface_report, indent=2) + "\n", encoding="utf-8")
 run("git", "-c", f"safe.directory={ROOT.as_posix()}", "diff", "--check")
-print("Foundation checks and four public examples passed; Linux rdiff interoperability runs in the reference job.")
+print("Foundation checks and five public examples passed; Linux rdiff interoperability runs in the reference job.")

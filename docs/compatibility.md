@@ -237,3 +237,7 @@ Commit16仍须：核对精确版本和发布身份/权限；审计实际源码�
 以30a36f5c105f84b41d79dc2f1245f1cc0965a36c为基线，只增加 `recommend_block_len(Int64,Int64,Limits) -> Int64 raise SyncError` 及signature独有的显式 `--block-size auto`。policy v1规则和实测数据量见[自动块长](auto-block.md)。公开类型、默认2048/32、数字行为、预算、profile、SIG/DELTA/清单与检查JSON格式不变。实际块长写标准SIG头，固定rdiff按该参数完整字节一致；不要求等于rdiff自身建议。
 
 本能力仅属于Git开发源码；模块/CLI版本仍为0.2.0，已发布0.2.0源069c126e2ea67c52a5759478edf480afa68f31a4及原注册表包不含此API/选项。候选检查迁至_build/stage-b-candidate，拒绝覆盖0.1.0和0.2.0证据。新增13项库、2项Native辅助、每平台29项CLI和独立35次签名/70次跨恢复，旧166/15/314或315、3968/504及消费范围完整保留，分别统计。未重跑历史耗时测量。止于Commit25，未进入Commit26，未发布、建标签或Release。
+
+## Commit 26 开发源码：上层 Full 与 schema 2
+
+新增更新规划层及独立传输清单，公开入口与错误/资源/文件规则见[更新规划](updates.md)。原标准SIG/DELTA、schema1、所有旧公开类型/错误变体、默认2048/32、policy v1、Limits及记账均不变。只有新plan_update选择原始Full；delta和PreparedSignature::delta仍输出标准delta。原0.2.0发布源与注册表包不含新接口。新增15库/2辅助/49 CLI、独立2 Delta上游恢复与6 Full校验，旧验证分别保留；不重跑计时，不发布，止于26。

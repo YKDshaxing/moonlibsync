@@ -50,6 +50,15 @@ jobs:
           name: auto-block-${{ github.sha }}
           path: _build/auto-block/
           if-no-files-found: error
+      - name: Commit 26 payload decisions and pinned upstream recovery
+        run: python scripts/check_transfer.py
+      - name: Preserve separate transfer reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transfer-${{ github.sha }}
+          path: _build/commit26/reference/
+          if-no-files-found: error
       - name: Benchmark generator and statistics correctness (no timed performance gate)
         run: python scripts/benchmark.py --self-check
       - name: Prepared benchmark tool correctness and pinned upstream reuse recovery

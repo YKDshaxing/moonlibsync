@@ -159,3 +159,7 @@ CLI已验证 Windows Native/NTFS、Linux Native/ext4。WSL DrvFS `/mnt/d` 不支
 `python scripts/release_check.py --clean`使用固定工具链的正式moon package，默认写入 `_build/release-0.2.0/`；三目标旧/阶段A公共消费者、私有字段拒绝与包内CLI均在仓库外运行。`--registry`仅在实际上传后运行，使用全新工具链/空模块缓存、公开注册表、禁止workspace/path/Git替换，复用同一阶段A消费与24项CLI流程。两平台结果分别保存，不能以候选CI抵扣注册表消费。0.1.0归档目录受只读保护。
 
 原矩阵保留各目标166库测试、CLI314/315与各15辅助、496参数/3968恢复、82/29消费及32Prepared恢复；[独立阶段A计划](tests/stage-a/README.md)为28对/28参数/504恢复、38份SIG、38个准备对象和112调用。发布工具测试由原4项加5项版本/归档保护回归及1项真实缓存路径清理回归单列，不混入库测试。新指纹、默认预算及两轮历史基准不变。
+
+## 阶段 B 开发源码：更新负载选择（未发布）
+
+新增 `plan_update`、schema2 `TransferManifest` 制作/编解码和 `apply_update`，以及 `make-transfer-manifest` / `apply-update` 两条单输出CLI。只有实际delta严格更小且达到min_savings_bytes（默认0）才选Delta，其余Full；生成错误仍传播。原delta、schema1和默认参数不变。先生成再选择不免除计算/内存成本。完整[API、协议、错误及文件流程](docs/updates.md)与[三目标可运行示例](examples/transfer/main.mbt)供本地源码使用；已发布0.2.0原包没有这些入口，未发布新版本。

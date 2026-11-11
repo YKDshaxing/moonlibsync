@@ -110,3 +110,7 @@ INFO与MANIFEST均以65536字节上限读取并复用严格解析器；OLD/SIG/N
 新组合流程对38份basis-info与168份update-manifest逐字段核对独立Python json/hashlib预期，再用公开parse/verified_patch恢复。清单制作不证明恢复内容；check_patch不检查身份；verified_patch不接收SIG，只实际核验OLD/DELTA/结果，仍依赖可信清单而非发布者认证。16个核心拒绝类别及适用的12个真实CLI拒绝类别见[阶段A说明](../tests/stage-a/README.md)。
 
 候选消费使用明确本地workspace替换，不是注册表消费。复用未观察到稳定总耗时优势，仍为全量缓冲；本笔不重新计时、不改写0.1.0历史发布证据。Commit24的版本决定、冻结、最终包/许可证审计、发布SHA/CI绑定、Mooncakes新版本发布及无替换注册表消费仍待后续，不创建标签或Release。
+
+## Commit 26：独立 schema 2（当前开发源码，未发布）
+
+新增TransferManifest及create/parse/encode_transfer_manifest、apply_update。Delta用schema2及payload字段；Full只带payload/result且两描述符必须一致，无basis/signature占位。旧BasisInfo/UpdateManifest/verified_patch继续仅schema1，两个解析器不互相兼容。复用原64KiB/深度2/总字段16与严格UTF8/JSON防线；总字段仍在树构造后检查。Delta实际核验basis、payload、结果，Full无需basis且按new/output预算；清单不认证发布者。完整编码样例、公开类型、错误优先级及限制见[更新规划](updates.md)。0.2.0原包不含schema2。

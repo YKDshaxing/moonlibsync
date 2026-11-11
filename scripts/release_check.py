@@ -137,6 +137,7 @@ def audit_package():
     required |= {'inspect.mbt','prepared.mbt','manifest.mbt','manifest_error.mbt','sha256.mbt','verified_patch.mbt',
                  'examples/prepared/main.mbt','examples/verified/main.mbt','tests/stage-a/plan.json',
                  'tests/stage-a/consumer.mbt.txt','scripts/release_version.py','docs/release-0.2.0.md'}
+    required |= {'update.mbt','transfer.mbt','examples/transfer/main.mbt','examples/transfer/pkg.generated.mbti','docs/updates.md'}
     assert required <= actual.keys()
     forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
     assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'
@@ -278,7 +279,11 @@ def candidate(actual):
         make_consumer(stage)
         (stage / 'moon.mod').write_text(consumer_metadata('stage/a-consumer'), encoding='utf-8', newline='\n')
         shutil.copyfile(ROOT / 'tests/stage-a/consumer.mbt.txt', stage / 'main.mbt')
-        (top / 'moon.work').write_text('members = ["./package", "./consumer", "./stage-a-consumer"]\n', encoding='utf-8', newline='\n')
+        transfer = top / 'transfer-consumer'
+        make_consumer(transfer)
+        (transfer / 'moon.mod').write_text(consumer_metadata('transfer/consumer'),encoding='utf8',newline='\n')
+        shutil.copyfile(ROOT / 'examples/transfer/main.mbt', transfer / 'main.mbt')
+        (top / 'moon.work').write_text('members = ["./package", "./consumer", "./stage-a-consumer", "./transfer-consumer"]\n', encoding='utf-8', newline='\n')
         if not os.environ.get('MOONLIBSYNC_OFFLINE_INDEX'):
             run(['moon', 'update'], 'candidate-update', cwd=client)
         results = consumer(client, 'candidate')
@@ -289,9 +294,11 @@ def candidate(actual):
         cli = cli_flow(package, 'candidate-cli')
         from stage_a_candidate import validate
         stage_results = validate(stage, package, Path(cli['path']), run, OUT)
+        from transfer_candidate import validate as validate_transfer
+        transfer_results = validate_transfer(transfer, package, Path(cli['path']), run, OUT)
         unchanged_bytes(actual, package)
         return {'status': 'passed', 'kind': 'candidate-package-local-workspace-consumption', 'outside_repository': True, 'dependency_refresh': 'pinned cached index' if os.environ.get('MOONLIBSYNC_OFFLINE_INDEX') else 'moon update',
-                'workspace_members': ['package', 'consumer', 'stage-a-consumer'], 'stage_a': stage_results, 'environment': environment(top), 'results': results, 'cli': cli, 'audited_source_unchanged': True}
+                'workspace_members': ['package', 'consumer', 'stage-a-consumer', 'transfer-consumer'], 'stage_a': stage_results, 'transfer': transfer_results, 'environment': environment(top), 'results': results, 'cli': cli, 'audited_source_unchanged': True}
 
 
 def seed_toolchain_archives(bootstrap):
@@ -328,7 +335,7 @@ def clean_source(actual):
             run(['moon', 'run', 'examples/basic', '--target', target], 'clean-example-' + target, cwd=fresh, env=env)
         cli = cli_flow(fresh, 'clean-cli', env)
         for target in ('native','js','wasm-gc'):
-            for example in ('prepared','verified','auto'):
+            for example in ('prepared','verified','auto','transfer'):
                 run(['moon','run','examples/'+example,'--target',target],'clean-'+example+'-'+target,cwd=fresh,env=env)
         unchanged_bytes(actual, fresh)
         return {'status': 'passed', 'fresh_toolchain_install': True, 'fresh_build_outputs': True, 'registry_api_mode': True, 'sdk_archive_cache': sdk_archives, 'source_unchanged': True, 'environment': environment(top), 'cli': cli}

@@ -194,3 +194,7 @@ verified_patch先检查全部配置与声明预算、实际basis/delta预算、�
 `recommend_block_len`只算元数据，仍先校验全部九项Limits。负长度、非法摘要长度分别为InvalidOptions(basis_len/strong_sum_len)，超old/签名字节/记录或无合法块长为LimitExceeded。先查12字节头部预算；空输入允许0条记录。非空允许记录数取记录与字节预算的较小值，先检查正数再除，ceil用商与余数，2次幂在Int64中至多31次翻倍，最终复用signature_plan。
 
 合法零max_match_work及其他不适用零预算不消耗或阻止纯推荐，非法配置仍拒绝。不分配与basis长度或候选块数成比例的结构，不增加逻辑匹配工作计量。成功保证同长度输入的签名资源预检可行，不承诺全流程峰值内存或最佳delta。原全量缓冲、索引/转换副本和默认预算未变。更小块可增加签名与索引规模，见[完整规则与有限对照](auto-block.md)；该开发能力未发布到原0.2.0。
+
+## Commit 26：规划及两种负载预算（开发源码）
+
+plan_update先验全部Limits和非负阈值，再完整调用原delta；所有签名/输出/工作错误原样可见，没有超限转Full。候选delta、NEW及索引/指令/转换副本在选择前可能共存，不免除生成成本或保证峰值下降。apply_update全部Limits优先；Delta复用verified_patch的old/delta/output预算与分配前预检，Full用new/output上限并检查描述符一致性、实际长度和摘要，不用max_delta_bytes也不读basis。合法但不适用零预算与非法配置区分；错误顺序、内存结构详见[更新规划](updates.md)。默认Limits、逻辑工作单位、一次性/Prepared记账和policy v1均未变，未测RSS，不发布新能力。
