@@ -23,11 +23,11 @@ class VersionWiring(unittest.TestCase):
             self.assertNotIn('@0.1.0',(p/'moon.mod').read_text(encoding='utf8'))
     def test_historical_output_directory_is_rejected_before_writing(self):
         root=Path(__file__).resolve().parents[2]
-        for relative in ['_build/release-0.1.0','_build/release-0.1.0/nested']:
+        for relative in ['_build/release-0.1.0','_build/release-0.1.0/nested','_build/release-0.2.0','_build/release-0.2.0/nested']:
             env=dict(os.environ,MOONLIBSYNC_RELEASE_DIR=relative)
             result=subprocess.run([sys.executable,'-c',"import sys;sys.path.insert(0,'scripts');import release_check"],cwd=root,env=env,capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)
-            self.assertIn('Historical 0.1.0 evidence is read-only',result.stderr)
+            self.assertIn('evidence is read-only',result.stderr)
 
     def test_fresh_sdk_cache_layout_can_be_created_and_cleaned(self):
         for kind,child in [('clean','s'),('registry','b')]:

@@ -41,6 +41,15 @@ jobs:
           name: stage-a-${{ github.sha }}
           path: _build/stage-a/
           if-no-files-found: error
+      - name: Explicit auto block signatures and finite data volume comparison
+        run: python scripts/check_auto_block.py
+      - name: Preserve auto block evidence separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-block-${{ github.sha }}
+          path: _build/auto-block/
+          if-no-files-found: error
       - name: Benchmark generator and statistics correctness (no timed performance gate)
         run: python scripts/benchmark.py --self-check
       - name: Prepared benchmark tool correctness and pinned upstream reuse recovery
@@ -99,9 +108,9 @@ jobs:
         run: python scripts/check.py
       - name: Release archive safety tools (separate count)
         run: python -m unittest discover -s tests/release -p 'test_*.py'
-      - name: Release 0.2.0 archive, clean rebuild and public consumers
+      - name: Stage B candidate archive, clean rebuild and public consumers
         env:
-          MOONLIBSYNC_RELEASE_DIR: _build/release-0.2.0
+          MOONLIBSYNC_RELEASE_DIR: _build/stage-b-candidate
           PYTHONUTF8: "0"
           PYTHONIOENCODING: utf-8
         run: python scripts/release_check.py --clean
@@ -109,8 +118,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-candidate-${{ matrix.os }}-${{ github.sha }}
-          path: _build/release-0.2.0/
+          name: stage-b-candidate-${{ matrix.os }}-${{ github.sha }}
+          path: _build/stage-b-candidate/
           if-no-files-found: error
       - name: Isolated corrupt fixtures and false example expectation
         run: python scripts/failure_gates.py

@@ -13,10 +13,17 @@ priv enum RunMode {
 }
 
 ///|
+priv enum BlockChoice {
+  Explicit(Int64)
+  Auto
+}
+
+///|
 priv struct Plan {
   operation : String
   inputs : Array[String]
   mode : RunMode
+  block_choice : BlockChoice
   options : @lib.SignatureOptions
 }
 
@@ -24,7 +31,7 @@ priv struct Plan {
 let help_text : String =
   #|MoonLibSync 0.2.0; inspection, reusable signatures and integrity workflows since 0.2.0
   #|Usage:
-  #|  moonlibsync signature OLD SIG [--block-size N] [--sum-size N]
+  #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA
   #|  moonlibsync patch OLD DELTA OUT
   #|  moonlibsync basis-info OLD SIG INFO
@@ -41,6 +48,8 @@ let help_text : String =
   #|Range checks do not authenticate basis identity or verify recovered content.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
   #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..1048576, sum 1..32.
+  #|auto is explicit policy v1 (development source only, absent from registry 0.2.0).
+  #|Selected block length is stored normally in SIG; inspect-signature shows it.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
   #|Existing output entries (including links) are refused; no overwrite option.
   #|Exit codes: 0 success/help/version; 2 usage; 1 file or core error.
@@ -99,7 +108,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     3
   }
   let paths : Array[String] = []
-  let mut block = 2048L
+  let mut block_choice : BlockChoice = Explicit(2048L)
   let mut sum = 32L
   let mut saw_block = false
   let mut saw_sum = false
@@ -123,7 +132,11 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       }
       if arg == "--block-size" {
         guard !saw_block else { raise Usage("duplicate option: " + arg) }
-        block = positive_decimal(args[i + 1], limits.max_block_bytes)
+        block_choice = if args[i + 1] == "auto" {
+          Auto
+        } else {
+          Explicit(positive_decimal(args[i + 1], limits.max_block_bytes))
+        }
         saw_block = true
       } else {
         guard !saw_sum else { raise Usage("duplicate option: " + arg) }
@@ -158,7 +171,16 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     } else {
       WriteFile(paths[needed - 1])
     },
-    options: { block_len: block, strong_sum_len: sum, },
+    block_choice,
+    // Keep legacy numeric options valid; Auto is represented only by its enum.
+    // The execution path resolves it from the actual bounded-read Bytes.
+    options: {
+      block_len: match block_choice {
+        Explicit(value) => value
+        Auto => 2048L
+      },
+      strong_sum_len: sum,
+    },
   }
 }
 

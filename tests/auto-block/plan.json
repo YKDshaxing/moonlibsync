@@ -1,0 +1,132 @@
+{
+  "policy_version": 1,
+  "thresholds": [
+    {
+      "length": 0,
+      "strong": 32,
+      "block": 2048,
+      "records": 0,
+      "signature_bytes": 12
+    },
+    {
+      "length": 1,
+      "strong": 1,
+      "block": 64,
+      "records": 1,
+      "signature_bytes": 17
+    },
+    {
+      "length": 63,
+      "strong": 32,
+      "block": 64,
+      "records": 1,
+      "signature_bytes": 48
+    },
+    {
+      "length": 64,
+      "strong": 16,
+      "block": 64,
+      "records": 1,
+      "signature_bytes": 32
+    },
+    {
+      "length": 65,
+      "strong": 32,
+      "block": 64,
+      "records": 2,
+      "signature_bytes": 84
+    },
+    {
+      "length": 32767,
+      "strong": 32,
+      "block": 64,
+      "records": 512,
+      "signature_bytes": 18444
+    },
+    {
+      "length": 32768,
+      "strong": 32,
+      "block": 64,
+      "records": 512,
+      "signature_bytes": 18444
+    },
+    {
+      "length": 32769,
+      "strong": 32,
+      "block": 128,
+      "records": 257,
+      "signature_bytes": 9264
+    },
+    {
+      "length": 65535,
+      "strong": 16,
+      "block": 128,
+      "records": 512,
+      "signature_bytes": 10252
+    },
+    {
+      "length": 65536,
+      "strong": 32,
+      "block": 128,
+      "records": 512,
+      "signature_bytes": 18444
+    },
+    {
+      "length": 65537,
+      "strong": 1,
+      "block": 256,
+      "records": 257,
+      "signature_bytes": 1297
+    },
+    {
+      "length": 131071,
+      "strong": 32,
+      "block": 256,
+      "records": 512,
+      "signature_bytes": 18444
+    },
+    {
+      "length": 131072,
+      "strong": 32,
+      "block": 256,
+      "records": 512,
+      "signature_bytes": 18444
+    },
+    {
+      "length": 131073,
+      "strong": 32,
+      "block": 512,
+      "records": 257,
+      "signature_bytes": 9264
+    },
+    {
+      "length": 1048576,
+      "strong": 32,
+      "block": 2048,
+      "records": 512,
+      "signature_bytes": 18444
+    }
+  ],
+  "sizes": [
+    65536,
+    1048576
+  ],
+  "scenarios": [
+    "identical",
+    "small-replace",
+    "front-insert",
+    "all-different",
+    "repeated"
+  ],
+  "modes": [
+    "fixed",
+    "auto"
+  ],
+  "expected": {
+    "threshold_cases": 15,
+    "comparison_pairs": 10,
+    "signature_comparisons": 35,
+    "restores": 70
+  },
+  "notes": "No timing. Threshold bytes=(i*73+19)%256. Comparison imports the unchanged benchmark v1 generator, never its measurement entry."
+}

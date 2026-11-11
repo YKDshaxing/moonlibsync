@@ -227,3 +227,9 @@ moonlibsync patch-verified OLD DELTA MANIFEST OUT
 候选验证从实际分发ZIP解包内容构建产品CLI，记录真实构建路径及可执行SHA-256；不复用仓库二进制。新增候选流程运行三项JSON检查与basis-info→delta→make-manifest→patch-verified；发送端实际移除OLD，12类拒绝检查输入/已有输出未变，失败无临时或最终输出，最后再次正常提交。原314/315项CLI及各15辅助测试独立保留。入口和候选目录配置见[阶段A说明](../tests/stage-a/README.md)。
 
 候选消费使用明确本地workspace替换，不是注册表消费。复用未观察到稳定总耗时优势，仍为全量缓冲；本笔不重新计时、不改写0.1.0历史发布证据。Commit24的版本决定、冻结、最终包/许可证审计、发布SHA/CI绑定、Mooncakes新版本发布及无替换注册表消费仍待后续，不创建标签或Release。
+
+## Commit 25 开发源码：显式 auto
+
+当前Git构建的 `signature OLD SIG --block-size auto [--sum-size N]` 支持小写auto；0.2.0注册表原包没有该选项。默认仍2048/32，数字不变，零不是auto。sum-size auto、大小写变体、空值、负数及重复数字/auto均为用法错误。选项位置、`--`和字面`-`规则不变。
+
+有界OLD读取及输入变化校验后，以实际Bytes长度调用推荐API；成功stdout仍为空，通过 `inspect-signature SIG --json` 查看实际数字块长，schema不变。沿用全部文件保护、临时清理、退出码以及NTFS/ext4/DrvFS边界；Linux产物仍是带.exe后缀的ELF。规则、数据量和可运行API示例见[自动块长](auto-block.md)。

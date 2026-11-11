@@ -24,8 +24,9 @@ from interop_wire import inspect_delta, check_contents
 from release_version import MODULE, VERSION, ARCHIVE, consumer_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-' + VERSION)
+OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/stage-b-candidate')
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.1.0').resolve()), 'Historical 0.1.0 evidence is read-only'
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.2.0').resolve()), 'Historical 0.2.0 evidence is read-only'
 
 
 def digest(data):
@@ -284,6 +285,7 @@ def candidate(actual):
         # Build the delivered example and product CLI from the extracted archive.
         for target in ('native', 'js', 'wasm-gc'):
             run(['moon', 'run', 'examples/basic', '--target', target], 'candidate-basic-' + target, cwd=package)
+            run(['moon','run','examples/auto','--target',target],'candidate-auto-'+target,cwd=package)
         cli = cli_flow(package, 'candidate-cli')
         from stage_a_candidate import validate
         stage_results = validate(stage, package, Path(cli['path']), run, OUT)
@@ -326,7 +328,7 @@ def clean_source(actual):
             run(['moon', 'run', 'examples/basic', '--target', target], 'clean-example-' + target, cwd=fresh, env=env)
         cli = cli_flow(fresh, 'clean-cli', env)
         for target in ('native','js','wasm-gc'):
-            for example in ('prepared','verified'):
+            for example in ('prepared','verified','auto'):
                 run(['moon','run','examples/'+example,'--target',target],'clean-'+example+'-'+target,cwd=fresh,env=env)
         unchanged_bytes(actual, fresh)
         return {'status': 'passed', 'fresh_toolchain_install': True, 'fresh_build_outputs': True, 'registry_api_mode': True, 'sdk_archive_cache': sdk_archives, 'source_unchanged': True, 'environment': environment(top), 'cli': cli}
@@ -398,7 +400,7 @@ def main():
     args = parser.parse_args()
     os.chdir(ROOT)
     (OUT / 'logs').mkdir(parents=True, exist_ok=True)
-    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-release-candidate', 'source': source(), 'status': 'incomplete'}
+    report = {'publication_status': 'registry-verification-in-progress' if args.registry else 'unpublished-development-snapshot', 'source': source(), 'status': 'incomplete'}
     save(OUT / 'report.json', report)
     try:
         actual, audit = audit_package()

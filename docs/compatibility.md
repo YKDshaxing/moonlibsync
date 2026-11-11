@@ -231,3 +231,9 @@ Commit16仍须：核对精确版本和发布身份/权限；审计实际源码�
 新增的是验证覆盖，没有协议/默认预算/API变更。固定rdiff v2.3.4只消费标准SIG/DELTA，不理解本项目清单；上游与MoonBit delta无需字节相同，同参数SIG要求完整一致。两平台三目标的候选消费者实际使用包中公开API，包内源码构建产品CLI，仍限Windows NTFS / Linux ext4及原DrvFS失败边界。新旧覆盖和实际来源见[阶段A说明](../tests/stage-a/README.md)。
 
 候选消费使用明确本地workspace替换，不是注册表消费。复用未观察到稳定总耗时优势，仍为全量缓冲；本笔不重新计时、不改写0.1.0历史发布证据。Commit24的版本决定、冻结、最终包/许可证审计、发布SHA/CI绑定、Mooncakes新版本发布及无替换注册表消费仍待后续，不创建标签或Release。
+
+## Commit 25 阶段 B：显式自动块长（尚未发布）
+
+以30a36f5c105f84b41d79dc2f1245f1cc0965a36c为基线，只增加 `recommend_block_len(Int64,Int64,Limits) -> Int64 raise SyncError` 及signature独有的显式 `--block-size auto`。policy v1规则和实测数据量见[自动块长](auto-block.md)。公开类型、默认2048/32、数字行为、预算、profile、SIG/DELTA/清单与检查JSON格式不变。实际块长写标准SIG头，固定rdiff按该参数完整字节一致；不要求等于rdiff自身建议。
+
+本能力仅属于Git开发源码；模块/CLI版本仍为0.2.0，已发布0.2.0源069c126e2ea67c52a5759478edf480afa68f31a4及原注册表包不含此API/选项。候选检查迁至_build/stage-b-candidate，拒绝覆盖0.1.0和0.2.0证据。新增13项库、2项Native辅助、每平台29项CLI和独立35次签名/70次跨恢复，旧166/15/314或315、3968/504及消费范围完整保留，分别统计。未重跑历史耗时测量。止于Commit25，未进入Commit26，未发布、建标签或Release。

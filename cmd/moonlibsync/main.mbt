@@ -57,7 +57,8 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
   }
   let data = try {
     match plan.operation {
-      "signature" => @lib.signature(first, plan.options, limits)
+      "signature" =>
+        @lib.signature(first, signature_options(plan, first, limits), limits)
       "delta" => @lib.delta(first, second, limits)
       _ => @lib.patch(first, second, limits)
     }
@@ -107,4 +108,23 @@ async fn main {
       @env.exit(1)
     }
   }
+}
+
+///|
+/// Use actual read bytes, never an earlier path stat; no zero sentinel enters API.
+fn signature_options(
+  plan : Plan,
+  basis : Bytes,
+  limits : @lib.Limits,
+) -> @lib.SignatureOptions raise @lib.SyncError {
+  let block = match plan.block_choice {
+    Explicit(value) => value
+    Auto =>
+      @lib.recommend_block_len(
+        basis.length().to_int64(),
+        plan.options.strong_sum_len,
+        limits,
+      )
+  }
+  { block_len: block, strong_sum_len: plan.options.strong_sum_len, }
 }
