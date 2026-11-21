@@ -31,7 +31,7 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.3.0; inspection, reusable signatures and integrity workflows since 0.2.0
+  #|MoonLibSync 0.3.1; inspection, reusable signatures, auto block sizing and transfer workflows
   #|Usage:
   #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N]
   #|  moonlibsync delta SIG NEW DELTA

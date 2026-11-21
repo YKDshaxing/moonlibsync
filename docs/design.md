@@ -1,3 +1,13 @@
+# MoonLibSync 0.3.1：设计与使用
+
+0.3.1 在保持 0.3.0 全部公开 API、CLI 语义、schema1/schema2 格式、错误优先级、默认 `Limits` 及 `MatchWork` 计量完全兼容的基础上，提供：
+- 零破坏内部性能优化：`inspect_signature` O(1) 零记录分配、`RabinKarp` 快速幂/无乘子单次弱校验、`SignatureIndex` 连续 `sorted_weaks` 缓存友好二分查找，以及 `patch`/`encode_delta`/`write_signature_record` 批量 `blit` 内存拷贝；
+- `PreparedSignature::summary()`（O(1) 读取已准备签名元数据）与 `PreparedSignature::plan_update(new_bytes, options, limits)`（复用索引直接规划 Delta/Full 负载）。
+
+0.3.0 阶段的自动块长与更新规划设计见 [自动块长](auto-block.md)、[更新规划](updates.md) 与 [0.3.0 发布记录](release-0.3.0.md)。下文保留 0.2.0 与 0.1.0 历史设计归属。
+
+---
+
 # MoonLibSync 0.2.0：设计与使用
 
 自0.2.0提供三项检查API、PreparedSignature准备/复用、两种清单的制作/解析/编码、verified_patch和对应九条CLI命令。公开类型/错误、默认参数/预算、检查JSON schema1、清单schema1及严格解析/文件提交边界均冻结，详见[本版发布记录](release-0.2.0.md)。当前元数据和CLI版本为0.2.0；上传/注册表验证是否完成以该记录的实际状态为准。

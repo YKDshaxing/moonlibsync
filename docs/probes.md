@@ -4,7 +4,7 @@
 
 ## 目录、工具链与身份
 
-开始时 `D:\project\moonlibsync` 为空，`git status --short --branch` 退出 128，提示不是 Git 仓库，无基线 SHA。未发现适用的 AGENTS.md；确认后才执行 `git init -b main`。没有清空或覆盖用户已有文件。沙箱账号和目录所有者不同，Git 命令使用单次 `-c safe.directory=D:/project/moonlibsync`，没有修改全局 Git 配置。
+开始时仓库根目录为空，`git status --short --branch` 退出 128，提示不是 Git 仓库，无基线 SHA。未发现适用的 AGENTS.md；确认后才执行 `git init -b main`。没有清空或覆盖用户已有文件。若构建账号与目录所有者不同，Git 命令使用单次 `-c safe.directory=<repo-root>`，不修改全局 Git 配置。
 
 初始工具链完整输出（`moon version --all`、`moonc -v`，命令退出均为 0）：
 
@@ -19,12 +19,12 @@ v0.10.13+cbb11c36f (2026-09-15)
 
 初始编译器最低版本要求：**未通过**，`0.10.13 < 0.10.16`。没有用旧版冒充本笔已验证版本，也未升级用户全局工具链。
 
-最终选用的 Windows 工具链完整输出（两条命令退出均为 0）：
+最终选用的 Windows 工具链完整输出（路径相对仓库根目录，两条命令退出均为 0）：
 
 ```text
-moon 0.1.20261104 (940aa18 2026-11-04) D:\project\moonlibsync\.toolchain\selected\bin\moon.exe
-moonc v0.10.20+65efd5b93 (2026-11-05) D:\project\moonlibsync\.toolchain\selected\bin\moonc.exe
-moonrun 0.1.20261104 (940aa18 2026-11-04) D:\project\moonlibsync\.toolchain\selected\bin\moonrun.exe
+moon 0.1.20261104 (940aa18 2026-11-04) .toolchain/selected/bin/moon.exe
+moonc v0.10.20+65efd5b93 (2026-11-05) .toolchain/selected/bin/moonc.exe
+moonrun 0.1.20261104 (940aa18 2026-11-04) .toolchain/selected/bin/moonrun.exe
 
 Feature flags enabled: rr_moon_mod,rr_moon_pkg
 v0.10.20+65efd5b93 (2026-11-05)

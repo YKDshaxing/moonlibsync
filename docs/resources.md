@@ -1,4 +1,6 @@
-# MoonLibSync 0.3.0 当前契约
+# MoonLibSync 0.3.1 / 0.3.0 当前契约
+
+0.3.1 保持全部九项 `Limits` 默认值、校验顺序与 `MatchWork` 计量单位完全不变；`inspect_signature` 现改为 O(1) 头/对齐/预算校验（不再分配每条记录的 `SignatureRecord` 与摘要副本），`PreparedSignature::summary` 为 O(1) 只读标量返回，`PreparedSignature::plan_update` 复用 `PreparedSignature::delta` 的预算重检与独立 `MatchWork`。
 
 自0.3.0提供显式auto、Delta／Full规划和schema2应用；下文历史Commit记录保留当时归属，不能以其“未发布”字样否定本版能力。完整冻结及实际上传状态见[本版发布记录](release-0.3.0.md)。原schema1、标准delta和API、默认2048/32、Limits及工作单位保持兼容；Full不交给rdiff patch，API忽略basis而CLI拒绝--basis。没有新计时、峰值内存或认证承诺。
 

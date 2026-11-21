@@ -1,3 +1,12 @@
+# 0.3.0 阶段 B 发布验收与 0.3.1 演进
+
+- **0.3.0 已发布并完成双平台注册表消费验收**（状态 `published-and-consumer-verified`）：正式发布源 `35b2225e56747c0d7568dd117017c25e6c658146`，[发布源同 SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/43025252619) 三任务全部通过，Windows/NTFS 与 Linux/ext4 独立新 SDK 空缓存下载消费通过。完整明细见 [0.3.0 发布记录](release-0.3.0.md)。
+- **0.3.1 仓库整理与零破坏演进**：在完全保持 0.3.0 兼容性与测试矩阵的基础上，落地 `inspect_signature` O(1) 零分配、`RabinKarp` 快速幂/单次摘要、`SignatureIndex` 扁平弱校验缓存与批量 `blit` 拷贝优化，补充 `PreparedSignature::summary` / `PreparedSignature::plan_update`，并完善中英双语 README、历史发布 Tag 与 GitHub Release 自动化。详见 [CHANGELOG.md](../CHANGELOG.md)。
+
+下文保留 0.2.0 与 0.1.0 历史阶段验收快照，不作为本版验收结论。
+
+---
+
 # 0.2.0阶段A发布验收（Commit24）
 
 阶段A基线4452eddcd27818b5852850f07085f454fe75b453；0.2.0冻结标准差分、检查、索引复用、清单与受校验返回/提交，schema和默认预算不改。本版实际模块包审计、干净重建、发布源同SHA CI、标准Mooncakes上传及Windows/Linux两端三目标独立注册表消费全部通过，状态published-and-consumer-verified。最终结果及发布源/文档SHA分离见[0.2.0记录](release-0.2.0.md)。

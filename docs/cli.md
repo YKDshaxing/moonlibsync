@@ -1,4 +1,6 @@
-# MoonLibSync 0.3.0 当前契约
+# MoonLibSync 0.3.1 / 0.3.0 当前契约
+
+0.3.1 保留全部 11 条命令、参数语法、JSON schema、退出码与无覆盖原子提交流程不变，仅更新 `--version` / `--help` 版本号为 `MoonLibSync 0.3.1` 并受益于核心库优化。
 
 自0.3.0提供显式auto、Delta／Full规划和schema2应用；下文历史Commit记录保留当时归属，不能以其“未发布”字样否定本版能力。完整冻结及实际上传状态见[本版发布记录](release-0.3.0.md)。原schema1、标准delta和API、默认2048/32、Limits及工作单位保持兼容；Full不交给rdiff patch，API忽略basis而CLI拒绝--basis。没有新计时、峰值内存或认证承诺。
 

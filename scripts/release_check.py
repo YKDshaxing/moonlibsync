@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-'+VERSION+'/'+platform.system().lower())
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.1.0').resolve()), 'Historical 0.1.0 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.2.0').resolve()), 'Historical 0.2.0 evidence is read-only'
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.0').resolve()), 'Historical 0.3.0 evidence is read-only'
 
 
 def digest(data):

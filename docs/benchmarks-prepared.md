@@ -20,7 +20,7 @@ python3 scripts/benchmark_prepared.py
 
 脚本先以当前 `moon build --help` 核对release参数，实际执行 `moon --target-dir _build/benchmarks-prepared/build build probes/prepared --target native --release`。计时驱动是专用参考适配器，不是新增产品CLI；只接收SIG、NEW与结果目录，不接收basis。
 
-实测ELF：`/mnt/d/project/moonlibsync/_build/benchmarks-prepared/build/native/release/build/probes/prepared/prepared.exe`；SHA-256 `c2721a4bbf8d40c9181e36b097b4ad822da93b5d95afe58443c89541b329c81c`。测量时HEAD为 `7351eba44b8dd7a13987ceefe2be7c2769b4dc29`，dirty=true（本笔待提交的实现）。这不是最终干净同SHA重测；最终交付记录逐项复核manifest中的运行库/驱动/构建配置/依赖锁哈希，并关联最终SHA与必需CI。后续测试、工具隔离与文档编辑没有改变被测Native源码或配置，旧Commit15基准与0.1.0归档未覆盖。
+实测ELF：`_build/benchmarks-prepared/build/native/release/build/probes/prepared/prepared.exe`（相对仓库根目录）；SHA-256 `c2721a4bbf8d40c9181e36b097b4ad822da93b5d95afe58443c89541b329c81c`。测量时HEAD为 `7351eba44b8dd7a13987ceefe2be7c2769b4dc29`，dirty=true（本笔待提交的实现）。这不是最终干净同SHA重测；最终交付记录逐项复核manifest中的运行库/驱动/构建配置/依赖锁哈希，并关联最终SHA与必需CI。后续测试、工具隔离与文档编辑没有改变被测Native源码或配置，旧Commit15基准与0.1.0归档未覆盖。
 
 ## 计时与正确性边界
 

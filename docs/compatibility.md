@@ -1,4 +1,6 @@
-# MoonLibSync 0.3.0 当前契约
+# MoonLibSync 0.3.1 / 0.3.0 当前契约
+
+0.3.1 与 0.3.0 保持 100% 向前兼容：所有既有公开 API、CLI 命令、schema1/schema2 JSON、标准 SIG/DELTA 格式、默认 2048/32、`Limits` 与 `MatchWork` 计量单位均不变；新增 `PreparedSignature::summary` 与 `PreparedSignature::plan_update`，并在内部落地 `inspect_signature` O(1) 头校验、`RabinKarp` 冗余乘法消除、`sorted_weaks` 扁平查询与批量 `blit` 拷贝。
 
 自0.3.0提供显式auto、Delta／Full规划和schema2应用；下文历史Commit记录保留当时归属，不能以其“未发布”字样否定本版能力。完整冻结及实际上传状态见[本版发布记录](release-0.3.0.md)。原schema1、标准delta和API、默认2048/32、Limits及工作单位保持兼容；Full不交给rdiff patch，API忽略basis而CLI拒绝--basis。没有新计时、峰值内存或认证承诺。
 

@@ -1,0 +1,95 @@
+name: Release Native CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.3.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            asset: moonlibsync-linux-x86_64
+          - os: windows-latest
+            asset: moonlibsync-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked MoonBit toolchain
+        run: python scripts/install_toolchain.py
+      - name: Select isolated toolchain
+        shell: pwsh
+        run: |
+          "MOON_HOME=$PWD/.toolchain/selected" >> $env:GITHUB_ENV
+          "$PWD/.toolchain/selected/bin" >> $env:GITHUB_PATH
+      - name: Fetch locked dependencies and verify integrity
+        run: |
+          moon update
+          moon check --target wasm-gc --no-mbti
+          python scripts/verify_dependencies.py
+      - name: Build release Native CLI
+        run: moon build cmd/moonlibsync --target native --release
+      - name: Verify binary and stage release asset
+        shell: pwsh
+        run: |
+          $built = "_build/native/release/build/cmd/moonlibsync/moonlibsync.exe"
+          if (-not (Test-Path $built)) { throw "Missing built CLI artifact: $built" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $dest = "dist/${{ matrix.asset }}"
+          Copy-Item -Path $built -Destination $dest -Force
+          if ($IsLinux) { chmod +x $dest }
+          $ver = & "./$dest" --version
+          if ($LASTEXITCODE -ne 0) { throw "CLI --version failed" }
+          Write-Host "Verified artifact: $dest -> $ver"
+      - name: Upload built asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download built CLI assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA256SUMS.txt
+        working-directory: dist
+        run: |
+          chmod +x moonlibsync-linux-x86_64
+          sha256sum moonlibsync-linux-x86_64 moonlibsync-windows-x86_64.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "MoonLibSync ${TAG}" \
+              --generate-notes
+          fi
