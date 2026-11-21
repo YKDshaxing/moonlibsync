@@ -79,7 +79,6 @@ fn write_literal_header(
 ///|
 /// Limits, input bytes, complete magic, opcode, full parameters, zero length,
 /// instruction budget, output budget, literal span, then command storage.
-#warnings("-unused_value")
 fn parse_delta(
   input : BytesView,
   limits : Limits,
@@ -143,7 +142,6 @@ fn parse_delta(
 
 ///|
 /// Preflight byte size, command count and expected output before allocation.
-#warnings("-unused_value")
 fn encode_delta(
   commands : ArrayView[DeltaCommand],
   limits : Limits,
@@ -194,9 +192,7 @@ fn encode_delta(
         cursor = cursor +
           write_literal_header(out, cursor, data.length().to_uint64()).to_int64()
         let start = checked_wire_span(out.length(), cursor, data.length())
-        for i in 0..<data.length() {
-          out[start + i] = data[i]
-        }
+        out.blit_from_bytesview(start, data)
         cursor = cursor + data.length().to_int64()
       }
       Copy(offset, length) => {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-// Registry 0.1.0 exposes the three operations below. Development-only read-only
-// inspection and length preflight APIs/types are defined in inspect.mbt.
+// Core librsync-compatible byte-buffer operations: signature, delta and patch.
+// Inspection, prepared signatures, integrity manifests, auto block sizing and
+// transfer planning are defined in their respective modules.
 
 ///|
 /// Options for the standard RK+BLAKE2 signature profile. Zero never means auto.
@@ -40,12 +41,10 @@ pub fn signature(
     let take = if remaining < block { remaining } else { block }
     let end = pos + take // take <= remaining; addition is now bounded.
     let window = basis[pos:end]
-    let weak = RabinKarp::new()
-    weak.update(window)
     write_signature_record(
       output,
       cursor,
-      weak.digest(),
+      rabinkarp_digest(window),
       strong_sum(window, strong),
     )
     pos = end

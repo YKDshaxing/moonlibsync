@@ -9,7 +9,7 @@ OUT=ROOT/'_build/prepared-encapsulation'
 OUT.mkdir(parents=True,exist_ok=True)
 build=ROOT/os.environ.get('MOONLIBSYNC_BUILD_DIR','_build')
 sources={
-    'call':'pub fn run(p : @lib.PreparedSignature, data : Bytes) -> Bytes raise @lib.SyncError { p.delta(data, @lib.Limits::default()) }',
+    'call':'pub fn run(p : @lib.PreparedSignature, data : Bytes) -> Bytes raise @lib.SyncError { let _ = p.summary(); let _ = p.plan_update(data, @lib.UpdateOptions::default(), @lib.Limits::default()); p.delta(data, @lib.Limits::default()) }',
     'index':'pub fn leak(p : @lib.PreparedSignature) -> Unit { ignore(p.index) }',
     'bytes':'pub fn leak(p : @lib.PreparedSignature) -> Int64 { p.signature_bytes }',
     'construct':'pub fn forge() -> @lib.PreparedSignature { { signature_bytes: 12L, index: 0 } }',

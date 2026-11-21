@@ -2,14 +2,12 @@
 
 ///|
 /// One upper operation owns this budget; helpers never replenish it.
-#warnings("-unused_field")
 priv struct MatchWork {
   mut remaining : Int64
 }
 
 ///|
 /// Existing max_match_work range/default is unchanged.
-#warnings("-unused_value")
 fn MatchWork::new(limits : Limits) -> MatchWork raise SyncError {
   limits.validate()
   { remaining: limits.max_match_work, }

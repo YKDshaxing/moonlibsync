@@ -90,8 +90,6 @@ fn read_u64_be(input : BytesView, offset : Int64) -> UInt64 raise SyncError {
 
 ///|
 /// Validate the whole output span first, so failure cannot partially write.
-/// This stage exercises the internal writers through whitebox tests only.
-#warnings("-unused_value")
 fn write_u32_be(
   output : FixedArray[Byte],
   offset : Int64,

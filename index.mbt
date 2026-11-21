@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
-/// Only record ordinals are sorted; digest bytes remain in the parsed signature.
-#warnings("-unused_field")
+/// Record ordinals and contiguous sorted weak checksums for cache-friendly lookup;
+/// digest bytes remain owned in the parsed signature.
 priv struct SignatureIndex {
   signature : Signature
   order : Array[Int32]
+  sorted_weaks : FixedArray[UInt32]
 }
 
 ///|
@@ -19,7 +20,6 @@ priv struct BlockMatch {
 
 ///|
 /// Metered bottom-up merge sort, with no unmetered hash collision path.
-#warnings("-unused_value")
 fn build_signature_index(
   sig : Signature,
   work : MatchWork,
@@ -72,7 +72,11 @@ fn build_signature_index(
     }
     width = width * 2 // proven less than n before doubling
   }
-  { signature: sig, order: source, }
+  let sorted_weaks = FixedArray::make(n, 0U)
+  for i in 0..<n {
+    sorted_weaks[i] = sig.records[source[i]].weak_sum
+  }
+  { signature: sig, order: source, sorted_weaks, }
 }
 
 ///|
@@ -86,7 +90,6 @@ fn checked_match_end(
 
 ///|
 /// Supplied weak sum comes from the rolling scanner; only this window is hashed.
-#warnings("-unused_value")
 fn match_signature_window(
   index : SignatureIndex,
   window : BytesView,
@@ -101,31 +104,31 @@ fn match_signature_window(
     raise InvalidOptions("window_len")
   }
   let mut lo = 0
-  let mut hi = index.order.length()
+  let mut hi = index.sorted_weaks.length()
   while lo < hi {
     work.spend(1L) // binary probe before accessing the record
     let mid = lo + (hi - lo) / 2
-    if index.signature.records[index.order[mid]].weak_sum < weak {
+    if index.sorted_weaks[mid] < weak {
       lo = mid + 1
     } else {
       hi = mid
     }
   }
-  if lo == index.order.length() {
+  if lo == index.sorted_weaks.length() {
     return None
   }
   work.spend(1L) // group presence check; misses do not incur digest charges
-  if index.signature.records[index.order[lo]].weak_sum != weak {
+  if index.sorted_weaks[lo] != weak {
     return None
   }
   work.spend(1L + length.to_int64()) // digest setup + actual input bytes, ONCE
   let digest = strong_sum(window, index.signature.strong_sum_len)
-  for pos in lo..<index.order.length() {
+  for pos in lo..<index.sorted_weaks.length() {
     work.spend(1L) // candidate visit / group-end probe and bounded metadata work
-    let record = index.signature.records[index.order[pos]]
-    if record.weak_sum != weak {
+    if index.sorted_weaks[pos] != weak {
       break
     }
+    let record = index.signature.records[index.order[pos]]
     work.spend(index.signature.strong_sum_len.to_int64()) // full comparison precharge
     if record.strong_sum == digest {
       let offset = checked_block_offset(

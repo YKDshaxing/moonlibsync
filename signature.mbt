@@ -69,9 +69,7 @@ fn write_signature_record(
   }
   let start = checked_wire_span(output.length(), offset, 4 + strong.length())
   write_u32_be(output, offset, weak)
-  for i in 0..<strong.length() {
-    output[start + 4 + i] = strong[i]
-  }
+  output.blit_from_bytes(start + 4, strong, 0, strong.length())
 }
 
 ///|
@@ -113,7 +111,6 @@ fn encode_signature(sig : Signature, limits : Limits) -> Bytes raise SyncError {
 ///|
 /// Internal only. The wire format provides no actual final-block length.
 /// Production consumers are the signature index and remote-delta scanner.
-#warnings("-unused_field")
 priv struct SignatureRecord {
   block_index : Int32
   nominal_offset : UInt64
@@ -124,7 +121,6 @@ priv struct SignatureRecord {
 ///|
 /// Parsed structure, not a generated signature or proof of basis identity.
 /// The signature index and generator consume this private validated structure.
-#warnings("-unused_field")
 priv struct Signature {
   magic : UInt32
   block_len : Int32
@@ -133,14 +129,23 @@ priv struct Signature {
 }
 
 ///|
-/// Only the RK/BLAKE2 profile is accepted. See docs/signature-format.md for
-/// the explicit error precedence, resource policy, and wire-format sources.
-/// Public delta generation uses this parser before index construction.
-#warnings("-unused_value")
-fn parse_signature(
+/// Validated header and record-count metadata without record allocation.
+priv struct SignatureHeader {
+  magic : UInt32
+  block_wire : UInt32
+  block_len : Int32
+  strong_sum_len : Int32
+  record_width : Int32
+  record_count : Int32
+}
+
+///|
+/// Validate signature header, profile, alignment, limits and greatest nominal
+/// offset in O(1) time without allocating record arrays or digest copies.
+fn parse_signature_header(
   input : BytesView,
   limits : Limits,
-) -> Signature raise SyncError {
+) -> SignatureHeader raise SyncError {
   limits.validate()
   let input_len = input.length()
   guard input_len.to_int64() <= limits.max_signature_bytes else {
@@ -179,21 +184,39 @@ fn parse_signature(
       block_wire.to_uint64(),
     )
   }
+  { magic, block_wire, block_len, strong_sum_len, record_width, record_count, }
+}
+
+///|
+/// Only the RK/BLAKE2 profile is accepted. See docs/signature-format.md for
+/// the explicit error precedence, resource policy, and wire-format sources.
+/// Public delta generation uses this parser before index construction.
+fn parse_signature(
+  input : BytesView,
+  limits : Limits,
+) -> Signature raise SyncError {
+  let header = parse_signature_header(input, limits)
+  let input_len = input.length()
   // Record count and greatest offset are checked before exact slot allocation.
-  let records : Array[SignatureRecord] = Array(capacity=record_count)
+  let records : Array[SignatureRecord] = Array(capacity=header.record_count)
   let mut cursor = 12L
-  for block_index in 0..<record_count {
-    let start = checked_wire_span(input_len, cursor, record_width)
+  for block_index in 0..<header.record_count {
+    let start = checked_wire_span(input_len, cursor, header.record_width)
     // Addition is safe only AFTER the complete span has been checked.
-    let end = start + record_width
+    let end = start + header.record_width
     let weak_sum = read_u32_be(input, cursor)
     let strong_sum = input[start + 4:end].to_owned()
     let nominal_offset = checked_block_offset(
       block_index.to_uint64(),
-      block_wire.to_uint64(),
+      header.block_wire.to_uint64(),
     )
     records.push({ block_index, nominal_offset, weak_sum, strong_sum, })
     cursor = end.to_int64()
   }
-  { magic, block_len, strong_sum_len, records, }
+  {
+    magic: header.magic,
+    block_len: header.block_len,
+    strong_sum_len: header.strong_sum_len,
+    records,
+  }
 }

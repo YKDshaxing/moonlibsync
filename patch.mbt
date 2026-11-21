@@ -54,20 +54,22 @@ fn execute_patch_commands(
   let out = FixedArray::make(size, b'\x00')
   let mut cursor = 0
   for command in commands {
-    let source = match command {
-      Literal(data) => data
+    // Preflight proved cursor + length <= the final checked size.
+    match command {
+      Literal(data) => {
+        let len = data.length()
+        out.blit_from_bytesview(cursor, data)
+        cursor = cursor + len
+      }
       Copy(offset, length) => {
         // patch_size proved offset <= basis.length and length <= remaining.
         // Both fit Int32; this bounded addition is <= basis.length.
         let start = offset.to_int()
-        basis[start:start + length.to_int()]
+        let len = length.to_int()
+        out.blit_from_bytes(cursor, basis, start, len)
+        cursor = cursor + len
       }
     }
-    // Preflight proved cursor + source.length <= the final checked size.
-    for i in 0..<source.length() {
-      out[cursor + i] = source[i]
-    }
-    cursor = cursor + source.length()
   }
   Bytes::from_array(out[:])
 }

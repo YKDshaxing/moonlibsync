@@ -5,7 +5,6 @@
 // src/rabinkarp.h; scalar update only, no unrolling or power tables.
 
 ///|
-#warnings("-unused_field")
 priv struct RabinKarp {
   mut count : Int32
   mut hash : UInt32
@@ -13,8 +12,33 @@ priv struct RabinKarp {
 }
 
 ///|
-/// Internal operations currently consumed by whitebox tests only.
-#warnings("-unused_value")
+fn rk_pow_mult(exponent : Int32) -> UInt32 {
+  let mut base = 0x08104225U
+  let mut result = 1U
+  let mut e = exponent
+  while e > 0 {
+    if (e & 1) != 0 {
+      result = result * base
+    }
+    e = e >> 1
+    if e > 0 {
+      base = base * base
+    }
+  }
+  result
+}
+
+///|
+/// Direct one-shot weak checksum without multiplier tracking or state allocation.
+fn rabinkarp_digest(input : BytesView) -> UInt32 {
+  let mut hash = 1U
+  for byte in input {
+    hash = hash * 0x08104225U + byte.to_uint()
+  }
+  hash
+}
+
+///|
 fn RabinKarp::new() -> RabinKarp {
   { count: 0, hash: 1U, mult: 1U, }
 }
@@ -41,22 +65,26 @@ fn RabinKarp::rollin(self : RabinKarp, incoming : Byte) -> Unit raise SyncError 
 
 ///|
 /// Preflight the entire batch before modifying any state.
-#warnings("-unused_value")
+/// Advances mult once via O(log n) exponentiation instead of multiplying per byte.
 fn RabinKarp::update(
   self : RabinKarp,
   input : BytesView,
 ) -> Unit raise SyncError {
-  self.check_capacity(input.length())
+  let len = input.length()
+  self.check_capacity(len)
+  let mut hash = self.hash
   for byte in input {
-    self.hash = self.hash * 0x08104225U + byte.to_uint()
-    self.mult = self.mult * 0x08104225U
+    hash = hash * 0x08104225U + byte.to_uint()
   }
-  self.count = self.count + input.length()
+  self.hash = hash
+  if len > 0 {
+    self.mult = self.mult * rk_pow_mult(len)
+    self.count = self.count + len
+  }
 }
 
 ///|
 /// Caller must supply the actual outgoing first byte; no window is stored.
-#warnings("-unused_value")
 fn RabinKarp::rotate(
   self : RabinKarp,
   outgoing : Byte,
@@ -70,7 +98,6 @@ fn RabinKarp::rotate(
 
 ///|
 /// EOF shortening uses the newly reduced multiplier.
-#warnings("-unused_value")
 fn RabinKarp::rollout(
   self : RabinKarp,
   outgoing : Byte,
@@ -82,7 +109,6 @@ fn RabinKarp::rollout(
 }
 
 ///|
-#warnings("-unused_value")
 fn RabinKarp::digest(self : RabinKarp) -> UInt32 {
   self.hash
 }

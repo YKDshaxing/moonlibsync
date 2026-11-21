@@ -111,6 +111,8 @@ pub struct PreparedSignature {
   // private fields
 }
 pub fn PreparedSignature::delta(Self, Bytes, Limits) -> Bytes raise SyncError
+pub fn PreparedSignature::plan_update(Self, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
+pub fn PreparedSignature::summary(Self) -> SignatureSummary
 
 pub(all) struct SignatureOptions {
   block_len : Int64

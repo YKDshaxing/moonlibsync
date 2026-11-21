@@ -33,18 +33,18 @@ pub(all) struct PatchCheck {
 
 ///|
 /// Inspect a complete signature under Limits, with the same validation order
-/// as delta's signature parser. No hashing or basis reconstruction is performed.
-/// Parsing allocates bounded records/digest copies; the result retains none.
+/// as delta's signature parser. Runs in O(1) time without hashing, basis
+/// reconstruction, or allocating per-record digest storage.
 pub fn inspect_signature(
   signature_bytes : Bytes,
   limits : Limits,
 ) -> SignatureSummary raise SyncError {
-  let sig = parse_signature(signature_bytes, limits)
+  let header = parse_signature_header(signature_bytes, limits)
   {
-    magic: sig.magic,
-    block_len: sig.block_len.to_int64(),
-    strong_sum_len: sig.strong_sum_len.to_int64(),
-    record_count: sig.records.length().to_int64(),
+    magic: header.magic,
+    block_len: header.block_len.to_int64(),
+    strong_sum_len: header.strong_sum_len.to_int64(),
+    record_count: header.record_count.to_int64(),
     signature_bytes: signature_bytes.length().to_int64(),
   }
 }
