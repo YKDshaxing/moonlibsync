@@ -23,6 +23,8 @@ async fn execute(plan : Plan) -> Unit {
     WriteFile(output) =>
       if plan.operation == "dir-snapshot" {
         execute_dir_snapshot(plan, output)
+      } else if plan.operation == "dir-pack" {
+        execute_dir_bundle_op(plan, output)
       } else if plan.operation == "compress" || plan.operation == "decompress" {
         execute_compress_op(plan, output)
       } else if plan.streaming {
@@ -41,6 +43,8 @@ async fn execute(plan : Plan) -> Unit {
     Inspect(json) =>
       if plan.operation == "dir-plan" {
         execute_dir_plan(plan, json)
+      } else if plan.operation == "dir-verify" {
+        execute_dir_verify(plan, json)
       } else {
         execute_inspection(plan, json)
       }
@@ -89,6 +93,14 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
       )
   }
   publish_output(output, data)
+  emit_instant_progress(
+    plan,
+    if plan.operation == "signature" {
+      first.length().to_int64()
+    } else {
+      second.length().to_int64()
+    },
+  )
 }
 
 ///|
@@ -105,7 +117,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.4.0\n")
+      @stdio.stdout.write(b"MoonLibSync 0.5.0\n")
     } else {
       execute(parse_plan(args[1:]))
     }

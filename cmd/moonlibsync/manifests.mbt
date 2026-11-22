@@ -54,6 +54,7 @@ async fn execute_manifest_write(
       }
     }
     publisher(output, data)
+    emit_instant_progress(plan, data.length().to_int64())
   } catch {
     error =>
       raise FileFailure(

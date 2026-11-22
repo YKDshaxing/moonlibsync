@@ -128,6 +128,7 @@ async fn stream_open_chunks(
   path : String,
   size : Int64,
   after_start~ : async () -> Unit = no_hook,
+  progress~ : ProgressReporter? = None,
   on_chunk : async (BytesView) -> Unit,
 ) -> Unit {
   after_start()
@@ -142,6 +143,7 @@ async fn stream_open_chunks(
     }
     let slice = Bytes::from_array(buf[0:count])
     on_chunk(slice[:])
+    advance_progress(progress, count.to_int64())
     pos = pos + count.to_int64()
   }
   verify_stream_eof(file, path, size)
@@ -254,6 +256,7 @@ async fn stream_verify_basis_sha(
   basis_path : String,
   expected : @lib.FileDigest,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> Int64 {
   let size = check_open_regular_sized(
     basis_file,
@@ -264,7 +267,9 @@ async fn stream_verify_basis_sha(
     raise @lib.ManifestError::BindingMismatch("basis_length")
   }
   let hasher = @lib.Sha256Hasher::new(limits.max_old_bytes)
-  stream_open_chunks(basis_file, basis_path, size, chunk => hasher.update(chunk))
+  stream_open_chunks(basis_file, basis_path, size, progress~, chunk => {
+    hasher.update(chunk)
+  })
   let actual = hasher.finish()
   guard actual.sha256 == expected.sha256 else {
     raise @lib.ManifestError::BindingMismatch("basis_sha256")
@@ -279,10 +284,17 @@ async fn execute_verified_streaming_delta(
   output_path : String,
   m : @lib.UpdateManifest,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> Unit {
   let old_file = open_regular_input(basis_path)
   defer old_file.close()
-  let old_size = stream_verify_basis_sha(old_file, basis_path, m.basis, limits)
+  let old_size = stream_verify_basis_sha(
+    old_file,
+    basis_path,
+    m.basis,
+    limits,
+    progress~,
+  )
   let delta_file = open_regular_input(delta_path)
   defer delta_file.close()
   let delta_size = check_open_regular_sized(
@@ -300,7 +312,7 @@ async fn execute_verified_streaming_delta(
   let dec = @lib.PatchDecoder::new(old_size, limits)
   let copy_buf = FixedArray::make(65536, b'\x00')
   publish_stream(output, tmp_file => {
-    stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+    stream_open_chunks(delta_file, delta_path, delta_size, progress~, chunk => {
       delta_hasher.update(chunk)
       drive_streaming_patch(dec, chunk, old_file, basis_path, copy_buf, view => {
         result_hasher.update(view)
@@ -330,6 +342,7 @@ async fn streaming_create_basis_info(
   old_path : String,
   sig_path : String,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.BasisInfo {
   let old_file = open_regular_input(old_path)
   defer old_file.close()
@@ -338,6 +351,10 @@ async fn streaming_create_basis_info(
     old_path,
     limits.max_old_bytes,
   )
+  match progress {
+    Some(p) => if p.total < 0L { p.total = old_size }
+    None => ()
+  }
   let sig = bounded_read(sig_path, limits.max_signature_bytes)
   let sig_summary = @lib.inspect_signature(sig, limits) catch {
     error => raise @lib.ManifestError::Core(error)
@@ -363,7 +380,7 @@ async fn streaming_create_basis_info(
     sig_pos = sig_pos + emitted.length()
   }
   check_slice(sig_hasher.take_ready())
-  stream_open_chunks(old_file, old_path, old_size, chunk => {
+  stream_open_chunks(old_file, old_path, old_size, progress~, chunk => {
     old_sha.update(chunk)
     sig_hasher.update(chunk) catch {
       error => raise @lib.ManifestError::Core(error)
@@ -391,6 +408,7 @@ async fn streaming_create_update_manifest(
   new_path : String,
   delta_path : String,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.UpdateManifest {
   let info = @lib.parse_basis_info(bounded_read(info_path, 65536L), limits)
   let sig = bounded_read(sig_path, limits.max_signature_bytes)
@@ -419,12 +437,6 @@ async fn streaming_create_update_manifest(
   guard new_size <= limits.max_output_bytes else {
     raise @lib.ManifestError::ResourceLimit("result")
   }
-  let new_sha = @lib.Sha256Hasher::new(limits.max_new_bytes)
-  stream_open_chunks(new_file, new_path, new_size, chunk => {
-    new_sha.update(chunk)
-  })
-  let result_digest = new_sha.finish()
-
   let delta_file = open_regular_input(delta_path)
   defer delta_file.close()
   let delta_size = check_open_regular_sized(
@@ -435,11 +447,21 @@ async fn streaming_create_update_manifest(
   guard delta_size >= 5L else {
     raise @lib.ManifestError::InvalidField("delta.byte_length")
   }
+  match progress {
+    Some(p) => if p.total < 0L { p.total = new_size + delta_size }
+    None => ()
+  }
+  let new_sha = @lib.Sha256Hasher::new(limits.max_new_bytes)
+  stream_open_chunks(new_file, new_path, new_size, progress~, chunk => {
+    new_sha.update(chunk)
+  })
+  let result_digest = new_sha.finish()
+
   let delta_sha = @lib.Sha256Hasher::new(limits.max_delta_bytes)
   let dec = @lib.PatchDecoder::new(info.basis.byte_length, limits) catch {
     error => raise @lib.ManifestError::Core(error)
   }
-  stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+  stream_open_chunks(delta_file, delta_path, delta_size, progress~, chunk => {
     delta_sha.update(chunk)
     dec.feed_inspect(chunk) catch {
       error => raise @lib.ManifestError::Core(error)
@@ -468,32 +490,40 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
     match plan.operation {
       "basis-info" => {
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, -1L)
         let info = streaming_create_basis_info(
           plan.inputs[0],
           plan.inputs[1],
           limits,
+          progress~,
         )
         publish_output(output, @lib.encode_basis_info(info, limits))
+        finish_progress(progress)
       }
       "make-manifest" => {
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, -1L)
         let um = streaming_create_update_manifest(
           plan.inputs[0],
           plan.inputs[1],
           plan.inputs[2],
           plan.inputs[3],
           limits,
+          progress~,
         )
         publish_output(output, @lib.encode_update_manifest(um, limits))
+        finish_progress(progress)
       }
       "make-transfer-manifest" => {
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, -1L)
         let um = streaming_create_update_manifest(
           plan.inputs[0],
           plan.inputs[1],
           plan.inputs[2],
           plan.inputs[3],
           limits,
+          progress~,
         )
         let smaller = um.delta.byte_length < um.result.byte_length
         let savings = if smaller {
@@ -508,6 +538,7 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
           Full(um.result, um.result)
         }
         publish_output(output, @lib.encode_transfer_manifest(tm, limits))
+        finish_progress(progress)
       }
       "signature" => {
         let old_path = plan.inputs[0]
@@ -532,14 +563,16 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
           limits,
         )
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, old_size)
         publish_stream(output, tmp_file => {
           write_nonempty(tmp_file, hasher.take_ready()[:])
-          stream_open_chunks(old_file, old_path, old_size, chunk => {
+          stream_open_chunks(old_file, old_path, old_size, progress~, chunk => {
             hasher.update(chunk)
             write_nonempty(tmp_file, hasher.take_ready()[:])
           })
           write_nonempty(tmp_file, hasher.finish()[:])
         })
+        finish_progress(progress)
       }
       "delta" => {
         let sig = bounded_read(plan.inputs[0], limits.max_signature_bytes)
@@ -557,14 +590,16 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
         }
         let scanner = @lib.DeltaScanner::new(prepared, limits)
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, new_size)
         publish_stream(output, tmp_file => {
           write_nonempty(tmp_file, scanner.take_ready()[:])
-          stream_open_chunks(new_file, new_path, new_size, chunk => {
+          stream_open_chunks(new_file, new_path, new_size, progress~, chunk => {
             scanner.feed(chunk)
             write_nonempty(tmp_file, scanner.take_ready()[:])
           })
           write_nonempty(tmp_file, scanner.finish()[:])
         })
+        finish_progress(progress)
       }
       "patch" => {
         let old_path = plan.inputs[0]
@@ -587,8 +622,9 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
         let dec = @lib.PatchDecoder::new(basis_len, limits)
         let copy_buf = FixedArray::make(65536, b'\x00')
         let output = prepare_output(output_path)
+        let progress = make_progress(plan, delta_size)
         publish_stream(output, tmp_file => {
-          stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+          stream_open_chunks(delta_file, delta_path, delta_size, progress~, chunk => {
             drive_streaming_patch(dec, chunk, old_file, old_path, copy_buf, view => {
               write_nonempty(tmp_file, view)
             })
@@ -598,17 +634,24 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
           }
           let _ = dec.finish()
         })
+        finish_progress(progress)
       }
       "patch-verified" => {
         let manifest_bytes = bounded_read(plan.inputs[2], 65536L)
         let manifest = @lib.parse_update_manifest(manifest_bytes, limits)
+        let progress = make_progress(
+          plan,
+          manifest.basis.byte_length + manifest.delta.byte_length,
+        )
         execute_verified_streaming_delta(
           plan.inputs[0],
           plan.inputs[1],
           output_path,
           manifest,
           limits,
+          progress~,
         )
+        finish_progress(progress)
       }
       _ => {
         let manifest_bytes = bounded_read(plan.inputs[1], 65536L)
@@ -618,13 +661,19 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
             guard plan.basis_path is Some(bpath) else {
               raise Usage("Delta requires --basis OLD")
             }
+            let progress = make_progress(
+              plan,
+              m.basis.byte_length + m.delta.byte_length,
+            )
             execute_verified_streaming_delta(
               bpath,
               plan.inputs[0],
               output_path,
               m,
               limits,
+              progress~,
             )
+            finish_progress(progress)
           }
           @lib.TransferManifest::Full(payload_desc, _) => {
             guard plan.basis_path is None else {
@@ -646,16 +695,24 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
             }
             let hasher = @lib.Sha256Hasher::new(limits.max_new_bytes)
             let output = prepare_output(output_path)
+            let progress = make_progress(plan, payload_size)
             publish_stream(output, tmp_file => {
-              stream_open_chunks(payload_file, payload_path, payload_size, chunk => {
-                hasher.update(chunk)
-                write_nonempty(tmp_file, chunk)
-              })
+              stream_open_chunks(
+                payload_file,
+                payload_path,
+                payload_size,
+                progress~,
+                chunk => {
+                  hasher.update(chunk)
+                  write_nonempty(tmp_file, chunk)
+                },
+              )
               let actual = hasher.finish()
               guard actual.sha256 == payload_desc.sha256 else {
                 raise @lib.ManifestError::BindingMismatch("payload_sha256")
               }
             })
+            finish_progress(progress)
           }
         }
       }

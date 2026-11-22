@@ -21,8 +21,9 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
           limits.max_output_bytes,
         )
         let out_buf = FixedArray::make(65536, b'\x00')
+        let progress = make_progress(plan, in_size)
         publish_stream(output, tmp_file => {
-          stream_open_chunks(in_file, in_path, in_size, chunk => {
+          stream_open_chunks(in_file, in_path, in_size, progress~, chunk => {
             let mut pos = 0
             while true {
               let step = enc.step(chunk[pos:], out_buf, finish=false)
@@ -54,6 +55,7 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
           }
           let _ = enc.summary()
         })
+        finish_progress(progress)
       } else {
         let raw = bounded_read(in_path, limits.max_new_bytes)
         let gz = @compress.compress_gzip(
@@ -62,6 +64,7 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
           limits.max_output_bytes,
         )
         publish_output(output, gz)
+        emit_instant_progress(plan, raw.length().to_int64())
       }
     } else if plan.streaming {
       let in_file = open_regular_input(in_path)
@@ -76,8 +79,9 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
         limits.max_output_bytes,
       )
       let out_buf = FixedArray::make(65536, b'\x00')
+      let progress = make_progress(plan, in_size)
       publish_stream(output, tmp_file => {
-        stream_open_chunks(in_file, in_path, in_size, chunk => {
+        stream_open_chunks(in_file, in_path, in_size, progress~, chunk => {
           let mut pos = 0
           while true {
             let step = dec.step(chunk[pos:], out_buf)
@@ -97,6 +101,7 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
         })
         let _ = dec.finish()
       })
+      finish_progress(progress)
     } else {
       let gz = bounded_read(in_path, limits.max_delta_bytes)
       let plain = @compress.decompress_gzip(
@@ -105,6 +110,7 @@ async fn execute_compress_op(plan : Plan, output_path : String) -> Unit {
         limits.max_output_bytes,
       )
       publish_output(output, plain)
+      emit_instant_progress(plan, gz.length().to_int64())
     }
   } catch {
     error => raise wrap_stream_error(plan, output_path, error)

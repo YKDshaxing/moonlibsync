@@ -133,6 +133,7 @@ async fn stream_copy_verified_file(
   expected : @lib.FileDigest,
   max_bytes : Int64,
   field_prefix : String,
+  progress~ : ProgressReporter? = None,
 ) -> Unit {
   let src_file = open_regular_input(src_path)
   defer src_file.close()
@@ -149,7 +150,7 @@ async fn stream_copy_verified_file(
   )
   let mut opened = true
   errdefer (if opened { dst_file.close() })
-  stream_open_chunks(src_file, src_path, size, chunk => {
+  stream_open_chunks(src_file, src_path, size, progress~, chunk => {
     hasher.update(chunk)
     write_nonempty(dst_file, chunk)
   })
@@ -183,6 +184,7 @@ async fn write_single_dir_signature(
   sig_dst : String,
   expected_basis : @lib.FileDigest,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.FileDigest {
   let max_old = if plan.dir_limits.max_file_bytes < limits.max_old_bytes {
     plan.dir_limits.max_file_bytes
@@ -219,7 +221,7 @@ async fn write_single_dir_signature(
       }
     }
     emit(sig_hasher.take_ready())
-    stream_open_chunks(src_file, src_path, size, chunk => {
+    stream_open_chunks(src_file, src_path, size, progress~, chunk => {
       basis_sha.update(chunk)
       sig_hasher.update(chunk) catch {
         error => raise @lib.ManifestError::Core(error)
@@ -259,6 +261,7 @@ async fn write_single_dir_signature(
     sig_sha.update(sig[:])
     let sig_digest = sig_sha.finish()
     @fs.write_binary(sig_dst, sig[:], create_mode=CreateNew, permission=0o600)
+    advance_progress(progress, old.length().to_int64())
     sig_digest
   }
 }
@@ -278,6 +281,11 @@ async fn execute_dir_signatures(plan : Plan, sig_dir : String) -> Unit {
   }
   let snap_bytes = bounded_read(snap_path, dir_limits.max_snapshot_bytes)
   let snapshot = @lib.parse_dir_snapshot(snap_bytes, dir_limits)
+  let mut total_basis = 0L
+  for item in snapshot.entries {
+    total_basis = total_basis + item.digest.byte_length
+  }
+  let progress = make_progress(plan, total_basis)
   publish_dir("dir-signatures", sig_dir, staging => {
     let sigs_dir = @path.Path(staging).join(@path.Path("sigs")).to_string()
     @fs.mkdir(sigs_dir, permission=0o700, recursive=false, allow_exist=false)
@@ -295,6 +303,7 @@ async fn execute_dir_signatures(plan : Plan, sig_dir : String) -> Unit {
         sig_dst,
         item.digest,
         limits,
+        progress~,
       )
       entries.push({
         path: item.path,
@@ -315,6 +324,7 @@ async fn execute_dir_signatures(plan : Plan, sig_dir : String) -> Unit {
       permission=0o600,
     )
   })
+  finish_progress(progress)
 }
 
 ///|
@@ -327,6 +337,7 @@ async fn pack_update_candidate(
   basis : @lib.FileDigest,
   target : @lib.FileDigest,
   sig_entry : @lib.DirSignatureEntry,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.DirBundleAction {
   let limits = plan.limits
   let dir_limits = plan.dir_limits
@@ -389,7 +400,7 @@ async fn pack_update_candidate(
       }
     }
     emit(scanner.take_ready())
-    stream_open_chunks(target_file, target_src, new_size, chunk => {
+    stream_open_chunks(target_file, target_src, new_size, progress~, chunk => {
       new_sha.update(chunk)
       scanner.feed(chunk) catch {
         error => raise @lib.ManifestError::Core(error)
@@ -429,7 +440,14 @@ async fn pack_update_candidate(
       })
     } else {
       @fs.remove(delta_dst, allow_missing=false)
-      stream_copy_verified_file(target_src, full_dst, target, max_new, "target")
+      stream_copy_verified_file(
+        target_src,
+        full_dst,
+        target,
+        max_new,
+        "target",
+        progress~,
+      )
       UpdateFull(full_rel, basis, target)
     }
   } else {
@@ -452,6 +470,7 @@ async fn pack_update_candidate(
       cand,
       limits,
     )
+    advance_progress(progress, new_bytes.length().to_int64())
     let smaller = um.delta.byte_length < um.result.byte_length
     let savings = if smaller {
       um.result.byte_length - um.delta.byte_length
@@ -479,11 +498,191 @@ async fn pack_update_candidate(
 }
 
 ///|
-async fn execute_dir_pack(plan : Plan, bundle_dir : String) -> Unit {
+async fn build_staged_bundle(
+  plan : Plan,
+  staging : String,
+  sig_dir : String,
+  target_dir : String,
+  sync_plan : @lib.DirSyncPlan,
+  sig_map : Map[String, @lib.DirSignatureEntry],
+  progress : ProgressReporter?,
+) -> @lib.DirBundleManifest {
+  let limits = plan.limits
+  let dir_limits = plan.dir_limits
+  let max_new = if dir_limits.max_file_bytes < limits.max_new_bytes {
+    dir_limits.max_file_bytes
+  } else {
+    limits.max_new_bytes
+  }
+  let payloads_dir = @path.Path(staging)
+    .join(@path.Path("payloads"))
+    .to_string()
+  @fs.mkdir(payloads_dir, permission=0o700, recursive=false, allow_exist=false)
+  let bundle_entries : Array[@lib.DirBundleEntry] = Array(
+    capacity=sync_plan.actions.length(),
+  )
+  let mut payload_idx = 0
+  for act in sync_plan.actions {
+    match act.kind {
+      Unchanged => {
+        guard act.basis is Some(b) else {
+          raise @lib.ManifestError::InvalidField("action")
+        }
+        bundle_entries.push({ path: act.path, action: Unchanged(b), })
+      }
+      Delete => {
+        guard act.basis is Some(b) else {
+          raise @lib.ManifestError::InvalidField("action")
+        }
+        bundle_entries.push({ path: act.path, action: Delete(b), })
+      }
+      AddFull => {
+        guard act.target is Some(t) else {
+          raise @lib.ManifestError::InvalidField("action")
+        }
+        let target_src = resolve_safe_regular_under(target_dir, act.path)
+        let payload_rel = "payloads/" + zero_pad6(payload_idx) + ".full"
+        payload_idx = payload_idx + 1
+        let dst = join_rel_posix(staging, payload_rel)
+        stream_copy_verified_file(
+          target_src,
+          dst,
+          t,
+          max_new,
+          "target",
+          progress~,
+        )
+        bundle_entries.push({ path: act.path, action: AddFull(payload_rel, t), })
+      }
+      UpdateCandidate => {
+        guard act.basis is Some(b) && act.target is Some(t) else {
+          raise @lib.ManifestError::InvalidField("action")
+        }
+        let sig_entry = match sig_map.get(act.path) {
+          Some(se) => se
+          None => raise @lib.ManifestError::BindingMismatch("signature_index")
+        }
+        let target_src = resolve_safe_regular_under(target_dir, act.path)
+        let action = pack_update_candidate(
+          plan,
+          sig_dir,
+          target_src,
+          staging,
+          payload_idx,
+          b,
+          t,
+          sig_entry,
+          progress~,
+        )
+        payload_idx = payload_idx + 1
+        bundle_entries.push({ path: act.path, action, })
+      }
+    }
+  }
+  @lib.create_dir_bundle_manifest(bundle_entries, dir_limits, limits)
+}
+
+///|
+async fn write_bundle_archive_stream(
+  plan : Plan,
+  staging : String,
+  manifest : @lib.DirBundleManifest,
+  final_path : String,
+  progress : ProgressReporter?,
+) -> Unit {
+  let preamble = @lib.encode_bundle_archive_preamble(
+    manifest,
+    plan.dir_limits,
+    plan.limits,
+  )
+  let expected = @lib.bundle_expected_payloads(manifest)
+  publish_stream(final_path, tmp_file => {
+    if plan.gzip {
+      let enc = @compress.GzipEncoder::new(2147483647L, 2147483647L)
+      let out_buf = FixedArray::make(65536, b'\x00')
+      async fn write_gz(view : BytesView) -> Unit {
+        let mut pos = 0
+        while pos < view.length() {
+          let step = enc.step(view[pos:], out_buf, finish=false)
+          pos = pos + step.consumed
+          if step.produced > 0 {
+            write_nonempty(
+              tmp_file,
+              Bytes::from_array(out_buf[0:step.produced])[:],
+            )
+          }
+          match step.status {
+            NeedMoreOutput => continue
+            NeedMoreInput => if pos >= view.length() { break }
+            Done => break
+          }
+        }
+      }
+      write_gz(preamble[:])
+      for pair in expected {
+        let (payload_rel, payload_len) = pair
+        let hdr = @lib.encode_bundle_payload_header(
+          payload_rel,
+          payload_len,
+          plan.dir_limits,
+        )
+        write_gz(hdr[:])
+        let ppath = join_rel_posix(staging, payload_rel)
+        let pfile = open_regular_input(ppath)
+        defer pfile.close()
+        let psize = check_open_regular_sized(pfile, ppath, 2147483647L)
+        guard psize == payload_len else {
+          raise @lib.ManifestError::BindingMismatch("archive_payload_length")
+        }
+        stream_open_chunks(pfile, ppath, psize, progress~, chunk => {
+          write_gz(chunk)
+        })
+      }
+      while true {
+        let step = enc.step(b""[:], out_buf, finish=true)
+        if step.produced > 0 {
+          write_nonempty(
+            tmp_file,
+            Bytes::from_array(out_buf[0:step.produced])[:],
+          )
+        }
+        if step.status is Done {
+          break
+        }
+      }
+      let _ = enc.summary()
+    } else {
+      write_nonempty(tmp_file, preamble[:])
+      for pair in expected {
+        let (payload_rel, payload_len) = pair
+        let hdr = @lib.encode_bundle_payload_header(
+          payload_rel,
+          payload_len,
+          plan.dir_limits,
+        )
+        write_nonempty(tmp_file, hdr[:])
+        let ppath = join_rel_posix(staging, payload_rel)
+        let pfile = open_regular_input(ppath)
+        defer pfile.close()
+        let psize = check_open_regular_sized(pfile, ppath, 2147483647L)
+        guard psize == payload_len else {
+          raise @lib.ManifestError::BindingMismatch("archive_payload_length")
+        }
+        stream_open_chunks(pfile, ppath, psize, progress~, chunk => {
+          write_nonempty(tmp_file, chunk)
+        })
+      }
+    }
+  })
+}
+
+///|
+async fn execute_dir_pack(plan : Plan, bundle_out : String) -> Unit {
   let limits = plan.limits
   let dir_limits = plan.dir_limits
   limits.validate()
   dir_limits.validate()
+  validate_excludes(plan.excludes)
   let basis_snap_path = plan.inputs[0]
   let sig_dir = plan.inputs[1]
   let target_dir = plan.inputs[2]
@@ -522,118 +721,213 @@ async fn execute_dir_pack(plan : Plan, bundle_dir : String) -> Unit {
       "unsupported input kind or symlink directory: " + target_dir,
     )
   }
+  let progress = make_progress(plan, -1L)
   let seen_lower : Map[String, String] = Map([])
   let target_entries : Array[@lib.DirEntry] = []
   collect_dir_entries(
-    target_dir, "", 1L, dir_limits, seen_lower, target_entries,
+    target_dir,
+    "",
+    1L,
+    dir_limits,
+    seen_lower,
+    target_entries,
+    excludes=plan.excludes,
+    progress~,
   )
   let target_snap = @lib.create_dir_snapshot(target_entries, dir_limits)
   let sync_plan = @lib.plan_dir_sync(basis_snap, target_snap, dir_limits)
-
-  let max_new = if dir_limits.max_file_bytes < limits.max_new_bytes {
-    dir_limits.max_file_bytes
-  } else {
-    limits.max_new_bytes
-  }
-  publish_dir("dir-pack", bundle_dir, staging => {
-    let payloads_dir = @path.Path(staging)
-      .join(@path.Path("payloads"))
-      .to_string()
-    @fs.mkdir(
-      payloads_dir,
-      permission=0o700,
-      recursive=false,
-      allow_exist=false,
-    )
-    let bundle_entries : Array[@lib.DirBundleEntry] = Array(
-      capacity=sync_plan.actions.length(),
-    )
-    let mut payload_idx = 0
-    for act in sync_plan.actions {
-      match act.kind {
-        Unchanged => {
-          guard act.basis is Some(b) else {
-            raise @lib.ManifestError::InvalidField("action")
-          }
-          bundle_entries.push({ path: act.path, action: Unchanged(b), })
+  if plan.archive {
+    let final_path = prepare_output(bundle_out)
+    let staging = unique_temp_path(final_path)
+    @fs.mkdir(staging, permission=0o700, recursive=false, allow_exist=false)
+    try {
+      let manifest = build_staged_bundle(
+        plan, staging, sig_dir, target_dir, sync_plan, sig_map, progress,
+      )
+      write_bundle_archive_stream(plan, staging, manifest, final_path, progress)
+    } catch {
+      error => {
+        let detail = stream_error_detail(error)
+        @fs.rmdir(staging, recursive=true, allow_missing=true) catch {
+          cleanup_error =>
+            raise FileFailure(
+              "dir-pack '" +
+              bundle_out +
+              "': " +
+              detail +
+              "; cleanup failed '" +
+              staging +
+              "': \{cli_error_text(cleanup_error)}",
+            )
         }
-        Delete => {
-          guard act.basis is Some(b) else {
-            raise @lib.ManifestError::InvalidField("action")
-          }
-          bundle_entries.push({ path: act.path, action: Delete(b), })
-        }
-        AddFull => {
-          guard act.target is Some(t) else {
-            raise @lib.ManifestError::InvalidField("action")
-          }
-          let target_src = resolve_safe_regular_under(target_dir, act.path)
-          let payload_rel = "payloads/" + zero_pad6(payload_idx) + ".full"
-          payload_idx = payload_idx + 1
-          let dst = join_rel_posix(staging, payload_rel)
-          stream_copy_verified_file(target_src, dst, t, max_new, "target")
-          bundle_entries.push({
-            path: act.path,
-            action: AddFull(payload_rel, t),
-          })
-        }
-        UpdateCandidate => {
-          guard act.basis is Some(b) && act.target is Some(t) else {
-            raise @lib.ManifestError::InvalidField("action")
-          }
-          let sig_entry = match sig_map.get(act.path) {
-            Some(se) => se
-            None => raise @lib.ManifestError::BindingMismatch("signature_index")
-          }
-          let target_src = resolve_safe_regular_under(target_dir, act.path)
-          let action = pack_update_candidate(
-            plan, sig_dir, target_src, staging, payload_idx, b, t, sig_entry,
-          )
-          payload_idx = payload_idx + 1
-          bundle_entries.push({ path: act.path, action, })
-        }
+        raise FileFailure("dir-pack '" + bundle_out + "': " + detail)
       }
     }
-    let manifest = @lib.create_dir_bundle_manifest(
-      bundle_entries, dir_limits, limits,
-    )
-    let encoded = @lib.encode_dir_bundle_manifest(manifest, dir_limits, limits)
-    let bundle_json = @path.Path(staging)
-      .join(@path.Path("bundle.json"))
-      .to_string()
-    @fs.write_binary(
-      bundle_json,
-      encoded[:],
-      create_mode=CreateNew,
-      permission=0o600,
-    )
-  })
+    @fs.rmdir(staging, recursive=true, allow_missing=true)
+    finish_progress(progress)
+  } else {
+    publish_dir("dir-pack", bundle_out, staging => {
+      let manifest = build_staged_bundle(
+        plan, staging, sig_dir, target_dir, sync_plan, sig_map, progress,
+      )
+      let encoded = @lib.encode_dir_bundle_manifest(
+        manifest, dir_limits, limits,
+      )
+      let bundle_json = @path.Path(staging)
+        .join(@path.Path("bundle.json"))
+        .to_string()
+      @fs.write_binary(
+        bundle_json,
+        encoded[:],
+        create_mode=CreateNew,
+        permission=0o600,
+      )
+    })
+    finish_progress(progress)
+  }
 }
 
 ///|
-async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
+async fn unpack_bundle_archive(
+  plan : Plan,
+  archive_path : String,
+  unpack_dir : String,
+  progress : ProgressReporter?,
+) -> @lib.DirBundleManifest {
+  let archive_file = open_regular_input(archive_path)
+  defer archive_file.close()
+  let archive_size = check_open_regular_sized(
+    archive_file, archive_path, 2147483647L,
+  )
+  let arch_dec = @lib.BundleArchiveDecoder::new(plan.dir_limits, plan.limits)
+  let expected_digests : Map[String, @lib.FileDigest] = Map([])
+  let mut active_file : @fs.File? = None
+  let mut active_hasher : @lib.Sha256Hasher? = None
+  let mut active_expected : @lib.FileDigest? = None
+  let mut active_path = ""
+  errdefer (match active_file {
+    Some(f) => f.close()
+    None => ()
+  })
+  async fn feed_archive(view : BytesView) -> Unit {
+    let mut pos = 0
+    while pos < view.length() || arch_dec.has_pending_event() {
+      let (consumed, step) = arch_dec.step(view[pos:])
+      pos = pos + consumed
+      match step {
+        NeedInput => ()
+        Manifest(m) =>
+          for entry in m.entries {
+            match entry.action {
+              Unchanged(_) | Delete(_) => ()
+              AddFull(p, target) => expected_digests[p] = target
+              UpdateFull(p, _, target) => expected_digests[p] = target
+              UpdateDelta(p, um) => expected_digests[p] = um.delta
+            }
+          }
+        BeginPayload(rel_payload, payload_len) => {
+          guard active_file is None else {
+            raise @lib.ManifestError::InvalidSchema
+          }
+          let exp = match expected_digests.get(rel_payload) {
+            Some(d) => d
+            None =>
+              raise @lib.ManifestError::BindingMismatch("archive_payload_path")
+          }
+          guard exp.byte_length == payload_len else {
+            raise @lib.ManifestError::BindingMismatch("archive_payload_length")
+          }
+          ensure_staged_parent_dirs(unpack_dir, rel_payload)
+          let dst = join_rel_posix(unpack_dir, rel_payload)
+          let f = @fs.open(
+            dst,
+            mode=WriteOnly,
+            create_mode=CreateNew,
+            permission=0o600,
+          )
+          active_file = Some(f)
+          active_hasher = Some(@lib.Sha256Hasher::new(payload_len))
+          active_expected = Some(exp)
+          active_path = rel_payload
+        }
+        PayloadChunk(data_view) =>
+          match (active_file, active_hasher) {
+            (Some(f), Some(h)) => {
+              h.update(data_view)
+              write_nonempty(f, data_view)
+            }
+            _ => raise @lib.ManifestError::InvalidSchema
+          }
+        EndPayload(rel_payload) => {
+          guard rel_payload == active_path else {
+            raise @lib.ManifestError::InvalidSchema
+          }
+          match (active_file, active_hasher, active_expected) {
+            (Some(f), Some(h), Some(exp)) => {
+              sync_content(f)
+              active_file = None
+              active_hasher = None
+              active_expected = None
+              active_path = ""
+              f.close()
+              let actual = h.finish()
+              guard actual.byte_length == exp.byte_length else {
+                raise @lib.ManifestError::BindingMismatch("payload_length")
+              }
+              guard actual.sha256 == exp.sha256 else {
+                raise @lib.ManifestError::BindingMismatch("payload_sha256")
+              }
+            }
+            _ => raise @lib.ManifestError::InvalidSchema
+          }
+        }
+      }
+    }
+  }
+  if plan.gzip {
+    let gz_dec = @compress.GzipDecoder::new(2147483647L, 2147483647L)
+    let out_buf = FixedArray::make(65536, b'\x00')
+    stream_open_chunks(archive_file, archive_path, archive_size, progress~, chunk => {
+      let mut pos = 0
+      while true {
+        let step = gz_dec.step(chunk[pos:], out_buf)
+        pos = pos + step.consumed
+        if step.produced > 0 {
+          let plain = Bytes::from_array(out_buf[0:step.produced])
+          feed_archive(plain[:])
+        }
+        match step.status {
+          NeedMoreOutput => continue
+          NeedMoreInput => if pos >= chunk.length() { break }
+          Done => break
+        }
+      }
+    })
+    let _ = gz_dec.finish()
+  } else {
+    stream_open_chunks(archive_file, archive_path, archive_size, progress~, chunk => {
+      feed_archive(chunk)
+    })
+  }
+  if arch_dec.has_pending_event() {
+    feed_archive(b""[:])
+  }
+  let manifest = arch_dec.finish()
+  guard active_file is None else { raise @lib.ManifestError::InvalidSchema }
+  manifest
+}
+
+///|
+async fn apply_bundle_entries(
+  plan : Plan,
+  basis_dir : String,
+  payload_root : String,
+  staging : String,
+  bundle : @lib.DirBundleManifest,
+  progress : ProgressReporter?,
+) -> Unit {
   let limits = plan.limits
   let dir_limits = plan.dir_limits
-  limits.validate()
-  dir_limits.validate()
-  let basis_dir = plan.inputs[0]
-  let bundle_dir = plan.inputs[1]
-  guard @fs.kind(basis_dir, follow_symlink=false) is @fs.FileKind::Directory else {
-    raise FileFailure(
-      "unsupported input kind or symlink directory: " + basis_dir,
-    )
-  }
-  let bundle_json_path = resolve_safe_regular_under(bundle_dir, "bundle.json")
-  let bundle_cap = if dir_limits.max_snapshot_bytes * 8L > 67108864L {
-    67108864L
-  } else {
-    dir_limits.max_snapshot_bytes * 8L
-  }
-  let bundle = @lib.parse_dir_bundle_manifest(
-    bounded_read(bundle_json_path, bundle_cap),
-    dir_limits,
-    limits,
-  )
   let max_old = if dir_limits.max_file_bytes < limits.max_old_bytes {
     dir_limits.max_file_bytes
   } else {
@@ -644,56 +938,166 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
   } else {
     limits.max_new_bytes
   }
-  publish_dir("dir-apply", out_dir, staging => {
-    for entry in bundle.entries {
-      match entry.action {
-        Delete(_) => ()
-        Unchanged(expected) => {
-          let src = resolve_safe_regular_under(basis_dir, entry.path)
-          ensure_staged_parent_dirs(staging, entry.path)
-          let dst = join_rel_posix(staging, entry.path)
-          stream_copy_verified_file(src, dst, expected, max_old, "basis")
-        }
-        AddFull(payload_path, expected)
-        | UpdateFull(payload_path, _, expected) => {
-          let src = resolve_safe_regular_under(bundle_dir, payload_path)
-          ensure_staged_parent_dirs(staging, entry.path)
-          let dst = join_rel_posix(staging, entry.path)
-          stream_copy_verified_file(src, dst, expected, max_new, "payload")
-        }
-        UpdateDelta(payload_path, m) => {
-          let old_src = resolve_safe_regular_under(basis_dir, entry.path)
-          let delta_src = resolve_safe_regular_under(bundle_dir, payload_path)
-          ensure_staged_parent_dirs(staging, entry.path)
-          let dst = join_rel_posix(staging, entry.path)
-          if plan.streaming {
-            execute_verified_streaming_delta(old_src, delta_src, dst, m, limits)
-          } else {
-            let old = bounded_read(old_src, max_old)
-            let delta = bounded_read(delta_src, limits.max_delta_bytes)
-            let restored = @lib.verified_patch(old, delta, m, limits)
-            @fs.write_binary(
-              dst,
-              restored[:],
-              create_mode=CreateNew,
-              permission=0o600,
-            )
-          }
+  for entry in bundle.entries {
+    match entry.action {
+      Delete(_) => ()
+      Unchanged(expected) => {
+        let src = resolve_safe_regular_under(basis_dir, entry.path)
+        ensure_staged_parent_dirs(staging, entry.path)
+        let dst = join_rel_posix(staging, entry.path)
+        stream_copy_verified_file(
+          src,
+          dst,
+          expected,
+          max_old,
+          "basis",
+          progress~,
+        )
+      }
+      AddFull(payload_path, expected) | UpdateFull(payload_path, _, expected) => {
+        let src = resolve_safe_regular_under(payload_root, payload_path)
+        ensure_staged_parent_dirs(staging, entry.path)
+        let dst = join_rel_posix(staging, entry.path)
+        stream_copy_verified_file(
+          src,
+          dst,
+          expected,
+          max_new,
+          "payload",
+          progress~,
+        )
+      }
+      UpdateDelta(payload_path, m) => {
+        let old_src = resolve_safe_regular_under(basis_dir, entry.path)
+        let delta_src = resolve_safe_regular_under(payload_root, payload_path)
+        ensure_staged_parent_dirs(staging, entry.path)
+        let dst = join_rel_posix(staging, entry.path)
+        if plan.streaming {
+          execute_verified_streaming_delta(
+            old_src,
+            delta_src,
+            dst,
+            m,
+            limits,
+            progress~,
+          )
+        } else {
+          let old = bounded_read(old_src, max_old)
+          let delta = bounded_read(delta_src, limits.max_delta_bytes)
+          let restored = @lib.verified_patch(old, delta, m, limits)
+          @fs.write_binary(
+            dst,
+            restored[:],
+            create_mode=CreateNew,
+            permission=0o600,
+          )
+          advance_progress(
+            progress,
+            old.length().to_int64() + delta.length().to_int64(),
+          )
         }
       }
     }
-  })
+  }
 }
 
 ///|
-async fn execute_dir_bundle_op(plan : Plan, output_dir : String) -> Unit {
+async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
+  let limits = plan.limits
+  let dir_limits = plan.dir_limits
+  limits.validate()
+  dir_limits.validate()
+  let basis_dir = plan.inputs[0]
+  let bundle_input = plan.inputs[1]
+  guard @fs.kind(basis_dir, follow_symlink=false) is @fs.FileKind::Directory else {
+    raise FileFailure(
+      "unsupported input kind or symlink directory: " + basis_dir,
+    )
+  }
+  if plan.archive {
+    guard @fs.kind(bundle_input, follow_symlink=false) is @fs.FileKind::Regular else {
+      raise FileFailure(
+        "unsupported input kind or leaf symlink: " + bundle_input,
+      )
+    }
+    let progress = make_progress(plan, -1L)
+    publish_dir("dir-apply", out_dir, staging => {
+      let unpack_dir = unique_temp_path(staging)
+      @fs.mkdir(
+        unpack_dir,
+        permission=0o700,
+        recursive=false,
+        allow_exist=false,
+      )
+      try {
+        let manifest = unpack_bundle_archive(
+          plan, bundle_input, unpack_dir, progress,
+        )
+        apply_bundle_entries(
+          plan, basis_dir, unpack_dir, staging, manifest, progress,
+        )
+        @fs.rmdir(unpack_dir, recursive=true, allow_missing=true)
+      } catch {
+        error => {
+          let detail = stream_error_detail(error)
+          @fs.rmdir(unpack_dir, recursive=true, allow_missing=true) catch {
+            cleanup_error =>
+              raise FileFailure(
+                detail +
+                "; unpack cleanup failed '" +
+                unpack_dir +
+                "': \{cli_error_text(cleanup_error)}",
+              )
+          }
+          raise FileFailure(detail)
+        }
+      }
+    })
+    finish_progress(progress)
+  } else {
+    let bundle_json_path = resolve_safe_regular_under(
+      bundle_input, "bundle.json",
+    )
+    let bundle_cap = if dir_limits.max_snapshot_bytes * 8L > 67108864L {
+      67108864L
+    } else {
+      dir_limits.max_snapshot_bytes * 8L
+    }
+    let bundle = @lib.parse_dir_bundle_manifest(
+      bounded_read(bundle_json_path, bundle_cap),
+      dir_limits,
+      limits,
+    )
+    let mut total_bytes = 0L
+    for entry in bundle.entries {
+      match entry.action {
+        Delete(_) => ()
+        Unchanged(expected) => total_bytes = total_bytes + expected.byte_length
+        AddFull(_, expected) | UpdateFull(_, _, expected) =>
+          total_bytes = total_bytes + expected.byte_length
+        UpdateDelta(_, m) =>
+          total_bytes = total_bytes + m.basis.byte_length + m.delta.byte_length
+      }
+    }
+    let progress = make_progress(plan, total_bytes)
+    publish_dir("dir-apply", out_dir, staging => {
+      apply_bundle_entries(
+        plan, basis_dir, bundle_input, staging, bundle, progress,
+      )
+    })
+    finish_progress(progress)
+  }
+}
+
+///|
+async fn execute_dir_bundle_op(plan : Plan, output_path : String) -> Unit {
   try {
     match plan.operation {
-      "dir-signatures" => execute_dir_signatures(plan, output_dir)
-      "dir-pack" => execute_dir_pack(plan, output_dir)
-      _ => execute_dir_apply(plan, output_dir)
+      "dir-signatures" => execute_dir_signatures(plan, output_path)
+      "dir-pack" => execute_dir_pack(plan, output_path)
+      _ => execute_dir_apply(plan, output_path)
     }
   } catch {
-    error => raise wrap_stream_error(plan, output_dir, error)
+    error => raise wrap_stream_error(plan, output_path, error)
   }
 }

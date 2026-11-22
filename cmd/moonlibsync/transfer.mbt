@@ -56,6 +56,7 @@ async fn execute_transfer_write(
       @lib.apply_update(basis, payload, manifest, limits)
     }
     publisher(output, data)
+    emit_instant_progress(plan, data.length().to_int64())
   } catch {
     Usage(message) => raise Usage(message)
     error =>

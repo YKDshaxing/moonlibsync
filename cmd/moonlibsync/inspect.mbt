@@ -153,12 +153,19 @@ fn inspect_error_tag(error : Error) -> String {
 async fn stream_inspect_delta_file(
   delta_path : String,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.DeltaSummary {
   let file = open_regular_input(delta_path)
   defer file.close()
   let size = check_open_regular_sized(file, delta_path, limits.max_delta_bytes)
+  match progress {
+    Some(p) => if p.total < 0L { p.total = size }
+    None => ()
+  }
   let dec = @lib.PatchDecoder::new_format_only(limits)
-  stream_open_chunks(file, delta_path, size, chunk => dec.feed_inspect(chunk))
+  stream_open_chunks(file, delta_path, size, progress~, chunk => {
+    dec.feed_inspect(chunk)
+  })
   dec.finish()
 }
 
@@ -167,6 +174,7 @@ async fn stream_check_patch_file(
   old_path : String,
   delta_path : String,
   limits : @lib.Limits,
+  progress~ : ProgressReporter? = None,
 ) -> @lib.PatchCheck {
   let basis = open_regular_input(old_path)
   defer basis.close()
@@ -182,7 +190,11 @@ async fn stream_check_patch_file(
     delta_path,
     limits.max_delta_bytes,
   )
-  stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+  match progress {
+    Some(p) => if p.total < 0L { p.total = delta_size }
+    None => ()
+  }
+  stream_open_chunks(delta_file, delta_path, delta_size, progress~, chunk => {
     dec.feed_inspect(chunk)
   })
   let summary = dec.finish()
@@ -195,46 +207,53 @@ async fn stream_check_patch_file(
 ///|
 async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
   let limits = plan.limits
+  let progress = make_progress(plan, -1L)
   // Finish validation and formatting before the first stdout write.
   let text = try {
     limits.validate()
     match plan.operation {
-      "inspect-signature" =>
-        format_signature(
-          @lib.inspect_signature(
-            bounded_read(plan.inputs[0], limits.max_signature_bytes),
-            limits,
-          ),
+      "inspect-signature" => {
+        let raw = bounded_read(plan.inputs[0], limits.max_signature_bytes)
+        let formatted = format_signature(
+          @lib.inspect_signature(raw, limits),
           json,
         )
+        advance_progress(progress, raw.length().to_int64())
+        formatted
+      }
       "inspect-delta" =>
         if plan.streaming {
-          format_delta(stream_inspect_delta_file(plan.inputs[0], limits), json)
-        } else {
           format_delta(
-            @lib.inspect_delta(
-              bounded_read(plan.inputs[0], limits.max_delta_bytes),
-              limits,
-            ),
+            stream_inspect_delta_file(plan.inputs[0], limits, progress~),
             json,
           )
+        } else {
+          let raw = bounded_read(plan.inputs[0], limits.max_delta_bytes)
+          let formatted = format_delta(@lib.inspect_delta(raw, limits), json)
+          advance_progress(progress, raw.length().to_int64())
+          formatted
         }
-      "inspect-manifest" =>
-        format_manifest(
-          parse_any_manifest(bounded_read(plan.inputs[0], 65536L), limits),
-          json,
-        )
+      "inspect-manifest" => {
+        let raw = bounded_read(plan.inputs[0], 65536L)
+        let formatted = format_manifest(parse_any_manifest(raw, limits), json)
+        advance_progress(progress, raw.length().to_int64())
+        formatted
+      }
       _ =>
         if plan.streaming {
           format_patch(
-            stream_check_patch_file(plan.inputs[0], plan.inputs[1], limits),
+            stream_check_patch_file(
+              plan.inputs[0],
+              plan.inputs[1],
+              limits,
+              progress~,
+            ),
             json,
           )
         } else {
-          format_patch(
-            check_patch_file(plan.inputs[0], plan.inputs[1], limits),
-            json,
-          )
+          let checked = check_patch_file(plan.inputs[0], plan.inputs[1], limits)
+          advance_progress(progress, checked.summary.delta_bytes)
+          format_patch(checked, json)
         }
     }
   } catch {
@@ -255,6 +274,7 @@ async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
         cli_error_text(error),
       )
   }
+  finish_progress(progress)
 }
 
 ///|
