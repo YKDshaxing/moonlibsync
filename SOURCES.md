@@ -115,3 +115,8 @@ scripts/benchmark.py、tests/benchmarks/config.json为本项目原创LGPL-2.1-or
 ## Commit 26 原创更新规划与传输胶合
 
 update.mbt、transfer.mbt及新增CLI/消费者/验证为本项目LGPL-2.1-or-later原创胶合代码；复用既有delta、verified_patch、SHA-256与严格JSON适配，未新增第三方算法/profile或依赖。tests/transfer两个schema2样例由独立Python JSON规则结合原hashlib固定向量构造，非生产编码器自生预期；旧来源与许可证归属保留。
+
+## 0.3.2 与 0.4.0 原创流式状态机、目录同步包、有界 Gzip 子包与浏览器演示
+
+- `stream_signature.mbt`、`stream_delta.mbt`、`stream_patch.mbt`、`dir_sync.mbt`、`cmd/moonlibsync/{streaming,dir,dir_bundle,compress_cli}.mbt`、`examples/{streaming,web-demo}/*` 与 `.github/workflows/pages.yml` 均为本项目 LGPL-2.1-or-later 原创代码，未引入任何新的第三方依赖。
+- 独立纯零 IO 压缩子包 `compress/`（`YKDshaxing/moonlibsync/compress`）显式调用锁定工具链内置 `moonbitlang/core/compress/{gzip,flate}`（原 Copyright International Digital Economy Academy / Apache-2.0，见 `licenses/MoonBit-core-LICENSE` 与 `licenses/MoonBit-core-NOTICE`），不复制或修改标准库实现；根库 `YKDshaxing/moonlibsync` 保持零 `allow-experimental-packages` 配置。

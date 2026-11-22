@@ -142,7 +142,7 @@ def audit_package():
                  'tests/stage-a/consumer.mbt.txt','scripts/release_version.py','docs/release-0.2.0.md'}
     required |= {'update.mbt','transfer.mbt','examples/transfer/main.mbt','examples/transfer/pkg.generated.mbti','docs/updates.md','tests/stage-b/consumer.mbt.txt','tests/stage-b/plan.json','docs/release-0.3.0.md'}
     required |= {'stream_signature.mbt','stream_delta.mbt','stream_patch.mbt','examples/streaming/main.mbt','examples/streaming/moon.pkg','examples/streaming/pkg.generated.mbti','examples/streaming/run-node.mjs'}
-    required |= {'dir_sync.mbt','examples/web-demo/main.mbt','examples/web-demo/moon.pkg','examples/web-demo/pkg.generated.mbti','examples/web-demo/index.html','examples/web-demo/demo.mjs','examples/web-demo/test-node.mjs','docs/dir-sync.md'}
+    required |= {'dir_sync.mbt','compress/moon.pkg','compress/gzip.mbt','compress/pkg.generated.mbti','cmd/moonlibsync/compress_cli.mbt','cmd/moonlibsync/dir_bundle.mbt','examples/web-demo/main.mbt','examples/web-demo/moon.pkg','examples/web-demo/pkg.generated.mbti','examples/web-demo/index.html','examples/web-demo/demo.js','examples/web-demo/test-node.mjs','docs/dir-sync.md'}
     assert required <= actual.keys()
     forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
     assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'

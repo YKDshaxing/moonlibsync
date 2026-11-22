@@ -1,13 +1,26 @@
 import {
   "YKDshaxing/moonlibsync" @lib,
+  "YKDshaxing/moonlibsync/compress",
   "moonbitlang/core/buffer",
+  "moonbitlang/core/json",
   "moonbitlang/core/encoding/utf8",
 }
 
 options(
   link: {
     "js": {
-      "exports": [ "run_streaming_sync_json", "plan_dir_snapshots_json" ],
+      "exports": [
+        "run_streaming_sync_json",
+        "create_signature_bytes",
+        "create_delta_bytes",
+        "apply_patch_bytes",
+        "sha256_hex_bytes",
+        "compress_gzip_bytes",
+        "decompress_gzip_bytes",
+        "decompress_gzip_check_json",
+        "create_dir_snapshot_json",
+        "plan_dir_snapshots_json",
+      ],
       "format": "esm",
     },
   },

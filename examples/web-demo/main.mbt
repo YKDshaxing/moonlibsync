@@ -33,6 +33,25 @@ fn sync_err_label(err : Error) -> String {
 }
 
 ///|
+fn parse_nonneg_decimal_str(text : String) -> Int64 raise @lib.ManifestError {
+  guard text.length() > 0 && (text == "0" || !text.has_prefix("0")) else {
+    raise @lib.ManifestError::InvalidField("byte_length")
+  }
+  let mut result = 0L
+  for c in text {
+    guard c >= '0' && c <= '9' else {
+      raise @lib.ManifestError::InvalidField("byte_length")
+    }
+    let digit = (c.to_int() - 48).to_int64()
+    guard result <= (9223372036854775807L - digit) / 10L else {
+      raise @lib.ManifestError::InvalidField("byte_length")
+    }
+    result = result * 10L + digit
+  }
+  result
+}
+
+///|
 fn run_streaming_sync_impl(
   old_bytes : Bytes,
   new_bytes : Bytes,
@@ -94,6 +113,13 @@ fn run_streaming_sync_impl(
   let delta = delta_buf.to_bytes()
   let new_digest = new_sha_hasher.finish()
 
+  // Optional bounded RFC 1952 gzip compression size on the generated delta.
+  let gz_delta = @compress.compress_gzip(
+    delta[:],
+    limits.max_delta_bytes,
+    limits.max_output_bytes,
+  )
+
   // 3. Sans-IO PatchDecoder + streaming output SHA-256 verification.
   let decoder = @lib.PatchDecoder::new(old_digest.byte_length, limits)
   let rec_sha_hasher = @lib.Sha256Hasher::new(limits.max_output_bytes)
@@ -128,12 +154,12 @@ fn run_streaming_sync_impl(
   let restored = rec_buf.to_bytes()
   let verified = rec_digest.sha256 == new_digest.sha256 && restored == new_bytes
 
-  "{\"ok\":true,\"block_len\":\"\{actual_block}\",\"strong_sum_len\":\"\{sum_len}\",\"old_bytes\":\"\{old_digest.byte_length}\",\"new_bytes\":\"\{new_digest.byte_length}\",\"signature_bytes\":\"\{sig.length()}\",\"delta_bytes\":\"\{summary.delta_bytes}\",\"copy_bytes\":\"\{summary.copy_bytes}\",\"literal_bytes\":\"\{summary.literal_bytes}\",\"instruction_count\":\"\{summary.instruction_count}\",\"copy_commands\":\"\{summary.copy_commands}\",\"literal_commands\":\"\{summary.literal_commands}\",\"old_sha256\":\"\{old_digest.sha256}\",\"new_sha256\":\"\{new_digest.sha256}\",\"restored_sha256\":\"\{rec_digest.sha256}\",\"verified\":\{verified}}"
+  "{\"ok\":true,\"block_len\":\"\{actual_block}\",\"strong_sum_len\":\"\{sum_len}\",\"old_bytes\":\"\{old_digest.byte_length}\",\"new_bytes\":\"\{new_digest.byte_length}\",\"signature_bytes\":\"\{sig.length()}\",\"delta_bytes\":\"\{summary.delta_bytes}\",\"gzip_delta_bytes\":\"\{gz_delta.length()}\",\"copy_bytes\":\"\{summary.copy_bytes}\",\"literal_bytes\":\"\{summary.literal_bytes}\",\"instruction_count\":\"\{summary.instruction_count}\",\"copy_commands\":\"\{summary.copy_commands}\",\"literal_commands\":\"\{summary.literal_commands}\",\"old_sha256\":\"\{old_digest.sha256}\",\"new_sha256\":\"\{new_digest.sha256}\",\"restored_sha256\":\"\{rec_digest.sha256}\",\"verified\":\{verified}}"
 }
 
 ///|
 /// Execute the full chunked MoonLibSync streaming pipeline in pure MoonBit JS/ESM
-/// without C FFI and return JSON diagnostics and SHA-256 verification state.
+/// without C FFI and return JSON diagnostics, gzip delta size, and SHA-256 state.
 pub fn run_streaming_sync_json(
   old_bytes : Bytes,
   new_bytes : Bytes,
@@ -144,6 +170,156 @@ pub fn run_streaming_sync_json(
   run_streaming_sync_impl(
     old_bytes, new_bytes, block_len, strong_sum_len, chunk_size,
   ) catch {
+    err => "{\"ok\":false,\"error\":\"\{sync_err_label(err)}\"}"
+  }
+}
+
+///|
+/// Generate standard 0x72730147 signature bytes (`block_len = 0` selects auto).
+/// Returns empty bytes on invalid options or exceeded limits.
+pub fn create_signature_bytes(
+  old_bytes : Bytes,
+  block_len : Int32,
+  strong_sum_len : Int32,
+) -> Bytes {
+  let limits = @lib.Limits::default()
+  try {
+    let sum_len = strong_sum_len.to_int64()
+    let actual_block = if block_len == 0 {
+      @lib.recommend_block_len(old_bytes.length().to_int64(), sum_len, limits)
+    } else {
+      block_len.to_int64()
+    }
+    @lib.signature(
+      old_bytes,
+      { block_len: actual_block, strong_sum_len: sum_len, },
+      limits,
+    )
+  } catch {
+    _ => b""
+  }
+}
+
+///|
+/// Generate standard 0x72730236 delta bytes from remote signature and new bytes.
+/// Returns empty bytes on error.
+pub fn create_delta_bytes(sig_bytes : Bytes, new_bytes : Bytes) -> Bytes {
+  let limits = @lib.Limits::default()
+  @lib.delta(sig_bytes, new_bytes, limits) catch {
+    _ => b""
+  }
+}
+
+///|
+/// Apply a standard 0x72730236 delta to basis bytes.
+pub fn apply_patch_bytes(old_bytes : Bytes, delta_bytes : Bytes) -> Bytes {
+  let limits = @lib.Limits::default()
+  @lib.patch(old_bytes, delta_bytes, limits) catch {
+    _ => b""
+  }
+}
+
+///|
+/// Compute lowercase hex SHA-256 using MoonLibSync's bounded streaming hasher.
+pub fn sha256_hex_bytes(data : Bytes) -> String {
+  let limits = @lib.Limits::default()
+  try {
+    let h = @lib.Sha256Hasher::new(limits.max_new_bytes)
+    h.update(data[:])
+    h.finish().sha256
+  } catch {
+    _ => ""
+  }
+}
+
+///|
+/// Compress bytes into a single-member RFC 1952 gzip frame (`level` 0..=9).
+pub fn compress_gzip_bytes(data : Bytes, level : Int32) -> Bytes {
+  let limits = @lib.Limits::default()
+  @compress.compress_gzip(
+    data[:],
+    limits.max_new_bytes,
+    limits.max_output_bytes,
+    level~,
+  ) catch {
+    _ => b""
+  }
+}
+
+///|
+/// Decompress a bounded single-member RFC 1952 gzip frame.
+pub fn decompress_gzip_bytes(data : Bytes, max_output : Int32) -> Bytes {
+  let limits = @lib.Limits::default()
+  let cap = if max_output < 0 { 0L } else { max_output.to_int64() }
+  @compress.decompress_gzip(data[:], limits.max_delta_bytes, cap) catch {
+    _ => b""
+  }
+}
+
+///|
+/// Decompress a bounded gzip frame and return structured JSON diagnostics
+/// (including `LimitExceeded` for zip bombs and `TrailingData` for extra bytes).
+pub fn decompress_gzip_check_json(data : Bytes, max_output : Int32) -> String {
+  let limits = @lib.Limits::default()
+  let cap = max_output.to_int64()
+  try {
+    let plain = @compress.decompress_gzip(data[:], limits.max_delta_bytes, cap)
+    let h = @lib.Sha256Hasher::new(limits.max_output_bytes)
+    h.update(plain[:])
+    let dig = h.finish()
+    "{\"ok\":true,\"byte_length\":\"\{dig.byte_length}\",\"sha256\":\"\{dig.sha256}\"}"
+  } catch {
+    err => "{\"ok\":false,\"error\":\"\{sync_err_label(err)}\"}"
+  }
+}
+
+///|
+fn build_dir_snapshot_json_impl(entries_json : String) -> String raise {
+  let limits = @lib.DirLimits::default()
+  let parsed = @json.parse(
+    entries_json,
+    max_nesting_depth=3,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @lib.ManifestError::InvalidJson
+  }
+  guard parsed is @json.Json::Array(items) else {
+    raise @lib.ManifestError::InvalidSchema
+  }
+  guard items.length().to_int64() <= limits.max_entries else {
+    raise @lib.ManifestError::ResourceLimit("dir_entries")
+  }
+  let entries : Array[@lib.DirEntry] = Array(capacity=items.length())
+  for item in items {
+    guard item is @json.Json::Object(fields) else {
+      raise @lib.ManifestError::InvalidSchema
+    }
+    guard fields.get("path") is Some(@json.Json::String(path)) else {
+      raise @lib.ManifestError::InvalidField("path")
+    }
+    guard fields.get("byte_length") is Some(@json.Json::String(len_str)) else {
+      raise @lib.ManifestError::InvalidField("byte_length")
+    }
+    guard fields.get("sha256") is Some(@json.Json::String(sha256)) else {
+      raise @lib.ManifestError::InvalidField("sha256")
+    }
+    entries.push({
+      path,
+      digest: { byte_length: parse_nonneg_decimal_str(len_str), sha256, },
+    })
+  }
+  let snapshot = @lib.create_dir_snapshot(entries, limits)
+  let encoded = @lib.encode_dir_snapshot(snapshot, limits)
+  @utf8.decode(encoded) catch {
+    _ => raise @lib.ManifestError::InvalidUtf8
+  }
+}
+
+///|
+/// Validate, sort, and encode a raw JSON array of `{path, byte_length, sha256}`
+/// entries into a canonical Schema 3 `moonlibsync-dir-snapshot` JSON string.
+pub fn create_dir_snapshot_json(entries_json : String) -> String {
+  build_dir_snapshot_json_impl(entries_json) catch {
     err => "{\"ok\":false,\"error\":\"\{sync_err_label(err)}\"}"
   }
 }

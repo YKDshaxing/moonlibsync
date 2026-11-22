@@ -1,0 +1,76 @@
+name: Deploy Web Demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.mbt'
+      - 'moon.mod'
+      - 'moon.pkg'
+      - 'compress/**'
+      - 'examples/web-demo/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked MoonBit toolchain
+        run: |
+          python scripts/install_toolchain.py
+          echo "MOON_HOME=$PWD/.toolchain/selected" >> "$GITHUB_ENV"
+          echo "$PWD/.toolchain/selected/bin" >> "$GITHUB_PATH"
+      - name: Fetch locked dependencies and verify integrity
+        run: |
+          moon update
+          moon check --target wasm-gc --no-mbti
+          python scripts/verify_dependencies.py
+      - name: Verify web-demo JS module with Node
+        run: |
+          moon build examples/web-demo --target js
+          node examples/web-demo/test-node.mjs
+      - name: Build release JS bundle and stage static site
+        run: |
+          moon build examples/web-demo --target js --release
+          mkdir -p _site
+          cp examples/web-demo/index.html examples/web-demo/demo.js _site/
+          if [ -f _build/js/release/build/examples/web-demo/web-demo.js ]; then
+            cp _build/js/release/build/examples/web-demo/web-demo.js _site/web-demo.js
+          else
+            cp _build/js/release/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js _site/web-demo.js
+          fi
+          touch _site/.nojekyll
+          python -c "from pathlib import Path; p=Path('_site/index.html'); s=p.read_text(encoding='utf-8'); p.write_text(s.replace('<style>', '<link rel=\"modulepreload\" href=\"./web-demo.js\" />\n  <style>', 1), encoding='utf-8')"
+          cp _site/index.html _site/404.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

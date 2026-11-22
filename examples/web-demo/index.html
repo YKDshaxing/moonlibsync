@@ -1,63 +1,1087 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MoonLibSync Zero-Backend Streaming Demo</title>
+  <title>MoonLibSync 0.4.0 — Pure-JS Streaming &amp; Directory Sync Studio</title>
+  <meta name="description" content="Pure MoonBit zero-backend browser studio for librsync-compatible binary deltas, bounded RFC 1952 Gzip framing (zip-bomb safe), and Schema 3 directory sync planning." />
+  <meta name="theme-color" content="#4f46e5" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="MoonLibSync 0.4.0 — Pure-JS Streaming &amp; Directory Sync Studio" />
+  <meta property="og:description" content="Zero C FFI, zero backend server — test librsync binary deltas, bounded Gzip framing, zip-bomb defense, and Schema 3 folder diff directly in your browser." />
+  <meta property="og:url" content="https://ykdshaxing.github.io/moonlibsync/" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f46e5'/%3E%3Cstop offset='0.55' stop-color='%230ea5e9'/%3E%3Cstop offset='1' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M19.8 6.4a9.6 9.6 0 1 0 5.8 17.2A7.8 7.8 0 0 1 19.8 6.4Z' fill='%23fff'/%3E%3Cpath d='M16.5 13.2 21 10.5l4.5 2.7M21 10.5v7.5' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='21' cy='20.5' r='2' fill='%23a7f3d0'/%3E%3C/svg%3E" />
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, -apple-system, sans-serif; }
-    body { max-width: 920px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-    h1 { margin-bottom: 0.25rem; }
-    .sub { opacity: 0.8; margin-top: 0; }
-    .status, .card { border: 1px solid #8884; border-radius: 10px; padding: 0.85rem 1rem; margin: 1rem 0; }
-    .ok { border-color: #10b981; background: #10b98115; }
-    .warn { border-color: #f59e0b; background: #f59e0b15; }
-    .err { border-color: #ef4444; background: #ef444415; }
-    .controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 1rem 0; }
-    button { padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid #2563eb; background: #2563eb; color: #fff; cursor: pointer; font-weight: 600; }
-    button.secondary { background: transparent; color: inherit; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; }
-    .stat { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; }
-    .label { font-size: 0.8rem; opacity: 0.75; }
-    .value { font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem; }
-    .bar-wrap { height: 26px; border-radius: 8px; background: #8883; overflow: hidden; margin: 1rem 0; }
-    .bar-copy { height: 100%; background: #10b981; color: #052e16; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; padding-left: 0.6rem; white-space: nowrap; }
-    .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 6px; background: #10b981; color: #052e16; font-weight: 700; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; word-break: break-all; }
+    :root {
+      --bg: #f5f7fb;
+      --bg-glow-1: rgba(79, 70, 229, 0.11);
+      --bg-glow-2: rgba(16, 185, 129, 0.10);
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --surface-hover: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-subtle: #64748b;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-soft: rgba(79, 70, 229, 0.10);
+      --teal: #0d9488;
+      --teal-hover: #0f766e;
+      --emerald: #10b981;
+      --emerald-soft: rgba(16, 185, 129, 0.12);
+      --emerald-text: #047857;
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.13);
+      --amber-text: #b45309;
+      --rose: #ef4444;
+      --rose-soft: rgba(239, 68, 68, 0.12);
+      --rose-text: #b91c1c;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 8px 24px -6px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0b1120;
+      --bg-glow-1: rgba(99, 102, 241, 0.18);
+      --bg-glow-2: rgba(16, 185, 129, 0.13);
+      --surface: #111827;
+      --surface-muted: #182234;
+      --surface-hover: #1f2b40;
+      --border: #243045;
+      --border-strong: #334155;
+      --text: #f1f5f9;
+      --text-muted: #cbd5e1;
+      --text-subtle: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --primary-soft: rgba(99, 102, 241, 0.18);
+      --teal: #14b8a6;
+      --teal-hover: #2dd4bf;
+      --emerald: #10b981;
+      --emerald-soft: rgba(16, 185, 129, 0.18);
+      --emerald-text: #34d399;
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.18);
+      --amber-text: #fbbf24;
+      --rose: #f87171;
+      --rose-soft: rgba(239, 68, 68, 0.18);
+      --rose-text: #fca5a5;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+      --shadow-md: 0 12px 30px -8px rgba(0, 0, 0, 0.50);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(900px 420px at 12% -6%, var(--bg-glow-1), transparent 62%),
+        radial-gradient(760px 380px at 88% -8%, var(--bg-glow-2), transparent 60%),
+        var(--bg);
+      min-height: 100vh;
+      line-height: 1.55;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .shell {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 1.75rem 1.25rem 3.5rem;
+    }
+
+    /* Header */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+    }
+    .logo-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 55%, #10b981 100%);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 22px -6px rgba(79, 70, 229, 0.45);
+      flex-shrink: 0;
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+    }
+    .title-row h1 {
+      margin: 0;
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+    }
+    .ver-pill {
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 0.16rem 0.55rem;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      border: 1px solid rgba(79, 70, 229, 0.22);
+    }
+    .subtitle {
+      margin: 0.25rem 0 0;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.55rem;
+    }
+    .chip {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--text-subtle);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.16rem 0.55rem;
+      border-radius: 999px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.15s ease;
+    }
+    .icon-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+
+    /* Status Banner */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1.25rem;
+      font-size: 0.88rem;
+    }
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 0;
+      flex: 1;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--amber);
+      flex-shrink: 0;
+      box-shadow: 0 0 0 4px var(--amber-soft);
+    }
+    .status-bar.ok {
+      border-color: rgba(16, 185, 129, 0.35);
+      background: linear-gradient(90deg, var(--emerald-soft), var(--surface) 45%);
+    }
+    .status-bar.ok .dot {
+      background: var(--emerald);
+      box-shadow: 0 0 0 4px var(--emerald-soft);
+    }
+    .status-bar.warn {
+      border-color: rgba(245, 158, 11, 0.42);
+      background: linear-gradient(90deg, var(--amber-soft), var(--surface) 55%);
+    }
+    .status-bar.err {
+      border-color: rgba(239, 68, 68, 0.42);
+      background: linear-gradient(90deg, var(--rose-soft), var(--surface) 55%);
+    }
+    .status-bar.err .dot {
+      background: var(--rose);
+      box-shadow: 0 0 0 4px var(--rose-soft);
+    }
+    .cmd-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.55rem;
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: inline-flex;
+      gap: 0.3rem;
+      padding: 0.3rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1.15rem;
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 1.05rem;
+      border-radius: 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface-hover); }
+    .tab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 4px 12px -3px rgba(79, 70, 229, 0.45);
+    }
+
+    .panel { display: none; animation: fadeIn 0.22s ease; }
+    .panel.active { display: block; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards & Controls */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.2rem 1.3rem;
+      box-shadow: var(--shadow-md);
+      margin-bottom: 1.1rem;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .card-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .field {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.65rem;
+      border-radius: 10px;
+    }
+    .field select {
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 0.84rem;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    .field select option {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.56rem 1.05rem;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      font-size: 0.87rem;
+      font-weight: 650;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      font-family: var(--sans);
+    }
+    .btn:active { transform: translateY(0); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+      color: #ffffff;
+      box-shadow: 0 6px 16px -5px rgba(79, 70, 229, 0.50);
+    }
+    .btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--surface-muted);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+    .btn-teal {
+      background: linear-gradient(135deg, var(--teal) 0%, #0284c7 100%);
+      color: #ffffff;
+      box-shadow: 0 5px 14px -5px rgba(13, 148, 136, 0.45);
+    }
+    .btn-teal:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-sm { padding: 0.36rem 0.72rem; font-size: 0.8rem; border-radius: 8px; }
+
+    /* Dropzones */
+    .drop-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+      margin-top: 1rem;
+    }
+    @media (max-width: 720px) {
+      .drop-grid { grid-template-columns: 1fr; }
+    }
+    .dropzone {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.95rem 1.05rem;
+      border-radius: var(--radius-md);
+      border: 1.5px dashed var(--border-strong);
+      background: var(--surface-muted);
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .dropzone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .dz-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: grid;
+      place-items: center;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+    .dz-text { min-width: 0; flex: 1; }
+    .dz-label { font-size: 0.86rem; font-weight: 700; color: var(--text); }
+    .dz-meta {
+      font-size: 0.79rem;
+      color: var(--text-subtle);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 0.12rem;
+    }
+    .dz-meta.selected { color: var(--emerald-text); font-weight: 600; }
+
+    .action-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+    .hint { font-size: 0.8rem; color: var(--text-subtle); }
+
+    /* Hero Result Banner */
+    .result-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding: 1.15rem 1.3rem;
+      border-radius: var(--radius-lg);
+      background: linear-gradient(135deg, rgba(79, 70, 229, 0.10) 0%, rgba(16, 185, 129, 0.11) 100%);
+      border: 1px solid rgba(16, 185, 129, 0.30);
+      margin-bottom: 1rem;
+    }
+    .hero-metric {
+      display: flex;
+      align-items: baseline;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+    .hero-pct {
+      font-size: 1.95rem;
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      color: var(--emerald-text);
+      line-height: 1.1;
+    }
+    .hero-desc { font-size: 0.9rem; color: var(--text-muted); font-weight: 600; }
+    .verified-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.36rem 0.8rem;
+      border-radius: 999px;
+      background: var(--emerald);
+      color: #ffffff;
+      font-size: 0.8rem;
+      font-weight: 750;
+      box-shadow: 0 4px 12px -3px rgba(16, 185, 129, 0.55);
+    }
+    .verified-pill.fail { background: var(--rose); }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .stats-grid.cols-5 {
+      grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.85rem 0.95rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-label { font-size: 0.76rem; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.03em; }
+    .stat-value { font-size: 1.18rem; font-weight: 800; margin-top: 0.22rem; font-variant-numeric: tabular-nums; }
+    .stat-sub { font-size: 0.76rem; color: var(--text-subtle); margin-top: 0.14rem; }
+
+    /* Visual Comparison Bars */
+    .bars-stack { display: flex; flex-direction: column; gap: 0.72rem; }
+    .bar-item-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .bar-track {
+      height: 12px;
+      border-radius: 999px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+    .bar-full { background: linear-gradient(90deg, #94a3b8, #64748b); }
+    .bar-delta { background: linear-gradient(90deg, #6366f1, #3b82f6); }
+    .bar-gz { background: linear-gradient(90deg, #10b981, #14b8a6); }
+    .bar-copy-track {
+      height: 24px;
+      border-radius: 999px;
+      background: var(--amber-soft);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+    }
+    .bar-copy-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #059669);
+      color: #ffffff;
+      font-size: 0.77rem;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      padding: 0 0.7rem;
+      white-space: nowrap;
+    }
+
+    /* Digest & Hex Inspector */
+    .hash-list { display: flex; flex-direction: column; gap: 0.55rem; }
+    .hash-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 10px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .hash-key { font-size: 0.78rem; font-weight: 700; color: var(--text-subtle); min-width: 118px; }
+    .hash-val { font-family: var(--mono); font-size: 0.78rem; color: var(--text); word-break: break-all; flex: 1; }
+    details.wire-box {
+      margin-top: 0.85rem;
+      border-top: 1px solid var(--border);
+      padding-top: 0.75rem;
+    }
+    details.wire-box summary {
+      cursor: pointer;
+      font-size: 0.83rem;
+      font-weight: 650;
+      color: var(--primary);
+      user-select: none;
+    }
+    .hex-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.7rem;
+    }
+    .hex-card {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 0.8rem;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      word-break: break-all;
+    }
+    .hex-title { font-family: var(--sans); font-weight: 700; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+
+    /* Directory Table & Filters */
+    .filter-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .pill-group { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .filter-pill {
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      color: var(--text-muted);
+      font-size: 0.79rem;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .filter-pill.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .search-input {
+      padding: 0.4rem 0.75rem;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-size: 0.84rem;
+      min-width: 210px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    thead { background: var(--surface-muted); }
+    th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface-hover); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.16rem 0.56rem;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-unchanged { background: var(--surface-hover); color: var(--text-subtle); border: 1px solid var(--border); }
+    .badge-add { background: var(--emerald-soft); color: var(--emerald-text); }
+    .badge-update { background: var(--amber-soft); color: var(--amber-text); }
+    .badge-delete { background: var(--rose-soft); color: var(--rose-text); }
+
+    code { font-family: var(--mono); font-size: 0.88em; }
+    .footer {
+      margin-top: 2.2rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-subtle);
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .footer a:hover { text-decoration: underline; }
+    .err-card {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: var(--rose-soft);
+      color: var(--rose-text);
+    }
+
+    /* Visual 4-Stage Pipeline */
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 1rem;
+    }
+    .pipe-step {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.7rem 0.85rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .pipe-step.done { border-color: rgba(16, 185, 129, 0.35); }
+    .pipe-num {
+      font-size: 0.69rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--primary);
+    }
+    .pipe-step.done .pipe-num { color: var(--emerald-text); }
+    .pipe-name { font-size: 0.86rem; font-weight: 750; margin-top: 0.14rem; }
+    .pipe-val { font-size: 0.78rem; color: var(--text-subtle); margin-top: 0.12rem; font-family: var(--mono); }
+
+    /* CLI Equivalent Block */
+    .cli-wrap {
+      margin-top: 0.9rem;
+      border-radius: var(--radius-md);
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid #1e293b;
+      overflow: hidden;
+    }
+    .cli-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.45rem 0.85rem;
+      background: #1e293b;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .cli-pre {
+      margin: 0;
+      padding: 0.75rem 0.9rem;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      white-space: pre;
+      color: #cbd5e1;
+    }
+
+    /* Security Lab */
+    .lab-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    .lab-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.05rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .lab-card h3 { margin: 0; font-size: 0.93rem; font-weight: 750; }
+    .lab-card p { margin: 0; font-size: 0.82rem; color: var(--text-muted); flex: 1; }
+    .lab-out {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 0.55rem 0.7rem;
+      border-radius: 8px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      min-height: 2.35rem;
+      word-break: break-word;
+    }
+    .lab-out.blocked {
+      background: var(--emerald-soft);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: var(--emerald-text);
+      font-weight: 700;
+    }
+    .lab-textarea {
+      width: 100%;
+      min-height: 92px;
+      padding: 0.7rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.83rem;
+      resize: vertical;
+      outline: none;
+    }
+    .lab-textarea:focus { border-color: var(--primary); }
+    .num-input {
+      width: 108px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      font-weight: 700;
+      outline: none;
+    }
   </style>
 </head>
 <body>
-  <h1>MoonLibSync Pure-JS Streaming Demo</h1>
-  <p class="sub">Zero C FFI, zero backend server — runs <code>SignatureHasher</code>, <code>DeltaScanner</code>, <code>PatchDecoder</code>, and <code>Sha256Hasher</code> compiled directly from MoonBit.</p>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-box" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M17.8 4.4a9.6 9.6 0 1 0 5.8 17.2A7.8 7.8 0 0 1 17.8 4.4Z" fill="#ffffff" opacity="0.96"/>
+            <path d="M14.5 11.2 19 8.5l4.5 2.7M19 8.5v7.5" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="19" cy="18.5" r="2" fill="#a7f3d0"/>
+          </svg>
+        </div>
+        <div>
+          <div class="title-row">
+            <h1>MoonLibSync</h1>
+            <span class="ver-pill">v0.4.0 Pure-JS Studio</span>
+          </div>
+          <p class="subtitle" data-i18n="subtitle">纯 MoonBit 编译的浏览器零后端二进制差分、有界 Gzip 压缩与 Schema 3 目录同步工作台</p>
+          <div class="chip-row">
+            <span class="chip">Zero C FFI</span>
+            <span class="chip">Zero Backend</span>
+            <span class="chip">librsync 0x72730147 / 0x72730236</span>
+            <span class="chip">RFC 1952 Gzip</span>
+            <span class="chip">SHA-256 Verified</span>
+          </div>
+        </div>
+      </div>
 
-  <div id="status" class="status">Loading compiled MoonBit ES module…</div>
+      <div class="top-actions">
+        <button id="langToggle" class="icon-btn" type="button">EN / 中文</button>
+        <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme">🌙</button>
+        <a class="icon-btn" href="https://github.com/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </header>
 
-  <div class="card">
-    <div class="controls">
-      <label>Block size:
-        <select id="blockLen">
-          <option value="0" selected>auto (policy v1)</option>
-          <option value="512">512 bytes</option>
-          <option value="2048">2048 bytes</option>
-        </select>
-      </label>
-      <label>Chunk size:
-        <select id="chunkSize">
-          <option value="4096" selected>4 KiB chunks</option>
-          <option value="16384">16 KiB chunks</option>
-          <option value="65536">64 KiB chunks</option>
-        </select>
-      </label>
-      <button id="runSample">Run Built-in 128 KiB Sample</button>
+    <div id="statusBar" class="status-bar">
+      <div class="status-left">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="statusText">正在加载编译后的 MoonBit ES 模块...</span>
+      </div>
+      <div id="statusAction"></div>
     </div>
-    <div class="controls">
-      <label>OLD file: <input type="file" id="oldFile" /></label>
-      <label>NEW file: <input type="file" id="newFile" /></label>
-      <button id="runFiles" class="secondary">Diff Selected Files</button>
-    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="file" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 15h8M12 11v8"/></svg>
+        <span data-i18n="tabFile">文件增量差分 &amp; Gzip</span>
+      </button>
+      <button class="tab-btn" data-tab="dir" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+        <span data-i18n="tabDir">目录同步规划（Schema 3）</span>
+      </button>
+      <button class="tab-btn" data-tab="lab" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+        <span data-i18n="tabLab">Gzip 安全防线实验室</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: File Sync & Gzip -->
+    <section id="tab-file" class="panel active">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" data-i18n="fileCardTitle">流式签名 · 差分 · Gzip 二次压缩 · 校验还原</h2>
+          <div class="controls-row">
+            <label class="field">
+              <span data-i18n="blockSize">块长</span>
+              <select id="blockLen">
+                <option value="0" selected>auto (policy v1)</option>
+                <option value="512">512 B</option>
+                <option value="2048">2048 B</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="chunkSize">流式分块</span>
+              <select id="chunkSize">
+                <option value="4096" selected>4 KiB</option>
+                <option value="16384">16 KiB</option>
+                <option value="65536">64 KiB</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="sumSize">强校验</span>
+              <select id="sumLen">
+                <option value="16" selected>16 B (BLAKE2b)</option>
+                <option value="32">32 B (BLAKE2b)</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="controls-row">
+          <button id="runSample" class="btn btn-primary" type="button" data-i18n="runSample">运行内置 128 KiB 二进制示例</button>
+          <button id="runLogSample" class="btn btn-secondary" type="button" data-i18n="runLogSample">运行 64 KiB 日志差分示例（高压缩率）</button>
+        </div>
+
+        <div class="drop-grid">
+          <label class="dropzone" id="oldDrop">
+            <input type="file" id="oldFile" />
+            <div class="dz-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+            </div>
+            <div class="dz-text">
+              <div class="dz-label" data-i18n="oldLabel">OLD 基准文件（旧版本）</div>
+              <div class="dz-meta" id="oldMeta" data-i18n="dropHint">点击选择或拖拽任意本地文件至此</div>
+            </div>
+          </label>
+
+          <label class="dropzone" id="newDrop">
+            <input type="file" id="newFile" />
+            <div class="dz-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15h6"/></svg>
+            </div>
+            <div class="dz-text">
+              <div class="dz-label" data-i18n="newLabel">NEW 目标文件（新版本）</div>
+              <div class="dz-meta" id="newMeta" data-i18n="dropHint">点击选择或拖拽任意本地文件至此</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="action-footer">
+          <span class="hint" data-i18n="localPrivacy">100% 本地浏览器内计算，绝不上传任何文件数据；导出的 .sig / .delta 与 librsync rdiff 及 CLI 完全兼容。</span>
+          <button id="runFiles" class="btn btn-teal" type="button" data-i18n="runFiles">对比所选文件并验证还原</button>
+        </div>
+      </div>
+
+      <div id="results"></div>
+    </section>
+
+    <!-- Tab 2: Directory Sync Planner -->
+    <section id="tab-dir" class="panel">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" data-i18n="dirCardTitle">浏览器端 Schema 3 目录快照与增量同步规划</h2>
+          <button id="runDirSample" class="btn btn-primary" type="button" data-i18n="runDirSample">运行内置目录变更示例</button>
+        </div>
+
+        <div class="drop-grid">
+          <label class="dropzone" id="basisDirDrop">
+            <input type="file" id="basisDir" webkitdirectory multiple />
+            <div class="dz-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+            </div>
+            <div class="dz-text">
+              <div class="dz-label" data-i18n="basisDirLabel">BASIS 基准目录（旧目录）</div>
+              <div class="dz-meta" id="basisDirMeta" data-i18n="pickDirHint">点击选择本地文件夹</div>
+            </div>
+          </label>
+
+          <label class="dropzone" id="targetDirDrop">
+            <input type="file" id="targetDir" webkitdirectory multiple />
+            <div class="dz-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6M9 14h6"/></svg>
+            </div>
+            <div class="dz-text">
+              <div class="dz-label" data-i18n="targetDirLabel">TARGET 目标目录（新目录）</div>
+              <div class="dz-meta" id="targetDirMeta" data-i18n="pickDirHint">点击选择本地文件夹</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="action-footer">
+          <span class="hint" data-i18n="dirHint">自动执行 POSIX 路径安全校验、UTF-8 字典序排序与跨平台 ASCII 大小写冲突检测。</span>
+          <button id="runDirDiff" class="btn btn-teal" type="button" data-i18n="runDirDiff">生成 Schema 3 同步计划</button>
+        </div>
+      </div>
+
+      <div id="dirResults"></div>
+    </section>
+
+    <!-- Tab 3: Gzip Security Lab -->
+    <section id="tab-lab" class="panel">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" data-i18n="labTitle">有界 RFC 1952 Gzip 安全防线实测（Zip-Bomb · 尾随数据 · 截断流）</h2>
+          <button id="runAllLab" class="btn btn-primary btn-sm" type="button" data-i18n="runAllLab">一键运行全部 3 项安全演练</button>
+        </div>
+
+        <div class="lab-grid">
+          <div class="lab-card">
+            <h3 data-i18n="labBombTitle">1. Zip-Bomb 解压炸弹拦截</h3>
+            <p data-i18n="labBombDesc">现场生成 256 KiB 零字节高压缩炸弹（仅约 300 B），以 4 KiB 解压上限执行有界解压，验证引擎在超出预算瞬间中断并报 LimitExceeded。</p>
+            <button id="runBombBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="labBombBtn">触发 Zip-Bomb 测试</button>
+            <div id="labBombOut" class="lab-out">—</div>
+          </div>
+
+          <div class="lab-card">
+            <h3 data-i18n="labTrailTitle">2. 尾随垃圾字节拒绝</h3>
+            <p data-i18n="labTrailDesc">在合法单流 Gzip 尾部追加 1 字节多余载荷（0x42），验证单流严格帧校验立刻返回 TrailingData。</p>
+            <button id="runTrailBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="labTrailBtn">触发 TrailingData 测试</button>
+            <div id="labTrailOut" class="lab-out">—</div>
+          </div>
+
+          <div class="lab-card">
+            <h3 data-i18n="labTruncTitle">3. 截断流 / 尾部缺失拒绝</h3>
+            <p data-i18n="labTruncDesc">截去 RFC 1952 尾部 CRC32/ISIZE 校验的最后 1 字节，验证解码器严格报 TruncatedInput，绝不静默返回不完整数据。</p>
+            <button id="runTruncBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="labTruncBtn">触发 TruncatedInput 测试</button>
+            <div id="labTruncOut" class="lab-out">—</div>
+          </div>
+        </div>
+
+        <div class="card-header" style="margin-top:0.5rem;">
+          <h3 class="card-title" data-i18n="labCustomTitle">自定义文本有界 Gzip 往返实验室</h3>
+          <div class="controls-row">
+            <label class="field">
+              <span data-i18n="labLevel">压缩级别</span>
+              <select id="labLevel">
+                <option value="1">1 (Fast)</option>
+                <option value="6" selected>6 (Default)</option>
+                <option value="9">9 (Best)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="labMaxOut">解压上限 (B)</span>
+              <input id="labMaxOut" class="num-input" type="number" min="0" max="67108864" value="4096" />
+            </label>
+            <button id="runCustomGzip" class="btn btn-teal btn-sm" type="button" data-i18n="labRunCustom">压缩并有界解压测试</button>
+          </div>
+        </div>
+        <textarea id="labInput" class="lab-textarea">MoonLibSync 0.4.0 bounded RFC 1952 Gzip framing — try lowering max_output below the text byte length to trigger LimitExceeded!
+MoonLibSync 0.4.0 bounded RFC 1952 Gzip framing — repeated text shrinks sharply with DEFLATE.</textarea>
+        <div id="labCustomOut" class="lab-out" style="margin-top:0.65rem;">—</div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>MoonLibSync 0.4.0 · LGPL-2.1-or-later</span>
+      <a href="https://github.com/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">GitHub Repository</a>
+      <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">Mooncakes Docs</a>
+    </footer>
   </div>
 
-  <div id="results"></div>
-  <script type="module" src="./demo.mjs"></script>
+  <!-- Immediate non-module guard for file:// protocol (browsers block ES modules over file://) -->
+  <script>
+    (function () {
+      if (window.location.protocol === 'file:') {
+        var bar = document.getElementById('statusBar');
+        var text = document.getElementById('statusText');
+        var act = document.getElementById('statusAction');
+        if (bar && text && act) {
+          bar.className = 'status-bar warn';
+          var isZh = (navigator.language || '').toLowerCase().startsWith('zh');
+          text.textContent = isZh
+            ? '检测到通过 file:// 直接打开：浏览器安全策略禁止在本地文件协议加载 ES Module。请在仓库根目录启动本地 HTTP 服务后再访问：'
+            : 'Opened via file:// — browsers block ES modules over file://. Serve the repository over HTTP and open http://localhost:8080/examples/web-demo/:';
+          var cmd = 'python -m http.server 8080';
+          act.innerHTML =
+            '<span class="cmd-box"><code>' + cmd + '</code>' +
+            '<button id="copySrvCmd" class="btn btn-secondary btn-sm" type="button">' +
+            (isZh ? '复制命令' : 'Copy') + '</button></span>';
+          var btn = document.getElementById('copySrvCmd');
+          if (btn && navigator.clipboard) {
+            btn.addEventListener('click', function () {
+              navigator.clipboard.writeText(cmd);
+              btn.textContent = isZh ? '已复制 ✓' : 'Copied ✓';
+            });
+          }
+        }
+        var tabs = document.querySelectorAll('.tab-btn');
+        var panels = document.querySelectorAll('.panel');
+        tabs.forEach(function (b) {
+          b.addEventListener('click', function () {
+            tabs.forEach(function (x) { x.classList.toggle('active', x === b); });
+            panels.forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + b.dataset.tab); });
+          });
+        });
+        var tBtn = document.getElementById('themeToggle');
+        if (tBtn) {
+          tBtn.addEventListener('click', function () {
+            var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+            document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+            tBtn.textContent = dark ? '🌙' : '☀️';
+          });
+        }
+      }
+    })();
+  </script>
+  <script type="module" src="./demo.js"></script>
 </body>
 </html>

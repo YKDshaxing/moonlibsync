@@ -50,6 +50,7 @@ v040_stream_names = [name for path in (ROOT / "stream_patch_decoder_test.mbt", R
                      for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 v040_dir_names = [name for path in (ROOT / "dir_sync_test.mbt", ROOT / "dir_sync_wbtest.mbt")
                   for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+v040_compress_names = re.findall(r'^test "([^"\n]*)"', (ROOT / "compress/compress_test.mbt").read_text(encoding="utf-8"), re.M)
 resource_report = {
     "format": 1, "status": "not_executed", "baseline_library_tests": 80,
     "resource_tests": len(resource_names), "resource_test_names": resource_names,
@@ -65,6 +66,7 @@ resource_report = {
     "v032_stream_tests": len(v032_stream_names), "v032_stream_test_names": v032_stream_names,
     "v040_stream_tests": len(v040_stream_names), "v040_stream_test_names": v040_stream_names,
     "v040_dir_tests": len(v040_dir_names), "v040_dir_test_names": v040_dir_names,
+    "v040_compress_tests": len(v040_compress_names), "v040_compress_test_names": v040_compress_names,
     "boundary_checks": {"signature": 4, "delta": 8, "patch": 4},
     "boundary_policy": "need-1 rejects; need and need+1 succeed; invalid configurations tested separately",
     "source_sha": subprocess.check_output(["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"], text=True).strip(),
@@ -117,6 +119,7 @@ for target in ("native", "js", "wasm-gc"):
     for action in ("check", "build"):
         moon(action, "--target", target)
     test_target(target)
+    moon("test", "--target", target, "--package", "YKDshaxing/moonlibsync/compress")
     moon("run", "probes/digest", "--target", target)
     run(sys.executable, "scripts/check_example.py", "--target", target)
     moon("run", "examples/prepared", "--target", target)

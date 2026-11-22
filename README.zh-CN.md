@@ -11,6 +11,7 @@
 
 <p>
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="在线 Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
   <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.4.0-0ea5e9" alt="Version 0.4.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
@@ -29,13 +30,14 @@
 | --- | --- | --- |
 | **标准字节差分** | `signature` / `delta` / `patch` | 与 `librsync` 互操作（`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`、delta `0x72730236`）；O(1) 弱校验开放定址表（`<= 0.50` 装载因子）与 Pending Literal Run |
 | **零 IO 流式与 Sans-IO 解码** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `Sha256Hasher` | 纯核心分块状态机 + Sans-IO 步进解码器（`PatchStep`）与流式 SHA-256，同时适配同步 `Bytes`、Native `async/fs` 与浏览器 JS |
-| **目录快照与同步规划** | `DirLimits` / `create/parse/encode_dir_snapshot` / `plan_dir_sync` / `create/parse/encode_dir_plan` | Schema 3 规范 POSIX 相对路径快照与 O(N+M) 同步规划；严格拒绝符号链接、路径穿越与 ASCII 大小写折叠碰撞 |
+| **目录快照、规划与增量包** | `DirLimits` / `DirSnapshot` / `DirSyncPlan` / `DirSignatureIndex` / `DirBundleManifest` | Schema 3 规范 POSIX 相对路径快照、规划与远端签名增量分发包；严格拒绝符号链接、路径穿越与 ASCII 大小写折叠碰撞 |
+| **独立有界 Gzip 压缩子包** | `YKDshaxing/moonlibsync/compress`：`compress_gzip` / `decompress_gzip` / `GzipEncoder` / `GzipDecoder` | 纯零 IO 跨三目标单流 RFC 1952 Gzip 封装，内置防解压炸弹（`LimitExceeded`）与拒绝尾随数据（`TrailingData`），根核心库保持零实验包 |
 | **检查与预检** | `inspect_signature` / `inspect_delta` / `check_patch` | O(1) 零记录分配签名头校验、delta 统计以及基于长度的 COPY 范围预检 |
 | **可复用签名索引** | `prepare_signature` / `PreparedSignature::{delta, summary, plan_update}` | 一次解析建索引，跨多个目标复用；每次调用独立重检 `Limits` 并拥有独立工作预算 |
 | **显式自动块长** | `recommend_block_len` / `signature --block-size auto` | 纯整数 `policy v1` 策略（目标约 512 条记录、2 次幂向上舍入并受当前预算约束） |
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
-| **Native 单文件 CLI** | `cmd/moonlibsync`（14 条子命令） | 有界读取 + `--streaming` 64 KiB 大文件流式管线（突破 64 MiB）、`dir-snapshot`/`dir-plan`、`inspect-manifest`、`--max-*`、拒绝符号链接与原子重命名 |
+| **Native 单文件 CLI** | `cmd/moonlibsync`（19 条子命令） | 有界读取 + 全链路 `--streaming` 64 KiB 大文件管线（突破 64 MiB）、`compress`/`decompress`、`dir-snapshot`/`dir-plan`/`dir-signatures`/`dir-pack`/`dir-apply`、`inspect-manifest`、`--max-*`、拒绝符号链接与事务原子提交 |
 
 ## 快速开始
 
@@ -120,13 +122,20 @@ moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
 moonlibsync inspect-manifest manifest.json --json
 
-# 5. 流式 64 KiB 大文件管线（配合 --streaming 与显式 --max-* 突破 64 MiB）
+# 5. 全链路流式 64 KiB 大文件管线（突破 64 MiB + Gzip 二次压缩）
 moonlibsync signature large-old.bin large.sig --streaming --block-size auto --max-old-bytes 200000000
-moonlibsync patch large-old.bin large.delta restored.bin --streaming --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
+moonlibsync basis-info large-old.bin large.sig basis.json --streaming --max-old-bytes 200000000
+moonlibsync delta large.sig large-new.bin large.delta --streaming --max-new-bytes 200000000 --max-output-bytes 200000000 --max-match-work 2000000000
+moonlibsync compress large.delta large.delta.gz --streaming --max-new-bytes 200000000 --max-output-bytes 200000000
+moonlibsync decompress large.delta.gz large.delta.raw --streaming --max-delta-bytes 200000000 --max-output-bytes 200000000
+moonlibsync make-transfer-manifest basis.json large.sig large-new.bin large.delta.raw transfer.json --streaming --max-old-bytes 200000000 --max-new-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
+moonlibsync apply-update large.delta.raw transfer.json restored.bin --basis large-old.bin --streaming --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 
-# 6. 确定性目录快照与只读同步规划（Schema 3）
+# 6. 端到端目录增量分发闭环（Schema 3；发送端无需 BASIS_DIR，接收端绝不改动 BASIS_DIR）
 moonlibsync dir-snapshot ./v1 v1.snapshot.json
-moonlibsync dir-plan v1.snapshot.json v2.snapshot.json --json
+moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming
+moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./bundle --streaming
+moonlibsync dir-apply ./v1 ./bundle ./v2-restored --streaming
 ```
 
 ### 完整性校验与传输规划流程
@@ -157,10 +166,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、218 项库测试 × 三目标、6 示例、web-demo ESM、接口守卫
+python scripts/check.py            # 格式、依赖、220 项库 + 3 项 compress 测试 × 三目标、6 示例、web-demo ESM、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 30 项 Native 辅助测试 + Windows CLI 集成测试
+./scripts/cli-smoke.ps1            # 32 项 Native 辅助测试 + Windows CLI 集成测试
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 python scripts/release_check.py --clean

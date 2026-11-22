@@ -1,6 +1,6 @@
-# MoonLibSync 0.4.0 目录级确定性快照与同步规划（Schema 3）
+# MoonLibSync 0.4.0 目录级确定性快照、同步规划与增量分发包（Schema 3）
 
-0.4.0 在纯核心库中引入零 IO、完全兼容 `native` / `js` / `wasm-gc` 的目录快照与差分规划模型（[dir_sync.mbt](../dir_sync.mbt)），并在 Native CLI 提供 `dir-snapshot` 与只读 `dir-plan` 两条子命令（[cmd/moonlibsync/dir.mbt](../cmd/moonlibsync/dir.mbt)）。
+0.4.0 在纯核心库中引入零 IO、完全兼容 `native` / `js` / `wasm-gc` 的目录快照、差分规划、远端签名索引与自包含增量包模型（[dir_sync.mbt](../dir_sync.mbt)），并在 Native CLI 提供 `dir-snapshot`、`dir-plan`、`dir-signatures`、`dir-pack` 与 `dir-apply` 五条子命令（[cmd/moonlibsync/dir.mbt](../cmd/moonlibsync/dir.mbt)、[cmd/moonlibsync/dir_bundle.mbt](../cmd/moonlibsync/dir_bundle.mbt)）。
 
 ---
 
@@ -78,17 +78,29 @@
 }
 ```
 
+### 3. 远端签名索引（`moonlibsync-dir-signatures`）与增量分发包清单（`moonlibsync-dir-bundle`）
+
+- `DirSignatureIndex`（`create/encode/parse_dir_signature_index`，`kind: "moonlibsync-dir-signatures"`）：为每个文件绑定 `path`、`basis` 摘要、`signature_path`（强制位于 `sigs/` 前缀内，拒绝重复与 ASCII 大小写折叠碰撞）及标准 `0x72730147` 签名文件的 SHA-256；JSON 预算上限为 `min(64 MiB, 4 * max_snapshot_bytes)`。
+- `DirBundleManifest`（`create/encode/parse_dir_bundle_manifest`，`kind: "moonlibsync-dir-bundle"`）：记录 `unchanged`、`add-full`、`update-delta`（完整绑定 `basis` / `signature` / `delta` / `result` 四项 SHA-256）、`update-full`、`delete` 及汇总计数和 `total_payload_bytes`；所有 `payload_path` 强制位于 `payloads/` 前缀内且拒绝碰撞；JSON 预算上限为 `min(64 MiB, 8 * max_snapshot_bytes)`。
+
 ---
 
-## 四、Native CLI 目录命令与保守边界
+## 四、Native CLI 目录命令与事务安全边界
 
 ```bash
-# 生成目录快照（64 KiB 流式计算每个普通文件 SHA-256；原子无覆盖写出）
-moonlibsync dir-snapshot ./release-v1 v1.snapshot.json [--max-entries N] [--max-file-bytes N] [...]
+# 1. 接收端：为本地基准目录生成快照与标准签名目录
+moonlibsync dir-snapshot ./v1 v1.snapshot.json [DIR_LIMITS]
+moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming [LIMITS] [DIR_LIMITS]
 
-# 只读比对两份快照并输出同步计划（支持人类可读文本或 --json）
-moonlibsync dir-plan v1.snapshot.json v2.snapshot.json [--json] [--max-snapshot-bytes N] [...]
+# 2. 只读差异规划（可选，绝不修改任何文件）
+moonlibsync dir-plan v1.snapshot.json v2.snapshot.json --json [DIR_LIMITS]
+
+# 3. 发送端：仅凭远端快照与签名目录打包增量包（绝不访问 BASIS_DIR）
+moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./bundle-v1-to-v2 --streaming [--min-savings N] [LIMITS] [DIR_LIMITS]
+
+# 4. 接收端：校验每个文件 SHA-256 并重建全新输出目录（绝不修改 BASIS_DIR）
+moonlibsync dir-apply ./v1 ./bundle-v1-to-v2 ./v2-restored --streaming [LIMITS] [DIR_LIMITS]
 ```
 
-- **不跟随任何符号链接**：目录根路径及任意层级的子目录、普通文件均使用 `follow_symlink=false` 检查；遇到符号链接、管道、Socket、设备节点立即失败且不创建输出。
-- **不直接改写用户目录**：`dir-plan` 为纯只读规划命令；`dir-snapshot` 沿用同目录 `.moonlibsync-<hex>.tmp`、`CreateNew`、`fsync` 与 `rename(replace=false)` 原子提交，不提供覆盖参数。
+- **不跟随任何符号链接**：目录根路径及任意层级的子目录、普通文件均逐段使用 `follow_symlink=false` 检查；遇到符号链接、管道、Socket、设备节点立即失败且不创建输出。
+- **绝不覆写已有目录、绝不改动 `BASIS_DIR`**：`dir-signatures`、`dir-pack` 与 `dir-apply` 均先在父目录创建独占临时暂存目录 `.moonlibsync-<hex>.tmp`，全部生成与 SHA-256 校验完成后才以 `rename(replace=false)` 原子发布为最终目录；若目标已存在或中途出现篡改、缺失、超限，自动递归清理暂存目录，不遗留半成品目录。

@@ -1,26 +1,44 @@
 # MoonLibSync 0.4.0 Native 单文件 CLI 手册
 
-0.4.0 保留 0.3.x 全部 12 条命令、参数语法、schema 1/schema 2 输出格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并新增 `--streaming` 大文件分块模式与两条目录级命令（总计 **14 条子命令**）：
+0.4.0 保留 0.3.x 全部 12 条命令、参数语法、schema 1/schema 2 输出格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并补齐大文件全链路 `--streaming`、有界 Gzip 压缩封装与完整目录级增量同步闭环（总计 **19 条子命令**）：
 
-1. **可选 `--streaming` 模式（支持 `signature` / `delta` / `patch` / `patch-verified` / `apply-update`）**：
-   - 不传 `--streaming` 时默认行为与内存/错误行为保持 100% 不变；传入 `--streaming` 后改用 64 KiB 分块流式读盘、`SignatureHasher` / `DeltaScanner` / `PatchDecoder` / `Sha256Hasher` 与同步写入临时文件，不一次性把整份 `OLD`、`NEW`、`DELTA` 或恢复输出读入堆内存。
-   - **必须配合显式 `--max-*` 处理 `> 64 MiB` 文件**：默认 `Limits::default()` 仍为 64 MiB / 80 MiB 上限；处理 128 MiB+ 文件时需由用户显式提高 `--max-old-bytes`、`--max-new-bytes`、`--max-delta-bytes`、`--max-output-bytes`、`--max-match-work`（至 `2147483647`），不静默取消资源限制。
-   - **流式并发保护与原子提交**：保留叶符号链接拒绝、短读检测、1 字节 EOF 探针、句柄大小复核及独占临时文件；`patch-verified --streaming` 与 `apply-update --streaming` 在 `result.sha256`、`delta.sha256`、`basis.sha256` 与 `result.byte_length` 全部校验通过前绝不执行 `rename(replace=false)`，失败自动清除临时文件。
-   - 在不支持 `--streaming` 的子命令上使用或重复传入 `--streaming` 统一以退出码 `2` 拒绝。
+1. **全链路 `--streaming` 64 KiB 流式模式（覆盖全部 15 条适用命令）**：
+   - 支持：`signature`、`delta`、`patch`、`basis-info`、`make-manifest`、`patch-verified`、`inspect-delta`、`check-patch`、`make-transfer-manifest`、`apply-update`、`compress`、`decompress`、`dir-signatures`、`dir-pack`、`dir-apply`。
+   - 不传 `--streaming` 时默认缓冲行为与错误语义 100% 保持不变；传入 `--streaming` 后改用 64 KiB 分块流式读写、`SignatureHasher` / `DeltaScanner` / `PatchDecoder`（含无拷贝 `feed_inspect` 与 `new_format_only`） / `Sha256Hasher` / `GzipEncoder` / `GzipDecoder`，不一次性把整份大文件读入堆内存。
+   - **处理 `> 64 MiB` 文件须显式传入 `--max-*`**：默认 `Limits::default()` 仍为 64 MiB / 80 MiB 上限；处理 128 MiB+ 文件时由调用方显式提高 `--max-old-bytes`、`--max-new-bytes`、`--max-delta-bytes`、`--max-output-bytes`、`--max-match-work`（最高 `2147483647`），绝不静默取消资源限制。
+   - **流式并发保护与原子提交**：保留叶符号链接拒绝、短读检测、1 字节 EOF 探针、句柄大小复核及独占临时文件；`patch-verified --streaming` 与 `apply-update --streaming` 在全部 SHA-256 校验通过前绝不执行 `rename(replace=false)`，失败自动清除临时文件。
+   - 在不支持 `--streaming` 的子命令（`inspect-signature`、`inspect-manifest`、`dir-snapshot`、`dir-plan`）或重复传入 `--streaming` 统一以退出码 `2` 拒绝。
 
-2. **目录快照与规划子命令（Schema 3，详见 [docs/dir-sync.md](dir-sync.md)）**：
-   - `moonlibsync dir-snapshot DIR OUT [DIR_LIMITS]`：按确定性字典序递归扫描目录（包含隐藏项，不跟随任何层级的符号链接，拒绝 FIFO/Socket/设备及 Windows/NTFS 不安全路径与 ASCII 大小写折叠碰撞），64 KiB 流式计算每个普通文件 SHA-256 后原子无覆盖输出 Schema 3 快照 JSON。
-   - `moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]`：纯只读校验并规划两份 Schema 3 快照之间的 `unchanged` / `add-full` / `update-candidate` / `delete` 动作与 `transfer_upper_bound_bytes`（支持人类文本或 `--json`，绝不改动目录与磁盘文件）。
-   - `[DIR_LIMITS]` 仅适用于 `dir-snapshot` 与 `dir-plan`：`--max-entries`（`0..65536`）、`--max-path-bytes`（`1..4096`）、`--max-depth`（`1..64`）、`--max-snapshot-bytes`（`64..16777216`）、`--max-file-bytes`（`0..2147483647`）；与单文件 `[LIMITS]` 混用返回退出码 `2`。
+2. **有界单流 Gzip 传输封装（[cmd/moonlibsync/compress_cli.mbt](../cmd/moonlibsync/compress_cli.mbt)）**：
+   - `moonlibsync compress IN OUT [--streaming] [LIMITS]`：基于纯零 IO 独立子包 `YKDshaxing/moonlibsync/compress`（封装锁定标准库 `core/compress/gzip`，根核心库保持零实验包），按 `max_new_bytes` / `max_output_bytes` 生成标准 RFC 1952 单流 gzip，可与 `delta` 直接串联。
+   - `moonlibsync decompress IN OUT [--streaming] [LIMITS]`：按 `max_delta_bytes` / `max_output_bytes` 解压单流 gzip，内置增量防解压炸弹上限（超出即刻报 `LimitExceeded` 停止展开）、严格拒绝尾随数据（`TrailingData`）、截断（`TruncatedInput`）与头/CRC 损坏（`InvalidDelta`），无覆盖原子提交。
+
+3. **端到端目录级快照、规划与增量分发包（Schema 3，详见 [docs/dir-sync.md](dir-sync.md)）**：
+   - `moonlibsync dir-snapshot DIR OUT [DIR_LIMITS]`：按确定性字典序递归扫描目录（拒绝全部符号链接、非普通文件与不安全/大小写碰撞路径），64 KiB 流式计算 SHA-256 后原子输出 Schema 3 快照 JSON。
+   - `moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]`：纯只读规划两份快照间的 `unchanged` / `add-full` / `update-candidate` / `delete` 动作与 `transfer_upper_bound_bytes`。
+   - `moonlibsync dir-signatures DIR SNAPSHOT SIG_DIR [--block-size N|auto] [--sum-size N] [--streaming] [LIMITS] [DIR_LIMITS]`：校验 `DIR` 与 `SNAPSHOT` 一致并事务性生成 `SIG_DIR/sigs/*.sig` 与 `signatures.json`。
+   - `moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR BUNDLE_DIR [--streaming] [--min-savings N] [LIMITS] [DIR_LIMITS]`：发送端仅凭远端快照与签名目录（绝不访问 `BASIS_DIR`）自动对变更文件做 Delta vs Full 择优，事务性输出自包含增量包 `BUNDLE_DIR`。
+   - `moonlibsync dir-apply BASIS_DIR BUNDLE_DIR OUT_DIR [--streaming] [LIMITS] [DIR_LIMITS]`：逐文件核验 SHA-256 并事务性重建全新 `OUT_DIR`，绝不覆写已有目录、绝不改动或删除 `BASIS_DIR`。
+   - `[DIR_LIMITS]`（`--max-entries`、`--max-path-bytes`、`--max-depth`、`--max-snapshot-bytes`、`--max-file-bytes`）适用于全部 `dir-*` 命令；`dir-signatures` / `dir-pack` / `dir-apply` 同时接受 `[LIMITS]`。
 
 ```text
-moonlibsync signature OLD SIG --streaming [--block-size N|auto] [--sum-size N] [LIMITS]
-moonlibsync delta SIG NEW DELTA --streaming [LIMITS]
-moonlibsync patch OLD DELTA OUT --streaming [LIMITS]
-moonlibsync patch-verified OLD DELTA MANIFEST OUT --streaming [LIMITS]
-moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] --streaming [LIMITS]
+moonlibsync signature OLD SIG [--streaming] [--block-size N|auto] [--sum-size N] [LIMITS]
+moonlibsync delta SIG NEW DELTA [--streaming] [LIMITS]
+moonlibsync patch OLD DELTA OUT [--streaming] [LIMITS]
+moonlibsync basis-info OLD SIG INFO [--streaming] [LIMITS]
+moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [--streaming] [LIMITS]
+moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [--streaming] [LIMITS]
+moonlibsync patch-verified OLD DELTA MANIFEST OUT [--streaming] [LIMITS]
+moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [--streaming] [LIMITS]
+moonlibsync inspect-delta DELTA [--json] [--streaming] [LIMITS]
+moonlibsync check-patch OLD DELTA [--json] [--streaming] [LIMITS]
+moonlibsync compress IN OUT [--streaming] [LIMITS]
+moonlibsync decompress IN OUT [--streaming] [LIMITS]
 moonlibsync dir-snapshot DIR OUT [DIR_LIMITS]
 moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]
+moonlibsync dir-signatures DIR SNAPSHOT SIG_DIR [--block-size N|auto] [--sum-size N] [--streaming] [LIMITS] [DIR_LIMITS]
+moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR BUNDLE_DIR [--streaming] [--min-savings N] [LIMITS] [DIR_LIMITS]
+moonlibsync dir-apply BASIS_DIR BUNDLE_DIR OUT_DIR [--streaming] [LIMITS] [DIR_LIMITS]
 ```
 
 以下保留 0.3.2 及历史各阶段详细契约与测试证据。
