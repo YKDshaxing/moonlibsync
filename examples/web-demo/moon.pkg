@@ -1,0 +1,14 @@
+import {
+  "YKDshaxing/moonlibsync" @lib,
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/utf8",
+}
+
+options(
+  link: {
+    "js": {
+      "exports": [ "run_streaming_sync_json", "plan_dir_snapshots_json" ],
+      "format": "esm",
+    },
+  },
+)

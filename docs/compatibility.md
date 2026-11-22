@@ -1,3 +1,15 @@
+# MoonLibSync 0.4.0 当前契约
+
+0.4.0 保持 0.3.x 全部公开函数/类型签名、CLI 既有 12 条子命令、schema 1/2 清单、标准 `0x72730147` / `0x72730236` 线缆协议、`Limits::default()` 与 `MatchWork` v2 计量 100% 向前兼容，并纯增量引入：
+- **核心流式扩展**：`PatchDecoder`、`PatchStep` 与 `Sha256Hasher`；`PatchApplier` 与 `BasisReader` 接口行为完全不变。
+- **目录模型（Schema 3）**：独立 `DirLimits`、`DirEntry`、`DirSnapshot`、`DirActionKind`、`DirSyncAction`、`DirSyncPlan` 及对应编码/解析/规划函数，完全不影响单文件 `manifest.mbt`（Schema 1/2，64 KiB 上限）。
+- **Native CLI 扩展**：`--streaming` 显式开关（未传入时与 0.3.2 路径一致）及 `dir-snapshot` / `dir-plan` 子命令和独立 `[DIR_LIMITS]` 参数。
+- **跨目标浏览器 ESM Demo**：`examples/web-demo` 编译输出标准 ES Module 而不改变根库零 IO 性质。
+
+以下保留 0.3.2–0.1.0 历史契约记录。
+
+---
+
 # MoonLibSync 0.3.2 当前契约
 
 0.3.2 在完全保持 0.3.0 / 0.3.1 所有既有公开 API、CLI 命令、schema1/schema2 JSON、标准 `0x72730147` / `0x72730236` 线缆格式、最小块序号确定性及 `Limits::default()` 100% 向前兼容的前提下，进行如下增量化演进：

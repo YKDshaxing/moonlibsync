@@ -12,7 +12,7 @@
 <p>
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.2-0ea5e9" alt="Version 0.3.2"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.4.0-0ea5e9" alt="Version 0.4.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,13 +28,14 @@
 | 层次 | 公开入口 | 用途说明 |
 | --- | --- | --- |
 | **标准字节差分** | `signature` / `delta` / `patch` | 与 `librsync` 互操作（`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`、delta `0x72730236`）；O(1) 弱校验开放定址表（`<= 0.50` 装载因子）与 Pending Literal Run |
-| **零 IO 流式状态机** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `BasisReader` | 纯核心分块状态机，兼容 Native / JS / Wasm-GC；O(1) 哈希状态、O(`block_len`) + 64 KiB 字面窗口及 `errdefer` 失效保护 |
+| **零 IO 流式与 Sans-IO 解码** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `Sha256Hasher` | 纯核心分块状态机 + Sans-IO 步进解码器（`PatchStep`）与流式 SHA-256，同时适配同步 `Bytes`、Native `async/fs` 与浏览器 JS |
+| **目录快照与同步规划** | `DirLimits` / `create/parse/encode_dir_snapshot` / `plan_dir_sync` / `create/parse/encode_dir_plan` | Schema 3 规范 POSIX 相对路径快照与 O(N+M) 同步规划；严格拒绝符号链接、路径穿越与 ASCII 大小写折叠碰撞 |
 | **检查与预检** | `inspect_signature` / `inspect_delta` / `check_patch` | O(1) 零记录分配签名头校验、delta 统计以及基于长度的 COPY 范围预检 |
 | **可复用签名索引** | `prepare_signature` / `PreparedSignature::{delta, summary, plan_update}` | 一次解析建索引，跨多个目标复用；每次调用独立重检 `Limits` 并拥有独立工作预算 |
 | **显式自动块长** | `recommend_block_len` / `signature --block-size auto` | 纯整数 `policy v1` 策略（目标约 512 条记录、2 次幂向上舍入并受当前预算约束） |
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
-| **Native 单文件 CLI** | `cmd/moonlibsync`（12 条子命令） | 普通文件有界读取（支持可选 `--max-*` 预算覆盖）、`inspect-manifest`、拒绝叶符号链接、`fsync` 与 `rename(replace=false)` 无覆盖提交 |
+| **Native 单文件 CLI** | `cmd/moonlibsync`（14 条子命令） | 有界读取 + `--streaming` 64 KiB 大文件流式管线（突破 64 MiB）、`dir-snapshot`/`dir-plan`、`inspect-manifest`、`--max-*`、拒绝符号链接与原子重命名 |
 
 ## 快速开始
 
@@ -88,6 +89,7 @@ fn sync_demo() -> Unit raise {
 - [examples/auto](examples/auto/main.mbt) — 显式自动块长 `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` / `Full` 更新规划与应用
 - [examples/streaming](examples/streaming/main.mbt) — 零 IO 分块流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier`（含零依赖 Node.js 运行脚本：`node examples/streaming/run-node.mjs`）
+- [examples/web-demo](examples/web-demo/index.html) — 零后端静态浏览器 UI 与 JS ES 模块（`node examples/web-demo/test-node.mjs --rebuild`）直接展示纯 MoonBit 浏览器端流式差分与目录规划
 
 ## Native 单文件 CLI
 
@@ -118,8 +120,13 @@ moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
 moonlibsync inspect-manifest manifest.json --json
 
-# 5. 可选资源预算覆盖参数（不传时完全保持 Limits::default()）
-moonlibsync signature old.bin bigblock.sig --block-size 1048577 --max-block-bytes 2097152
+# 5. 流式 64 KiB 大文件管线（配合 --streaming 与显式 --max-* 突破 64 MiB）
+moonlibsync signature large-old.bin large.sig --streaming --block-size auto --max-old-bytes 200000000
+moonlibsync patch large-old.bin large.delta restored.bin --streaming --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
+
+# 6. 确定性目录快照与只读同步规划（Schema 3）
+moonlibsync dir-snapshot ./v1 v1.snapshot.json
+moonlibsync dir-plan v1.snapshot.json v2.snapshot.json --json
 ```
 
 ### 完整性校验与传输规划流程
@@ -150,11 +157,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、210 项库测试 × 三目标、6 示例、接口守卫
+python scripts/check.py            # 格式、依赖、218 项库测试 × 三目标、6 示例、web-demo ESM、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 24 项 Native 辅助测试 + Windows CLI 集成测试
+./scripts/cli-smoke.ps1            # 30 项 Native 辅助测试 + Windows CLI 集成测试
 node examples/streaming/run-node.mjs --rebuild
+node examples/web-demo/test-node.mjs --rebuild
 python scripts/release_check.py --clean
 ```
 
@@ -193,10 +201,11 @@ python3 scripts/file_exchange.py
 
 ## 文档导航
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明
-- [docs/cli.md](docs/cli.md) — Native CLI 手册、JSON Schema、`--max-*` 预算覆盖与原子提交说明
+- [docs/cli.md](docs/cli.md) — Native CLI 手册（`--streaming`、`dir-snapshot`/`dir-plan`、`--max-*`）、JSON Schema 与原子提交说明
+- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 目录快照规范、POSIX 路径安全规则与 `DirLimits`
 - [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约
 - [docs/matching.md](docs/matching.md) — 开放定址弱校验索引、Pending Literal Run 与 `MatchWork` v2 计量
 - [docs/resources.md](docs/resources.md) — `Limits`、`MatchWork` v2 与全量/流式内存模型

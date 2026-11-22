@@ -1,5 +1,11 @@
 # 来源与固定版本
 
+## 0.4.0 增量说明
+
+- `PatchDecoder` / `PatchStep`（`stream_patch.mbt`）、`Sha256Hasher`（`sha256.mbt`）、`dir_sync.mbt`、`cmd/moonlibsync/streaming.mbt`、`cmd/moonlibsync/dir.mbt` 与 `examples/web-demo/` 均为本项目原创 LGPL-2.1-or-later 代码，无任何新增第三方依赖、C FFI 或前端构建依赖。
+- `Sha256Hasher` 复用已固定的 `moonbitstack/mooncrypt@0.4.5` 中的 `@sha2.Hasher::new(kind=@sha2.Kind::Sha256)` / `write` / `finish` 流式状态，保留原 Apache-2.0 版权及 `dependencies.lock.json`。
+- Native CLI `--streaming` 与 `dir-snapshot` 继续使用已固定 MoonBit core 的 `async/fs`（`readdir`、`kind(follow_symlink=false)`、`read_at`、`write`、`sync`、`rename(replace=false)`），未引入第三方文件系统依赖。
+
 ## 0.3.2 增量说明
 
 - `stream_signature.mbt`、`stream_delta.mbt`、`stream_patch.mbt` 与 `examples/streaming/` 均为本项目原创 LGPL-2.1-or-later 代码，无任何新增第三方依赖或 C FFI。

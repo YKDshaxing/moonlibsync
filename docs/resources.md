@@ -1,3 +1,20 @@
+# MoonLibSync 0.4.0：流式大文件、Sans-IO 解码、目录预算与资源契约
+
+0.4.0 在完全保持 0.3.2 全部 `Limits` 默认值（`OLD/NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB、`records/instructions` `1,000,000`、`block` `1 MiB`、`match_work` `256M`）、`0..2147483647` 合法校验范围及 `MatchWork` v2 计量不变的前提下，完成以下 0.4.0 扩展：
+
+1. **Sans-IO `PatchDecoder` 与流式 `Sha256Hasher`**：
+   - `PatchDecoder`（[stream_patch.mbt](../stream_patch.mbt)）将 `COPY` 区间拉取权（`PatchStep::CopyBasis(UInt64, Int32)`，每次 `1..65536` 字节）与零拷贝 `EmitLiteral(BytesView)` 交还调用方驱动，统一支撑同步 `Bytes` / `BasisReader`、Native 异步 `async/fs` 与浏览器分块场景；所有 `UInt64` 基线边界检查与 `output`/`instruction` 预算均在发出 `CopyBasis` 第一步之前完成；任意解析/预算/尾随错误通过 `errdefer { self.failed = true }` 永久失效；`PatchApplier` 内部复用 `PatchDecoder`，保持 0.3.2 接口 100% 不变。
+   - `Sha256Hasher`（[sha256.mbt](../sha256.mbt)）封装 `@sha2.Hasher::new(kind=Sha256)` 为 O(1) 常数内存流式摘要状态，按 `0 <= max_bytes <= 2147483647L` 在每次 `update` 前做溢出与上限预检，错误即失效；允许受校验流式补丁在写入临时文件的同一趟遍历中完成整文件 SHA-256 计算。
+2. **CLI `--streaming` 模式（64 KiB 分块管线）**：
+   - 支持 `signature`、`delta`、`patch`、`patch-verified`、`apply-update`；与用户显式传入的 `--max-*` 配合可处理超过默认 64 MiB 上限的大文件，同时保持 O(1)（`signature`/`patch`/`patch-verified`/`apply-update`）或 O(`block_len`) + 64 KiB（`delta` 对单块滑动窗和 literal 缓冲，`SIG` 索引本身仍为 `O(records)`）有界内存。
+   - 并发/原子安全：`patch-verified --streaming` / `apply-update --streaming` 先流式验证 `OLD` SHA-256（拒绝失败时不建临时文件），再一边校验 `DELTA` SHA-256 并向独占临时文件写出恢复字节、一边累计恢复输出 SHA-256；仅当所有长度/SHA-256、EOF 探针与 `OLD` 句柄大小复核全部通过后才执行 `sync` 与无覆盖 `rename(replace=false)`（否则删除临时文件、绝不提交）。
+3. **目录快照与规划独立预算（`DirLimits`，[dir-sync.md](dir-sync.md)）**：
+   - 与单文件清单（64 KiB / 16 字段 / 深度 2）严格隔离，提供 `DirLimits`（默认 `max_entries=4096`、`max_path_bytes=1024`、`max_depth=32`、`max_snapshot_bytes=1 MiB`、`max_file_bytes=64 MiB`），约束 Schema 3 `dir-snapshot` 与 `dir-plan`。
+
+以下保留 0.3.2 / 0.3.1 / 0.3.0 与早期历史资源契约文档。
+
+---
+
 # MoonLibSync 0.3.2：核心资源契约与流式契约
 
 0.3.2 保持全部九项 `Limits` 默认值（`OLD/NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB、`records/instructions` `1,000,000`、`block` `1 MiB`、`match_work` `256M`）与合法区间（`0..2147483647`，`max_block_bytes` `1..2147483647`）及校验优先级完全不变。以下补充 0.3.2 的三项核心更新：

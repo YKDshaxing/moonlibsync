@@ -1,3 +1,14 @@
+# MoonLibSync 0.4.0：设计与使用
+
+0.4.0 在完全保持 0.3.x 公开 API、CLI 命令与退出码、schema 1/2 清单、标准 `librsync` (`0x72730147` / `0x72730236`) 互操作与 `Limits::default()` 100% 向前兼容的前提下，实现三项主要扩展：
+- **Sans-IO 步进式解码与流式 SHA-256（[stream_patch.mbt](../stream_patch.mbt)、[sha256.mbt](../sha256.mbt)）**：`PatchDecoder` + `PatchStep` 把 `COPY` 区间拉取抽象成无 IO 步进请求，`PatchApplier` 内部复用之；`Sha256Hasher` 封装 `mooncrypt@0.4.5` 的 `@sha2.Hasher` 提供 O(1) 内存流式 SHA-256。
+- **Native CLI `--streaming` 64 KiB 大文件管线**：[cmd/moonlibsync/streaming.mbt](../cmd/moonlibsync/streaming.mbt) 支持流式 `signature` / `delta` / `patch` / `patch-verified` / `apply-update`，单趟完成内容写出与 SHA-256 校验后再原子提交。
+- **纯核心零 IO 目录快照与规划（Schema 3，[dir_sync.mbt](../dir_sync.mbt)、[docs/dir-sync.md](dir-sync.md)）与静态浏览器 Demo（[examples/web-demo/index.html](../examples/web-demo/index.html)）**：前者提供 `DirLimits`、严格 POSIX 路径/大小写冲突防线与 `dir-snapshot` / `dir-plan` CLI；后者通过 `moon build examples/web-demo --target js` 编译标准 JS ES Module，无需 C FFI 或后端服务即可直接在浏览器和 Node.js 演练分块差分恢复。
+
+下文保留 0.3.2 / 0.3.1 / 0.2.0 / 0.1.0 历史设计归属。
+
+---
+
 # MoonLibSync 0.3.2：设计与使用
 
 0.3.2 在保持 0.3.0 / 0.3.1 全部公开 API、CLI 命令与退出码、schema1/schema2 格式、错误优先级、`Limits::default()` 与标准 `librsync` (`0x72730147` / `0x72730236`) 互操作性 100% 兼容的基础上，新增：

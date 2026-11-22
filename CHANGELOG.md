@@ -4,6 +4,26 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-22
+
+### Added
+- **Sans-IO async-ready `PatchDecoder` & streaming `Sha256Hasher`**:
+  - `PatchDecoder` (`new`, `step -> (Int32, PatchStep)`, `has_pending_copy`, `finish`) yields zero-copy `EmitLiteral(BytesView)` and validated `CopyBasis(UInt64, Int32)` (`1..65536`-byte chunks) cleanly for synchronous `Bytes`, Native `async/fs`, and browser `File`/`Blob` callers (`stream_patch.mbt`). Existing `PatchApplier` delegates to `PatchDecoder` with 100% API compatibility.
+  - `Sha256Hasher` (`new`, `update`, `finish -> FileDigest`) exposes O(1) bounded incremental SHA-256 via locked `mooncrypt@0.4.5` `@sha2.Hasher` (`Kind::Sha256`) with `0..2147483647` byte caps and fail-closed `errdefer` poisoning (`sha256.mbt`).
+- **Native CLI `--streaming` 64 KiB pipelines (`cmd/moonlibsync/streaming.mbt`)**:
+  - Explicit `--streaming` flag on `signature`, `delta`, `patch`, `patch-verified`, and `apply-update` processes inputs/outputs in bounded 64 KiB chunks while preserving leaf-symlink rejection, concurrent input-size/EOF verification, `fsync`, and atomic `rename(replace=false)`.
+  - Verified on a synthetic **128 MiB** (`134,217,728`-byte) file pair on Windows Native `--release`: non-streaming is rejected under the 64 MiB default limit (`ReadLimitExceeded`), while `--streaming` with explicit `--max-* 200000000` completes `signature --block-size auto` (`18,444` B in `1.137 s`), `delta` (`266,757` B in `1.566 s`), `patch` (`0.392 s`), and single-pass `patch-verified` (`2.158 s`) with bit-exact SHA-256 recovery.
+- **Zero-IO Directory Snapshots & Sync Planning (`dir_sync.mbt`, Schema 3, `docs/dir-sync.md`)**:
+  - Added `DirLimits`, `DirEntry`, `DirSnapshot`, `DirActionKind`, `DirSyncAction`, `DirSyncPlan`, `create_dir_snapshot`, `encode_dir_snapshot`, `parse_dir_snapshot`, `plan_dir_sync`, `encode_dir_plan`, and `parse_dir_plan`.
+  - Enforces strict POSIX-relative paths (rejecting `..`, `.`, leading/trailing `/`, `//`, `\`, `:`, control characters, trailing dots/spaces), UTF-8 bytewise lexicographical order, and single/cross-snapshot ASCII case-folding collision checks.
+  - Added `dir-snapshot DIR OUT [DIR_LIMITS]` (strict `follow_symlink=false` traversal, atomic output) and read-only `dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]` to `cmd/moonlibsync` (`cmd/moonlibsync/dir.mbt`).
+- **Zero-backend static Browser Web Demo (`examples/web-demo/`)**:
+  - Compiles pure MoonBit streaming sync & Schema 3 directory planning into a standard JS ES module (`run_streaming_sync_json`, `plan_dir_snapshots_json`) with a static `index.html` / `demo.mjs` UI and automated Node.js verification (`node examples/web-demo/test-node.mjs --rebuild`).
+- **Verification**: 8 new core tests (`stream_patch_decoder_*`, `dir_sync_*` -> **218 tests × 3 targets**), 6 new Native CLI unit tests (`cmd/moonlibsync/v040_wbtest.mbt` -> **30 total**), and `scripts/cli_v040_cases.py` integrated into `scripts/cli_smoke.py`.
+
+### Compatibility
+- 100% backward-compatible with `0.3.x` public APIs, `librsync` (`0x72730147` / `0x72730236`) wire interoperability, schema 1/2 manifests, `Limits::default()`, `MatchWork` v2 accounting, and CLI no-overwrite atomic commits. Protected `_build/release-0.3.2` evidence as read-only in `scripts/release_check.py`.
+
 ## [0.3.2] - 2026-11-22
 
 ### Performance & `MatchWork` v2

@@ -46,6 +46,10 @@ prepared_extension_names = [name for path in (ROOT / "prepared_extensions_test.m
 v032_index_names = re.findall(r'^test "([^"\n]*)"', (ROOT / "index_hash_wbtest.mbt").read_text(encoding="utf-8"), re.M)
 v032_stream_names = [name for path in (ROOT / "stream_test.mbt", ROOT / "stream_wbtest.mbt")
                      for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+v040_stream_names = [name for path in (ROOT / "stream_patch_decoder_test.mbt", ROOT / "stream_patch_decoder_wbtest.mbt")
+                     for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+v040_dir_names = [name for path in (ROOT / "dir_sync_test.mbt", ROOT / "dir_sync_wbtest.mbt")
+                  for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 resource_report = {
     "format": 1, "status": "not_executed", "baseline_library_tests": 80,
     "resource_tests": len(resource_names), "resource_test_names": resource_names,
@@ -59,6 +63,8 @@ resource_report = {
     "manifest_tests": len(manifest_names), "manifest_test_names": manifest_names,
     "v032_index_tests": len(v032_index_names), "v032_index_test_names": v032_index_names,
     "v032_stream_tests": len(v032_stream_names), "v032_stream_test_names": v032_stream_names,
+    "v040_stream_tests": len(v040_stream_names), "v040_stream_test_names": v040_stream_names,
+    "v040_dir_tests": len(v040_dir_names), "v040_dir_test_names": v040_dir_names,
     "boundary_checks": {"signature": 4, "delta": 8, "patch": 4},
     "boundary_policy": "need-1 rejects; need and need+1 succeed; invalid configurations tested separately",
     "source_sha": subprocess.check_output(["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"], text=True).strip(),
@@ -76,7 +82,7 @@ def test_target(target):
     print(result.stdout, end="", flush=True)
     (resource_dir / (target + ".log")).write_text(result.stdout, encoding="utf-8")
     totals = re.search(r"Total tests: (\d+), passed: (\d+), failed: (\d+)\.", result.stdout)
-    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names) + len(transfer_names) + len(prepared_extension_names) + len(v032_index_names) + len(v032_stream_names)
+    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names) + len(transfer_names) + len(prepared_extension_names) + len(v032_index_names) + len(v032_stream_names) + len(v040_stream_names) + len(v040_dir_names)
     complete = bool(totals and tuple(map(int, totals.groups())) == (expected, expected, 0) and result.returncode == 0)
     resource_report["targets"][target] = {
         "command": command, "exit_code": result.returncode,
@@ -118,6 +124,9 @@ for target in ("native", "js", "wasm-gc"):
     moon("run", "examples/auto", "--target", target)
     moon("run", "examples/transfer", "--target", target)
     moon("run", "examples/streaming", "--target", target)
+    if target == "js":
+        run("node", "examples/streaming/run-node.mjs")
+        run("node", "examples/web-demo/test-node.mjs")
 run(sys.executable, "scripts/check_prepared_interface.py")
 run(sys.executable, "scripts/native_probe.py")
 moon("info")

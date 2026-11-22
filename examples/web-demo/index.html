@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MoonLibSync Zero-Backend Streaming Demo</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, sans-serif; }
+    body { max-width: 920px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { margin-bottom: 0.25rem; }
+    .sub { opacity: 0.8; margin-top: 0; }
+    .status, .card { border: 1px solid #8884; border-radius: 10px; padding: 0.85rem 1rem; margin: 1rem 0; }
+    .ok { border-color: #10b981; background: #10b98115; }
+    .warn { border-color: #f59e0b; background: #f59e0b15; }
+    .err { border-color: #ef4444; background: #ef444415; }
+    .controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 1rem 0; }
+    button { padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid #2563eb; background: #2563eb; color: #fff; cursor: pointer; font-weight: 600; }
+    button.secondary { background: transparent; color: inherit; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; }
+    .stat { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; }
+    .label { font-size: 0.8rem; opacity: 0.75; }
+    .value { font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem; }
+    .bar-wrap { height: 26px; border-radius: 8px; background: #8883; overflow: hidden; margin: 1rem 0; }
+    .bar-copy { height: 100%; background: #10b981; color: #052e16; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; padding-left: 0.6rem; white-space: nowrap; }
+    .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 6px; background: #10b981; color: #052e16; font-weight: 700; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>MoonLibSync Pure-JS Streaming Demo</h1>
+  <p class="sub">Zero C FFI, zero backend server — runs <code>SignatureHasher</code>, <code>DeltaScanner</code>, <code>PatchDecoder</code>, and <code>Sha256Hasher</code> compiled directly from MoonBit.</p>
+
+  <div id="status" class="status">Loading compiled MoonBit ES module…</div>
+
+  <div class="card">
+    <div class="controls">
+      <label>Block size:
+        <select id="blockLen">
+          <option value="0" selected>auto (policy v1)</option>
+          <option value="512">512 bytes</option>
+          <option value="2048">2048 bytes</option>
+        </select>
+      </label>
+      <label>Chunk size:
+        <select id="chunkSize">
+          <option value="4096" selected>4 KiB chunks</option>
+          <option value="16384">16 KiB chunks</option>
+          <option value="65536">64 KiB chunks</option>
+        </select>
+      </label>
+      <button id="runSample">Run Built-in 128 KiB Sample</button>
+    </div>
+    <div class="controls">
+      <label>OLD file: <input type="file" id="oldFile" /></label>
+      <label>NEW file: <input type="file" id="newFile" /></label>
+      <button id="runFiles" class="secondary">Diff Selected Files</button>
+    </div>
+  </div>
+
+  <div id="results"></div>
+  <script type="module" src="./demo.mjs"></script>
+</body>
+</html>

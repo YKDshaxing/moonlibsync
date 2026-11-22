@@ -12,7 +12,7 @@
 <p>
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.2-0ea5e9" alt="Version 0.3.2"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.4.0-0ea5e9" alt="Version 0.4.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,13 +28,14 @@
 | Layer | Public Entry Points | Purpose |
 | --- | --- | --- |
 | **Core Binary Delta** | `signature`, `delta`, `patch` | Wire-compatible with `librsync` (`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`, delta `0x72730236`); O(1) open-addressed weak-hash lookup (`<= 0.50` load) and Pending Literal Run |
-| **Streaming State Machines** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `BasisReader` | Pure zero-IO chunked pipelines across Native, JS, and Wasm-GC with O(1) hash state, O(`block_len`) + 64 KiB literal windowing, and fail-closed `errdefer` poisoning |
+| **Streaming & Sans-IO** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `PatchDecoder`, `Sha256Hasher` | Pure zero-IO chunked pipelines + Sans-IO step decoder (`PatchStep`) & streaming SHA-256 bridging sync `Bytes`, Native `async/fs`, and browser JS |
+| **Directory Sync Planning** | `DirLimits`, `create/parse/encode_dir_snapshot`, `plan_dir_sync`, `create/parse/encode_dir_plan` | Schema 3 deterministic POSIX-relative snapshots & sync planning rejecting traversal, unsafe names, and ASCII case collisions |
 | **Inspection & Preflight** | `inspect_signature`, `inspect_delta`, `check_patch` | O(1) zero-record-allocation signature metadata inspection, delta statistics, and COPY range preflight |
 | **Reusable Prepared Index** | `prepare_signature`, `PreparedSignature::{delta, summary, plan_update}` | Parse and index a signature once; reuse across multiple targets with per-call `Limits` re-checks and independent work budgets |
 | **Auto Block Sizing** | `recommend_block_len`, `signature --block-size auto` | Explicit integer policy v1 (targeting ~512 records, power-of-two rounding, bounded by `Limits`) |
 | **Integrity Manifests** | `create/parse/encode_basis_info`, `create/parse/encode_update_manifest`, `verified_patch` | Strict bounded JSON (schema 1) binding `OLD`, `SIG`, `DELTA`, and `RESULT` via SHA-256 before returning or committing output |
 | **Transfer Planning** | `plan_update`, `create/parse/encode_transfer_manifest`, `apply_update` | Schema 2 `Delta` vs. `Full` payload selection (chooses `Delta` only when strictly smaller and meeting `min_savings_bytes`) |
-| **Native Single-File CLI** | `cmd/moonlibsync` (12 subcommands) | Bounded regular-file reads (`Limits::default()` or optional `--max-*` overrides), `inspect-manifest`, leaf-symlink rejection, `fsync`, and atomic `rename(replace=false)` |
+| **Native Single-File CLI** | `cmd/moonlibsync` (14 subcommands) | Bounded reads + `--streaming` 64 KiB pipelines (> 64 MiB files), `dir-snapshot`/`dir-plan`, `inspect-manifest`, `--max-*`, symlink refusal, `fsync`, and `rename(replace=false)` |
 
 ## Quick Start
 
@@ -88,6 +89,7 @@ More runnable examples (all verified on `native`, `js`, and `wasm-gc`):
 - [examples/auto](examples/auto/main.mbt) — explicit `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` vs. `Full` transfer workflow
 - [examples/streaming](examples/streaming/main.mbt) — zero-IO streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` (plus zero-dependency JS runner: `node examples/streaming/run-node.mjs`)
+- [examples/web-demo](examples/web-demo/index.html) — zero-backend static browser UI + ES module (`node examples/web-demo/test-node.mjs --rebuild`) running pure MoonBit streaming sync & dir-plan in JS
 
 ## Native Single-File CLI
 
@@ -118,8 +120,13 @@ moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
 moonlibsync inspect-manifest manifest.json --json
 
-# 5. Optional resource budget overrides (defaults to Limits::default() when omitted)
-moonlibsync signature old.bin bigblock.sig --block-size 1048577 --max-block-bytes 2097152
+# 5. Streaming 64 KiB pipelines for > 64 MiB files (explicit --max-* + --streaming)
+moonlibsync signature large-old.bin large.sig --streaming --block-size auto --max-old-bytes 200000000
+moonlibsync patch large-old.bin large.delta restored.bin --streaming --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
+
+# 6. Deterministic directory snapshots & read-only sync planning (Schema 3)
+moonlibsync dir-snapshot ./v1 v1.snapshot.json
+moonlibsync dir-plan v1.snapshot.json v2.snapshot.json --json
 ```
 
 ### Integrity & Transfer Workflows
@@ -150,11 +157,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # Format, deps, 210 core tests × 3 targets, 6 examples, mbti guard
+python scripts/check.py            # Format, deps, 218 core tests × 3 targets, 6 examples, web-demo ESM, mbti guard
 python scripts/verify_fixtures.py  # Reference & opcode fixture integrity
 python scripts/failure_gates.py    # Isolated corruption & assertion failure gates
-./scripts/cli-smoke.ps1            # 24 Native helper tests + Windows CLI integration suite
+./scripts/cli-smoke.ps1            # 30 Native helper tests + Windows CLI integration suite
 node examples/streaming/run-node.mjs --rebuild
+node examples/web-demo/test-node.mjs --rebuild
 python scripts/release_check.py --clean
 ```
 
@@ -193,10 +201,11 @@ python3 scripts/file_exchange.py
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design
-- [docs/cli.md](docs/cli.md) — Native CLI reference, JSON schemas, `--max-*` budgets, and filesystem guarantees
+- [docs/cli.md](docs/cli.md) — Native CLI reference (`--streaming`, `dir-snapshot`/`dir-plan`, `--max-*`), JSON schemas, and filesystem guarantees
+- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 directory snapshots, POSIX path safety rules, and `DirLimits`
 - [docs/compatibility.md](docs/compatibility.md) — Protocol compatibility and version contracts
 - [docs/matching.md](docs/matching.md) — Open-addressed weak-hash index, Pending Literal Run, and `MatchWork` v2 metering
 - [docs/resources.md](docs/resources.md) — `Limits`, `MatchWork` v2, and streaming/full-buffer memory contracts
