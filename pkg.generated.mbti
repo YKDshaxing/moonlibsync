@@ -73,6 +73,14 @@ pub(all) struct BasisInfo {
   signature : FileDigest
 }
 
+pub struct DeltaScanner {
+  // private fields
+}
+pub fn DeltaScanner::feed(Self, BytesView) -> Unit raise SyncError
+pub fn DeltaScanner::finish(Self) -> Bytes raise SyncError
+pub fn DeltaScanner::new(PreparedSignature, Limits) -> Self raise SyncError
+pub fn DeltaScanner::take_ready(Self) -> Bytes raise SyncError
+
 pub(all) struct DeltaSummary {
   delta_bytes : Int64
   instruction_count : Int64
@@ -102,6 +110,13 @@ pub(all) struct Limits {
 pub fn Limits::default() -> Self
 pub fn Limits::validate(Self) -> Unit raise SyncError
 
+pub struct PatchApplier {
+  // private fields
+}
+pub fn[R : BasisReader] PatchApplier::feed(Self, BytesView, R, (BytesView) -> Unit raise SyncError) -> Unit raise SyncError
+pub fn PatchApplier::finish(Self) -> DeltaSummary raise SyncError
+pub fn PatchApplier::new(Int64, Limits) -> Self raise SyncError
+
 pub(all) struct PatchCheck {
   basis_bytes : Int64
   summary : DeltaSummary
@@ -113,6 +128,14 @@ pub struct PreparedSignature {
 pub fn PreparedSignature::delta(Self, Bytes, Limits) -> Bytes raise SyncError
 pub fn PreparedSignature::plan_update(Self, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 pub fn PreparedSignature::summary(Self) -> SignatureSummary
+
+pub struct SignatureHasher {
+  // private fields
+}
+pub fn SignatureHasher::finish(Self) -> Bytes raise SyncError
+pub fn SignatureHasher::new(SignatureOptions, Limits) -> Self raise SyncError
+pub fn SignatureHasher::take_ready(Self) -> Bytes raise SyncError
+pub fn SignatureHasher::update(Self, BytesView) -> Unit raise SyncError
 
 pub(all) struct SignatureOptions {
   block_len : Int64
@@ -168,3 +191,7 @@ pub(all) struct UpdatePlan {
 // Type aliases
 
 // Traits
+pub(open) trait BasisReader {
+  fn read_at(Self, UInt64, Int32) -> Bytes raise SyncError
+}
+pub impl BasisReader for Bytes
