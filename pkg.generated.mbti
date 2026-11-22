@@ -4,6 +4,10 @@ package "YKDshaxing/moonlibsync"
 // Values
 pub fn apply_update(Bytes?, Bytes, TransferManifest, Limits) -> Bytes raise ManifestError
 
+pub fn bundle_archive_magic() -> Bytes
+
+pub fn bundle_expected_payloads(DirBundleManifest) -> Array[(String, Int64)]
+
 pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
 pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
@@ -22,6 +26,12 @@ pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn encode_basis_info(BasisInfo, Limits) -> Bytes raise ManifestError
 
+pub fn encode_bundle_archive(DirBundleManifest, Map[String, Bytes], DirLimits, Limits) -> Bytes raise ManifestError
+
+pub fn encode_bundle_archive_preamble(DirBundleManifest, DirLimits, Limits) -> Bytes raise ManifestError
+
+pub fn encode_bundle_payload_header(String, Int64, DirLimits) -> Bytes raise ManifestError
+
 pub fn encode_dir_bundle_manifest(DirBundleManifest, DirLimits, Limits) -> Bytes raise ManifestError
 
 pub fn encode_dir_plan(DirSyncPlan, DirLimits) -> Bytes raise ManifestError
@@ -29,6 +39,8 @@ pub fn encode_dir_plan(DirSyncPlan, DirLimits) -> Bytes raise ManifestError
 pub fn encode_dir_signature_index(DirSignatureIndex, DirLimits, Limits) -> Bytes raise ManifestError
 
 pub fn encode_dir_snapshot(DirSnapshot, DirLimits) -> Bytes raise ManifestError
+
+pub fn encode_dir_verify_report(DirVerifyReport, DirLimits) -> Bytes raise ManifestError
 
 pub fn encode_transfer_manifest(TransferManifest, Limits) -> Bytes raise ManifestError
 
@@ -38,7 +50,11 @@ pub fn inspect_delta(Bytes, Limits) -> DeltaSummary raise SyncError
 
 pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
+pub fn match_dir_exclude(String, String) -> Bool raise ManifestError
+
 pub fn parse_basis_info(Bytes, Limits) -> BasisInfo raise ManifestError
+
+pub fn parse_bundle_archive(Bytes, DirLimits, Limits) -> DecodedBundleArchive raise ManifestError
 
 pub fn parse_dir_bundle_manifest(Bytes, DirLimits, Limits) -> DirBundleManifest raise ManifestError
 
@@ -47,6 +63,8 @@ pub fn parse_dir_plan(Bytes, DirLimits) -> DirSyncPlan raise ManifestError
 pub fn parse_dir_signature_index(Bytes, DirLimits, Limits) -> DirSignatureIndex raise ManifestError
 
 pub fn parse_dir_snapshot(Bytes, DirLimits) -> DirSnapshot raise ManifestError
+
+pub fn parse_dir_verify_report(Bytes, DirLimits) -> DirVerifyReport raise ManifestError
 
 pub fn parse_transfer_manifest(Bytes, Limits) -> TransferManifest raise ManifestError
 
@@ -65,6 +83,8 @@ pub fn recommend_block_len(Int64, Int64, Limits) -> Int64 raise SyncError
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
 
 pub fn verified_patch(Bytes, Bytes, UpdateManifest, Limits) -> Bytes raise ManifestError
+
+pub fn verify_dir_snapshot(DirSnapshot, DirSnapshot, DirLimits) -> DirVerifyReport raise ManifestError
 
 // Errors
 pub(all) suberror ManifestError {
@@ -95,6 +115,27 @@ pub(all) suberror SyncError {
 pub(all) struct BasisInfo {
   basis : FileDigest
   signature : FileDigest
+}
+
+pub struct BundleArchiveDecoder {
+  // private fields
+}
+pub fn BundleArchiveDecoder::finish(Self) -> DirBundleManifest raise ManifestError
+pub fn BundleArchiveDecoder::has_pending_event(Self) -> Bool
+pub fn BundleArchiveDecoder::new(DirLimits, Limits) -> Self raise ManifestError
+pub fn BundleArchiveDecoder::step(Self, BytesView) -> (Int32, BundleArchiveStep) raise ManifestError
+
+pub(all) enum BundleArchiveStep {
+  NeedInput
+  Manifest(DirBundleManifest)
+  BeginPayload(String, Int64)
+  PayloadChunk(BytesView)
+  EndPayload(String)
+}
+
+pub(all) struct DecodedBundleArchive {
+  manifest : DirBundleManifest
+  payloads : Map[String, Bytes]
 }
 
 pub struct DeltaScanner {
@@ -189,6 +230,28 @@ pub(all) struct DirSyncPlan {
   update_count : Int64
   delete_count : Int64
   transfer_upper_bound_bytes : Int64
+}
+
+pub(all) enum DirVerifyDiffKind {
+  Modified
+  Missing
+  Extra
+}
+
+pub(all) struct DirVerifyIssue {
+  path : String
+  kind : DirVerifyDiffKind
+  expected : FileDigest?
+  actual : FileDigest?
+}
+
+pub(all) struct DirVerifyReport {
+  ok : Bool
+  matched_count : Int64
+  modified_count : Int64
+  missing_count : Int64
+  extra_count : Int64
+  issues : Array[DirVerifyIssue]
 }
 
 pub(all) struct FileDigest {

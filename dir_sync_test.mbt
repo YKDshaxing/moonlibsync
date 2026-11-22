@@ -414,3 +414,98 @@ test "schema 3 DirSignatureIndex and DirBundleManifest roundtrip and strict vali
   }
   assert_true(bad_sum)
 }
+
+///|
+test "match_dir_exclude handles segment globs path prefixes and rejects invalid patterns" {
+  // Single-segment exact & wildcard matches at root and nested paths
+  assert_true(@moonlibsync.match_dir_exclude(".git/config", ".git"))
+  assert_true(
+    @moonlibsync.match_dir_exclude("sub/node_modules/a.js", "node_modules"),
+  )
+  assert_true(!@moonlibsync.match_dir_exclude("src/git-helper.mbt", ".git"))
+  assert_true(@moonlibsync.match_dir_exclude("logs/app.log", "*.log"))
+  assert_true(@moonlibsync.match_dir_exclude("a/b/temp-1.bin", "temp-?.bin"))
+  assert_true(!@moonlibsync.match_dir_exclude("a/b/temp-12.bin", "temp-?.bin"))
+
+  // Multi-segment prefix globs
+  assert_true(@moonlibsync.match_dir_exclude("dist/app.js", "dist/*"))
+  assert_true(@moonlibsync.match_dir_exclude("dist/sub/app.js", "dist/*"))
+  assert_true(!@moonlibsync.match_dir_exclude("src/dist/app.js", "dist/*"))
+  assert_true(@moonlibsync.match_dir_exclude("docs/spec.draft", "docs/*.draft"))
+  assert_true(!@moonlibsync.match_dir_exclude("docs/spec.md", "docs/*.draft"))
+
+  // Reject invalid exclude patterns
+  for bad in ["", "/abs", "trail/", "a//b", "a\\b", "../x", "a/./b", "c:d"] {
+    let rejected = try {
+      let _ = @moonlibsync.match_dir_exclude("a/b", bad)
+      false
+    } catch {
+      @moonlibsync.ManifestError::Core(
+        @moonlibsync.SyncError::InvalidOptions("exclude")
+      ) => true
+      _ => false
+    }
+    assert_true(rejected)
+  }
+}
+
+///|
+test "verify_dir_snapshot and schema 3 DirVerifyReport roundtrip and mismatch detection" {
+  let dl = @moonlibsync.DirLimits::default()
+  let fl = @moonlibsync.Limits::default()
+  let sha = (data : Bytes) => {
+    let h = @moonlibsync.Sha256Hasher::new(fl.max_old_bytes)
+    h.update(data[:])
+    h.finish()
+  }
+  let exp = @moonlibsync.create_dir_snapshot(
+    [
+      { path: "keep.txt", digest: sha(b"same"), },
+      { path: "mod.txt", digest: sha(b"v1"), },
+      { path: "gone.txt", digest: sha(b"missing"), },
+    ],
+    dl,
+  )
+  // Exact match -> ok=true, zero issues
+  let ok_rep = @moonlibsync.verify_dir_snapshot(exp, exp, dl)
+  assert_true(ok_rep.ok)
+  assert_eq(ok_rep.matched_count, 3L)
+  assert_eq(ok_rep.issues.length(), 0)
+  let ok_json = @moonlibsync.encode_dir_verify_report(ok_rep, dl)
+  let ok_parsed = @moonlibsync.parse_dir_verify_report(ok_json, dl)
+  assert_true(ok_parsed.ok)
+  assert_eq(ok_parsed.matched_count, 3L)
+
+  // Drift: 1 matched, 1 modified, 1 missing, 1 extra
+  let act = @moonlibsync.create_dir_snapshot(
+    [
+      { path: "keep.txt", digest: sha(b"same"), },
+      { path: "mod.txt", digest: sha(b"v2-tampered"), },
+      { path: "extra.txt", digest: sha(b"unexpected"), },
+    ],
+    dl,
+  )
+  let rep = @moonlibsync.verify_dir_snapshot(exp, act, dl)
+  assert_true(!rep.ok)
+  assert_eq(rep.matched_count, 1L)
+  assert_eq(rep.modified_count, 1L)
+  assert_eq(rep.missing_count, 1L)
+  assert_eq(rep.extra_count, 1L)
+  assert_eq(rep.issues.length(), 3)
+  let rep_json = @moonlibsync.encode_dir_verify_report(rep, dl)
+  let rep_parsed = @moonlibsync.parse_dir_verify_report(rep_json, dl)
+  assert_eq(@moonlibsync.encode_dir_verify_report(rep_parsed, dl), rep_json)
+
+  // Forged ok=true with non-zero issues -> BindingMismatch("verify_summary")
+  let forged = @utf8.encode(
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-verify\",\"ok\":true,\"summary\":{\"matched\":\"0\",\"modified\":\"1\",\"missing\":\"0\",\"extra\":\"0\"},\"issues\":[]}\n",
+  )
+  let bad = try {
+    let _ = @moonlibsync.parse_dir_verify_report(forged, dl)
+    false
+  } catch {
+    @moonlibsync.ManifestError::BindingMismatch("verify_summary") => true
+    _ => false
+  }
+  assert_true(bad)
+}

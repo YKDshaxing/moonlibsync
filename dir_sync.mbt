@@ -1227,3 +1227,391 @@ pub fn parse_dir_bundle_manifest(
   validate_dir_bundle_manifest(bundle, dir_limits, limits)
   bundle
 }
+
+///|
+fn split_posix_path(path : String) -> Array[String] {
+  let parts : Array[String] = []
+  let cur = StringBuilder()
+  for c in path {
+    if c == '/' {
+      parts.push(cur.to_string())
+      cur.reset()
+    } else {
+      cur.write_char(c)
+    }
+  }
+  parts.push(cur.to_string())
+  parts
+}
+
+///|
+fn validate_exclude_pattern(pattern : String) -> Unit raise ManifestError {
+  let utf8_len = @utf8.encode(pattern).length()
+  guard utf8_len > 0 && utf8_len <= 256 else {
+    raise ManifestError::Core(InvalidOptions("exclude"))
+  }
+  guard !pattern.has_prefix("/") &&
+    !pattern.has_suffix("/") &&
+    !pattern.contains("//") &&
+    !pattern.contains("\\") &&
+    !pattern.contains(":") else {
+    raise ManifestError::Core(InvalidOptions("exclude"))
+  }
+  for c in pattern {
+    let code = c.to_int()
+    guard code >= 32 && code != 127 else {
+      raise ManifestError::Core(InvalidOptions("exclude"))
+    }
+  }
+  for seg in split_posix_path(pattern) {
+    guard seg.length() > 0 && seg != "." && seg != ".." else {
+      raise ManifestError::Core(InvalidOptions("exclude"))
+    }
+  }
+}
+
+///|
+/// Iterative bounded single-segment glob matcher supporting `*` and `?`
+/// without recursion or exponential backtracking.
+fn glob_match_segment(text : String, pat : String) -> Bool {
+  let t = text.to_array()
+  let p = pat.to_array()
+  let mut ti = 0
+  let mut pi = 0
+  let mut star_pi = -1
+  let mut star_ti = 0
+  while ti < t.length() {
+    if pi < p.length() && (p[pi] == '?' || p[pi] == t[ti]) {
+      ti = ti + 1
+      pi = pi + 1
+    } else if pi < p.length() && p[pi] == '*' {
+      star_pi = pi
+      star_ti = ti
+      pi = pi + 1
+    } else if star_pi >= 0 {
+      pi = star_pi + 1
+      star_ti = star_ti + 1
+      ti = star_ti
+    } else {
+      return false
+    }
+  }
+  while pi < p.length() && p[pi] == '*' {
+    pi = pi + 1
+  }
+  pi == p.length()
+}
+
+///|
+/// Match a POSIX relative path against an exclude pattern.
+/// Single-segment patterns (for example `.git`, `node_modules`, `*.log`) match
+/// any segment along `rel_posix`; multi-segment patterns (for example `dist/*`)
+/// match prefix segments from the root. Rejects invalid patterns with
+/// `ManifestError::Core(InvalidOptions("exclude"))`.
+pub fn match_dir_exclude(
+  rel_posix : String,
+  pattern : String,
+) -> Bool raise ManifestError {
+  validate_exclude_pattern(pattern)
+  guard rel_posix.length() > 0 else { return false }
+  let rsegs = split_posix_path(rel_posix)
+  let psegs = split_posix_path(pattern)
+  if psegs.length() == 1 {
+    let p = psegs[0]
+    for seg in rsegs {
+      if glob_match_segment(seg, p) {
+        return true
+      }
+    }
+    false
+  } else {
+    if rsegs.length() < psegs.length() {
+      return false
+    }
+    for i in 0..<psegs.length() {
+      if !glob_match_segment(rsegs[i], psegs[i]) {
+        return false
+      }
+    }
+    true
+  }
+}
+
+///|
+/// Mismatch category reported by `verify_dir_snapshot`.
+pub(all) enum DirVerifyDiffKind {
+  Modified
+  Missing
+  Extra
+}
+
+///|
+pub(all) struct DirVerifyIssue {
+  path : String
+  kind : DirVerifyDiffKind
+  expected : FileDigest?
+  actual : FileDigest?
+}
+
+///|
+/// Deterministic Schema 3 directory verification report comparing an expected
+/// snapshot against an observed snapshot.
+pub(all) struct DirVerifyReport {
+  ok : Bool
+  matched_count : Int64
+  modified_count : Int64
+  missing_count : Int64
+  extra_count : Int64
+  issues : Array[DirVerifyIssue]
+}
+
+///|
+fn validate_dir_verify_report(
+  report : DirVerifyReport,
+  limits : DirLimits,
+) -> Unit raise ManifestError {
+  limits.validate()
+  guard report.matched_count >= 0L && report.matched_count <= limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  guard report.issues.length().to_int64() <= limits.max_entries * 2L else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let seen_lower : Map[String, String] = Map([])
+  let mut modified = 0L
+  let mut missing = 0L
+  let mut extra = 0L
+  for i in 0..<report.issues.length() {
+    let item = report.issues[i]
+    validate_dir_path(item.path, limits)
+    let lower = ascii_lower(item.path)
+    guard !seen_lower.contains(lower) else {
+      raise ManifestError::InvalidField("path_collision")
+    }
+    seen_lower[lower] = item.path
+    if i > 0 {
+      guard lexical_path_compare(report.issues[i - 1].path, item.path) < 0 else {
+        raise ManifestError::InvalidField("path_order")
+      }
+    }
+    match item.kind {
+      Modified => {
+        guard item.expected is Some(e) && item.actual is Some(a) else {
+          raise ManifestError::InvalidField("issue")
+        }
+        validate_file_digest(e, 0L, limits.max_file_bytes, "expected")
+        validate_file_digest(a, 0L, limits.max_file_bytes, "actual")
+        guard !same_digest(e, a) else {
+          raise ManifestError::BindingMismatch("verify_digest")
+        }
+        modified = modified + 1L
+      }
+      Missing => {
+        guard item.expected is Some(e) && item.actual is None else {
+          raise ManifestError::InvalidField("issue")
+        }
+        validate_file_digest(e, 0L, limits.max_file_bytes, "expected")
+        missing = missing + 1L
+      }
+      Extra => {
+        guard item.expected is None && item.actual is Some(a) else {
+          raise ManifestError::InvalidField("issue")
+        }
+        validate_file_digest(a, 0L, limits.max_file_bytes, "actual")
+        extra = extra + 1L
+      }
+    }
+  }
+  let expected_ok = modified == 0L && missing == 0L && extra == 0L
+  guard report.ok == expected_ok &&
+    report.modified_count == modified &&
+    report.missing_count == missing &&
+    report.extra_count == extra else {
+    raise ManifestError::BindingMismatch("verify_summary")
+  }
+}
+
+///|
+/// Compare an observed directory snapshot (`actual`) against an expected
+/// snapshot (`expected`) in deterministic sorted order.
+pub fn verify_dir_snapshot(
+  expected : DirSnapshot,
+  actual : DirSnapshot,
+  limits : DirLimits,
+) -> DirVerifyReport raise ManifestError {
+  let plan = plan_dir_sync(expected, actual, limits)
+  let issues : Array[DirVerifyIssue] = []
+  let mut matched_count = 0L
+  let mut modified_count = 0L
+  let mut missing_count = 0L
+  let mut extra_count = 0L
+  for act in plan.actions {
+    match act.kind {
+      Unchanged => matched_count = matched_count + 1L
+      UpdateCandidate => {
+        issues.push({
+          path: act.path,
+          kind: Modified,
+          expected: act.basis,
+          actual: act.target,
+        })
+        modified_count = modified_count + 1L
+      }
+      Delete => {
+        issues.push({
+          path: act.path,
+          kind: Missing,
+          expected: act.basis,
+          actual: None,
+        })
+        missing_count = missing_count + 1L
+      }
+      AddFull => {
+        issues.push({
+          path: act.path,
+          kind: Extra,
+          expected: None,
+          actual: act.target,
+        })
+        extra_count = extra_count + 1L
+      }
+    }
+  }
+  {
+    ok: issues.length() == 0,
+    matched_count,
+    modified_count,
+    missing_count,
+    extra_count,
+    issues,
+  }
+}
+
+///|
+fn verify_kind_label(kind : DirVerifyDiffKind) -> String {
+  match kind {
+    Modified => "modified"
+    Missing => "missing"
+    Extra => "extra"
+  }
+}
+
+///|
+/// Revalidate and deterministically encode a Schema 3 `moonlibsync-dir-verify` JSON document.
+pub fn encode_dir_verify_report(
+  report : DirVerifyReport,
+  limits : DirLimits,
+) -> Bytes raise ManifestError {
+  validate_dir_verify_report(report, limits)
+  let out = StringBuilder()
+  out.write_string(
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-verify\",\"ok\":\{report.ok},\"summary\":{\"matched\":\"\{report.matched_count}\",\"modified\":\"\{report.modified_count}\",\"missing\":\"\{report.missing_count}\",\"extra\":\"\{report.extra_count}\"},\"issues\":[",
+  )
+  for i in 0..<report.issues.length() {
+    if i > 0 {
+      out.write_char(',')
+    }
+    let item = report.issues[i]
+    out.write_string(
+      "{\"path\":\"\{json_escape_string(item.path)}\",\"kind\":\"\{verify_kind_label(item.kind)}\"",
+    )
+    match item.expected {
+      Some(e) => out.write_string(",\"expected\":\{file_digest_json(e)}")
+      None => ()
+    }
+    match item.actual {
+      Some(a) => out.write_string(",\"actual\":\{file_digest_json(a)}")
+      None => ()
+    }
+    out.write_char('}')
+  }
+  out.write_string("]}\n")
+  let encoded = @utf8.encode(out.to_string())
+  guard encoded.length().to_int64() <= plan_json_budget(limits) else {
+    raise ManifestError::ResourceLimit("verify_bytes")
+  }
+  encoded
+}
+
+///|
+/// Parse and strictly validate a Schema 3 `moonlibsync-dir-verify` JSON document.
+pub fn parse_dir_verify_report(
+  input : Bytes,
+  limits : DirLimits,
+) -> DirVerifyReport raise ManifestError {
+  limits.validate()
+  let tree = dir_json_tree(input, plan_json_budget(limits), "verify_bytes", 4)
+  let fields = manifest_object(tree, [
+    "schema_version", "kind", "ok", "summary", "issues",
+  ])
+  dir_schema3_header(fields, "moonlibsync-dir-verify")
+  let ok = match manifest_get(fields, "ok") {
+    @json.Json::True => true
+    @json.Json::False => false
+    _ => raise ManifestError::InvalidSchema
+  }
+  let sum_fields = manifest_object(manifest_get(fields, "summary"), [
+    "matched", "modified", "missing", "extra",
+  ])
+  let matched_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "matched"), "matched"),
+  )
+  let modified_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "modified"), "modified"),
+  )
+  let missing_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "missing"), "missing"),
+  )
+  let extra_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "extra"), "extra"),
+  )
+  guard manifest_get(fields, "issues") is @json.Json::Array(raw_issues) else {
+    raise ManifestError::InvalidSchema
+  }
+  guard raw_issues.length().to_int64() <= limits.max_entries * 2L else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let issues : Array[DirVerifyIssue] = Array(capacity=raw_issues.length())
+  for item in raw_issues {
+    guard item is @json.Json::Object(obj) else {
+      raise ManifestError::InvalidSchema
+    }
+    let kind_str = manifest_string(manifest_get(obj, "kind"), "kind")
+    let path = manifest_string(manifest_get(obj, "path"), "path")
+    let (kind, expected, actual) = if kind_str == "modified" {
+      let f = manifest_object(item, ["path", "kind", "expected", "actual"])
+      (
+        DirVerifyDiffKind::Modified,
+        Some(parse_file_digest(manifest_get(f, "expected"))),
+        Some(parse_file_digest(manifest_get(f, "actual"))),
+      )
+    } else if kind_str == "missing" {
+      let f = manifest_object(item, ["path", "kind", "expected"])
+      (
+        DirVerifyDiffKind::Missing,
+        Some(parse_file_digest(manifest_get(f, "expected"))),
+        None,
+      )
+    } else if kind_str == "extra" {
+      let f = manifest_object(item, ["path", "kind", "actual"])
+      (
+        DirVerifyDiffKind::Extra,
+        None,
+        Some(parse_file_digest(manifest_get(f, "actual"))),
+      )
+    } else {
+      raise ManifestError::InvalidSchema
+    }
+    issues.push({ path, kind, expected, actual, })
+  }
+  let report : DirVerifyReport = {
+    ok,
+    matched_count,
+    modified_count,
+    missing_count,
+    extra_count,
+    issues,
+  }
+  validate_dir_verify_report(report, limits)
+  report
+}
