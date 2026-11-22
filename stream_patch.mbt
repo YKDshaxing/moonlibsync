@@ -30,16 +30,27 @@ priv enum PatchStreamState {
   InLiteral(UInt64)
   NeedCopyOffset(Int32, Int32, Int32)
   NeedCopyLen(UInt64, Int32, Int32)
+  InCopy(UInt64, UInt64)
   SawEnd
 }
 
 ///|
-/// Incremental standard 0x72730236 delta applier.
-/// Streams literals without buffering and executes COPY spans via `BasisReader`
-/// in <= 64 KiB chunks after UInt64 range validation. Callers writing to disk
-/// must write to an isolated temporary file and commit only after `finish()`
-/// (and whole-file integrity verification, if applicable) succeeds.
-pub struct PatchApplier {
+/// Sans-IO output step yielded by `PatchDecoder::step`.
+pub(all) enum PatchStep {
+  /// The supplied delta slice has been completely consumed; feed more delta bytes
+  /// or call `finish()` at EOF.
+  NeedInput
+  /// Direct zero-copy view into literal bytes within the supplied delta slice.
+  EmitLiteral(BytesView)
+  /// Validated COPY request `(offset, len)` with `1 <= len <= 65536`.
+  CopyBasis(UInt64, Int32)
+}
+
+///|
+/// Sans-IO incremental standard 0x72730236 delta decoder usable from both
+/// synchronous code and async I/O loops (Native `async/fs`, browser `File`/`Blob`).
+/// Enforces all Limits and UInt64 basis range checks before emitting COPY steps.
+pub struct PatchDecoder {
   priv basis_len : UInt64
   priv limits : Limits
   priv mut state : PatchStreamState
@@ -56,6 +67,16 @@ pub struct PatchApplier {
 }
 
 ///|
+/// Incremental standard 0x72730236 delta applier.
+/// Streams literals without buffering and executes COPY spans via `BasisReader`
+/// in <= 64 KiB chunks after UInt64 range validation. Callers writing to disk
+/// must write to an isolated temporary file and commit only after `finish()`
+/// (and whole-file integrity verification, if applicable) succeeds.
+pub struct PatchApplier {
+  priv decoder : PatchDecoder
+}
+
+///|
 fn decode_param_be(buf : FixedArray[Byte], width : Int32) -> UInt64 {
   let mut value = 0UL
   for i in 0..<width {
@@ -65,12 +86,12 @@ fn decode_param_be(buf : FixedArray[Byte], width : Int32) -> UInt64 {
 }
 
 ///|
-/// Initialize an incremental patch applier against a basis of `basis_len` bytes.
+/// Initialize a Sans-IO delta decoder against a basis of `basis_len` bytes.
 /// Validates all Limits, non-negative `basis_len`, and `max_old_bytes`.
-pub fn PatchApplier::new(
+pub fn PatchDecoder::new(
   basis_len : Int64,
   limits : Limits,
-) -> PatchApplier raise SyncError {
+) -> PatchDecoder raise SyncError {
   limits.validate()
   guard basis_len >= 0L else { raise InvalidOptions("basis_len") }
   guard basis_len <= limits.max_old_bytes else { raise LimitExceeded }
@@ -92,8 +113,27 @@ pub fn PatchApplier::new(
 }
 
 ///|
-fn PatchApplier::begin_literal(
-  self : PatchApplier,
+/// Whether an active COPY command still has remaining chunks to yield via `step`.
+pub fn PatchDecoder::has_pending_copy(self : PatchDecoder) -> Bool {
+  self.state is InCopy(_, _)
+}
+
+///|
+fn PatchDecoder::consume_delta(
+  self : PatchDecoder,
+  count : Int32,
+) -> Unit raise SyncError {
+  let inc = count.to_uint64()
+  let max_delta = self.limits.max_delta_bytes.reinterpret_as_uint64()
+  guard self.delta_bytes <= max_delta && inc <= max_delta - self.delta_bytes else {
+    raise LimitExceeded
+  }
+  self.delta_bytes = self.delta_bytes + inc
+}
+
+///|
+fn PatchDecoder::begin_literal(
+  self : PatchDecoder,
   len : UInt64,
 ) -> Unit raise SyncError {
   guard len > 0UL else { raise InvalidDelta }
@@ -111,13 +151,11 @@ fn PatchApplier::begin_literal(
 }
 
 ///|
-fn[R : BasisReader] PatchApplier::execute_copy(
-  self : PatchApplier,
+fn PatchDecoder::begin_copy(
+  self : PatchDecoder,
   offset : UInt64,
   length : UInt64,
-  basis : R,
-  on_output : (BytesView) -> Unit raise SyncError,
-) -> Unit raise SyncError {
+) -> (UInt64, Int32) raise SyncError {
   guard length > 0UL else { raise InvalidDelta }
   guard self.instruction_count < self.limits.max_instructions else {
     raise LimitExceeded
@@ -128,47 +166,47 @@ fn[R : BasisReader] PatchApplier::execute_copy(
   guard offset <= self.basis_len && length <= self.basis_len - offset else {
     raise CopyOutOfBounds
   }
-  let mut cur = offset
-  let mut rem = length
-  while rem > 0UL {
-    let take = if rem < 65536UL { rem.to_int() } else { 65536 }
-    let chunk = basis.read_at(cur, take)
-    guard chunk.length() == take else { raise TruncatedInput }
-    on_output(chunk[:])
-    cur = cur + take.to_uint64()
-    rem = rem - take.to_uint64()
-  }
   self.instruction_count = self.instruction_count + 1L
   self.copy_commands = self.copy_commands + 1L
   self.copy_bytes = next_copy
   self.output_bytes = next_total
-  self.state = NeedOpcode
+  let first_u64 = if length < 65536UL { length } else { 65536UL }
+  let rem = length - first_u64
+  self.state = if rem == 0UL {
+    NeedOpcode
+  } else {
+    InCopy(offset + first_u64, rem)
+  }
+  (offset, first_u64.to_int())
 }
 
 ///|
-/// Feed an arbitrary delta chunk (including 1-byte splits across headers or
-/// parameters). Streams decoded output slices to `on_output`.
-pub fn[R : BasisReader] PatchApplier::feed(
-  self : PatchApplier,
+/// Advance the decoder over `delta_chunk`, returning `(consumed, step)`.
+/// Callers should loop while `pos < chunk.length() || decoder.has_pending_copy()`,
+/// advancing `pos = pos + consumed` after handling each `PatchStep`.
+pub fn PatchDecoder::step(
+  self : PatchDecoder,
   delta_chunk : BytesView,
-  basis : R,
-  on_output : (BytesView) -> Unit raise SyncError,
-) -> Unit raise SyncError {
+) -> (Int32, PatchStep) raise SyncError {
   guard !self.closed else { raise InvalidOptions("stream_finished") }
   guard !self.failed else { raise InvalidOptions("stream_failed") }
   errdefer {
     self.failed = true
   }
-  let incoming = delta_chunk.length().to_uint64()
-  let max_delta = self.limits.max_delta_bytes.reinterpret_as_uint64()
-  guard self.delta_bytes <= max_delta &&
-    incoming <= max_delta - self.delta_bytes else {
-    raise LimitExceeded
+  match self.state {
+    InCopy(cur, rem) => {
+      let take_u64 = if rem < 65536UL { rem } else { 65536UL }
+      let take = take_u64.to_int()
+      let left = rem - take_u64
+      self.state = if left == 0UL {
+        NeedOpcode
+      } else {
+        InCopy(cur + take_u64, left)
+      }
+      return (0, CopyBasis(cur, take))
+    }
+    _ => ()
   }
-  if delta_chunk.length() == 0 {
-    return
-  }
-  self.delta_bytes = self.delta_bytes + incoming
   let mut pos = 0
   while pos < delta_chunk.length() {
     match self.state {
@@ -176,6 +214,7 @@ pub fn[R : BasisReader] PatchApplier::feed(
         let need = 4 - have
         let avail = delta_chunk.length() - pos
         let take = if avail < need { avail } else { need }
+        self.consume_delta(take)
         for i in 0..<take {
           self.param_buf[have + i] = delta_chunk[pos + i]
         }
@@ -189,8 +228,12 @@ pub fn[R : BasisReader] PatchApplier::feed(
           self.state = NeedMagic(next_have)
         }
       }
-      SawEnd => raise TrailingData
+      SawEnd => {
+        self.consume_delta(1)
+        raise TrailingData
+      }
       NeedOpcode => {
+        self.consume_delta(1)
         let opcode = delta_chunk[pos].to_int()
         pos = pos + 1
         if opcode == 0 {
@@ -212,6 +255,7 @@ pub fn[R : BasisReader] PatchApplier::feed(
         let need = width - have
         let avail = delta_chunk.length() - pos
         let take = if avail < need { avail } else { need }
+        self.consume_delta(take)
         for i in 0..<take {
           self.param_buf[have + i] = delta_chunk[pos + i]
         }
@@ -226,17 +270,21 @@ pub fn[R : BasisReader] PatchApplier::feed(
       }
       InLiteral(remaining) => {
         let avail = (delta_chunk.length() - pos).to_uint64()
-        let take_u64 = if avail < remaining { avail } else { remaining }
+        let max_step = if remaining < 65536UL { remaining } else { 65536UL }
+        let take_u64 = if avail < max_step { avail } else { max_step }
         let take = take_u64.to_int()
-        on_output(delta_chunk[pos:pos + take])
+        self.consume_delta(take)
+        let view = delta_chunk[pos:pos + take]
         pos = pos + take
         let left = remaining - take_u64
         self.state = if left == 0UL { NeedOpcode } else { InLiteral(left) }
+        return (pos, EmitLiteral(view))
       }
       NeedCopyOffset(ow, lw, have) => {
         let need = ow - have
         let avail = delta_chunk.length() - pos
         let take = if avail < need { avail } else { need }
+        self.consume_delta(take)
         for i in 0..<take {
           self.param_buf[have + i] = delta_chunk[pos + i]
         }
@@ -253,6 +301,7 @@ pub fn[R : BasisReader] PatchApplier::feed(
         let need = lw - have
         let avail = delta_chunk.length() - pos
         let take = if avail < need { avail } else { need }
+        self.consume_delta(take)
         for i in 0..<take {
           self.param_buf[have + i] = delta_chunk[pos + i]
         }
@@ -260,20 +309,23 @@ pub fn[R : BasisReader] PatchApplier::feed(
         let next_have = have + take
         if next_have == lw {
           let length = decode_param_be(self.param_buf, lw)
-          self.execute_copy(offset, length, basis, on_output)
+          let (off, chunk_len) = self.begin_copy(offset, length)
+          return (pos, CopyBasis(off, chunk_len))
         } else {
           self.state = NeedCopyLen(offset, lw, next_have)
         }
       }
+      InCopy(_, _) => abort("unreachable pending copy in delta loop")
     }
   }
+  (pos, NeedInput)
 }
 
 ///|
-/// Verify END was reached with complete instructions, close the stream, and
+/// Verify END was reached with complete instructions, close the decoder, and
 /// return exact DeltaSummary statistics.
-pub fn PatchApplier::finish(
-  self : PatchApplier,
+pub fn PatchDecoder::finish(
+  self : PatchDecoder,
 ) -> DeltaSummary raise SyncError {
   guard !self.closed else { raise InvalidOptions("stream_finished") }
   guard !self.failed else { raise InvalidOptions("stream_failed") }
@@ -291,4 +343,62 @@ pub fn PatchApplier::finish(
     copy_bytes: self.copy_bytes.reinterpret_as_int64(),
     output_bytes: self.output_bytes.reinterpret_as_int64(),
   }
+}
+
+///|
+/// Initialize an incremental patch applier against a basis of `basis_len` bytes.
+/// Validates all Limits, non-negative `basis_len`, and `max_old_bytes`.
+pub fn PatchApplier::new(
+  basis_len : Int64,
+  limits : Limits,
+) -> PatchApplier raise SyncError {
+  { decoder: PatchDecoder::new(basis_len, limits), }
+}
+
+///|
+/// Feed an arbitrary delta chunk (including 1-byte splits across headers or
+/// parameters). Streams decoded output slices to `on_output`.
+pub fn[R : BasisReader] PatchApplier::feed(
+  self : PatchApplier,
+  delta_chunk : BytesView,
+  basis : R,
+  on_output : (BytesView) -> Unit raise SyncError,
+) -> Unit raise SyncError {
+  guard !self.decoder.closed else { raise InvalidOptions("stream_finished") }
+  guard !self.decoder.failed else { raise InvalidOptions("stream_failed") }
+  errdefer {
+    self.decoder.failed = true
+  }
+  let incoming = delta_chunk.length().to_uint64()
+  let max_delta = self.decoder.limits.max_delta_bytes.reinterpret_as_uint64()
+  guard self.decoder.delta_bytes <= max_delta &&
+    incoming <= max_delta - self.decoder.delta_bytes else {
+    raise LimitExceeded
+  }
+  if delta_chunk.length() == 0 && !self.decoder.has_pending_copy() {
+    return
+  }
+  let mut pos = 0
+  while pos < delta_chunk.length() || self.decoder.has_pending_copy() {
+    let (consumed, step) = self.decoder.step(delta_chunk[pos:])
+    pos = pos + consumed
+    match step {
+      NeedInput => ()
+      EmitLiteral(view) => on_output(view)
+      CopyBasis(offset, len) => {
+        let chunk = basis.read_at(offset, len)
+        guard chunk.length() == len else { raise TruncatedInput }
+        on_output(chunk[:])
+      }
+    }
+  }
+}
+
+///|
+/// Verify END was reached with complete instructions, close the stream, and
+/// return exact DeltaSummary statistics.
+pub fn PatchApplier::finish(
+  self : PatchApplier,
+) -> DeltaSummary raise SyncError {
+  self.decoder.finish()
 }
