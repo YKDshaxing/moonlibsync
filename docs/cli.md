@@ -1,3 +1,30 @@
+# MoonLibSync 0.5.0 Native 单文件 CLI 手册
+
+0.5.0 保留 0.4.0 全部 19 条子命令、参数语法、schema 1/2/3 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并新增四项关键能力（总计 **20 条子命令**）：
+
+1. **单文件确定性目录归档容器（`--archive` / `--archive --gzip`，`MLSBDL01` `.mbundle` / `.mbundle.gz`）**：
+   - `moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR OUT_ARCHIVE --archive [--gzip] [--exclude PATTERN]... [--streaming] [--progress] [--min-savings N] [LIMITS] [DIR_LIMITS]`：将 `DirBundleManifest` 与全部 payload 按确定性字典序封装为单一 `.mbundle` 文件（或加 `--gzip` 生成标准 RFC 1952 `.mbundle.gz` 单流文件），通过临时文件 `sync` + `rename(replace=false)` 原子发布。
+   - `moonlibsync dir-apply BASIS_DIR BUNDLE_ARCHIVE OUT_DIR --archive [--gzip] [--streaming] [--progress] [LIMITS] [DIR_LIMITS]`：使用纯核心 Sans-IO `BundleArchiveDecoder`（配合有界 `GzipDecoder`）校验并逐文件恢复全新 `OUT_DIR`，绝不覆写已有目录、绝不改动 `BASIS_DIR`；`--gzip` 须与 `--archive` 同用（单独传 `--gzip` 退出码 `2`）。
+
+2. **目录完整性巡检（`dir-verify`）与前置目录剪枝过滤（`--exclude PATTERN`）**：
+   - `moonlibsync dir-verify DIR SNAPSHOT [--json] [--exclude PATTERN]... [DIR_LIMITS]`：纯只读扫描目录并与预期 Schema 3 快照逐文件比对长度及 SHA-256；完全一致返回退出码 `0`（`ok: true`），存在任何 `missing` / `extra` / `modified` 项返回退出码 `1` 并输出完整 Schema 3 `moonlibsync-dir-verify` 报告（支持 `--json` 或人类可读摘要）。
+   - `dir-snapshot`、`dir-pack` 与 `dir-verify` 支持可重复传入 `--exclude PATTERN`（POSIX glob：`*`、`?`、目录名或相对路径），在进入匹配目录前即剪枝跳过（不会遍历 `.git` / `node_modules` 内部或因其中符号链接失败）。
+
+3. **stderr 节流实时进度条（`--progress`，零 stdout 污染）**：
+   - 支持全部 15 条流式/传输子命令（`signature`、`delta`、`patch`、`basis-info`、`make-manifest`、`patch-verified`、`inspect-delta`、`check-patch`、`make-transfer-manifest`、`apply-update`、`compress`、`decompress`、`dir-signatures`、`dir-pack`、`dir-apply`）。
+   - 按 `@async.now()` 约 150 ms 节流仅向 `stderr` 输出 `[moonlibsync] <phase> <done>/<total> B (<pct>%) | <rate> MiB/s | ETA <sec>s`，严格保证 `stdout` 零污染（可安全搭配 `--json` 管道）。
+
+```text
+moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR OUT --archive [--gzip] [--exclude PATTERN]... [--streaming] [--progress] [LIMITS] [DIR_LIMITS]
+moonlibsync dir-apply BASIS_DIR IN OUT_DIR --archive [--gzip] [--streaming] [--progress] [LIMITS] [DIR_LIMITS]
+moonlibsync dir-verify DIR SNAPSHOT [--json] [--exclude PATTERN]... [DIR_LIMITS]
+moonlibsync dir-snapshot DIR OUT [--exclude PATTERN]... [DIR_LIMITS]
+```
+
+以下保留 0.4.0 及历史各阶段详细契约与测试证据。
+
+---
+
 # MoonLibSync 0.4.0 Native 单文件 CLI 手册
 
 0.4.0 保留 0.3.x 全部 12 条命令、参数语法、schema 1/schema 2 输出格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并补齐大文件全链路 `--streaming`、有界 Gzip 压缩封装与完整目录级增量同步闭环（总计 **19 条子命令**）：

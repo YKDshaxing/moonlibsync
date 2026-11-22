@@ -4,6 +4,30 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-22
+
+### Added
+- **Deterministic Single-File Directory Bundle Archive (`MLSBDL01` `.mbundle` & optional `.mbundle.gz`, `bundle_archive.mbt`)**:
+  - Pure zero-IO binary container format (`MLSBDL01` magic + big-endian `u32` manifest length + canonical Schema 3 `DirBundleManifest` JSON + payload stream in strict manifest order with `u16` path length + UTF-8 path + `u64` payload length + payload bytes) targeting `native`, `js`, and `wasm-gc` with zero new third-party dependencies and keeping root `YKDshaxing/moonlibsync` free of `allow-experimental-packages`.
+  - Exposes one-shot `encode_bundle_archive` / `parse_bundle_archive` plus streaming Sans-IO `BundleArchiveDecoder` (`new`, `has_pending_event`, `step -> (Int32, BundleArchiveStep)`, `finish`) and `encode_bundle_archive_preamble` / `encode_bundle_payload_header`.
+  - Native CLI `dir-pack` and `dir-apply` add `--archive` (single `.mbundle` file) and `--archive --gzip` (single RFC 1952 `.mbundle.gz` stream with bounded zip-bomb protection) using atomic no-overwrite publication and zero modification of `BASIS_DIR`.
+- **Directory Verification (`dir-verify`) & Pre-Descent `--exclude` Glob Filtering (`dir_sync.mbt`, `cmd/moonlibsync/dir.mbt`)**:
+  - Added pure zero-IO `match_dir_exclude`, `DirVerifyDiffKind`, `DirVerifyIssue`, `DirVerifyReport`, `verify_dir_snapshot`, `encode_dir_verify_report`, and `parse_dir_verify_report` (Schema 3 `kind: "moonlibsync-dir-verify"`).
+  - Added Native CLI subcommand `moonlibsync dir-verify DIR SNAPSHOT [--json] [--exclude PATTERN]... [DIR_LIMITS]` (total **20** CLI subcommands): exits `0` when directory matches snapshot bit-for-bit (`ok: true`), exits `1` on any missing/extra/modified file while still emitting the structured report (`--json` or human text).
+  - Added repeatable `--exclude PATTERN` on `dir-snapshot`, `dir-pack`, and `dir-verify`, pruning matched directories (e.g. `.git`, `node_modules`) before descending so excluded symlinks or build artifacts never block scanning.
+- **Throttled Live CLI Progress (`--progress`, `cmd/moonlibsync/progress.mbt`)**:
+  - Added opt-in `--progress` across all 15 streaming/transfer commands, writing throttled (~150 ms via `@async.now()`) byte/percentage/MiB/s/ETA lines exclusively to `stderr` (`[moonlibsync] <phase> ...`) with guaranteed `0`-byte `stdout` pollution (even when paired with `--json`).
+  - Real Windows Native `--release` acceptance run on a **128 MiB** (`134,217,728`-byte) pair: `signature --streaming --progress --block-size auto` (`1.259 s`, `104.48 MiB/s`, `18,444` B), `delta --streaming --progress` (`1.674 s`, `77.71 MiB/s`, `1,048,703` B), `patch --streaming --progress` (`0.463 s`, bit-exact SHA-256), plus `dir-pack --archive --gzip --exclude` (`0.054 s`, `950` B `.mbundle.gz` from `4,259` B `MLSBDL01`) -> `dir-apply --archive --gzip` (`0.090 s`) -> `dir-verify --json` (clean pass & 1-byte tamper detection).
+- **Interactive 5-Tab Pure-JS Web Demo Studio (`examples/web-demo/`)**:
+  - Expanded MoonBit JS ESM bundle to **17** exported functions (`inspect_delta_detailed_json`, `inspect_artifact_json`, `benchmark_block_sizes_json`, `verify_dir_snapshots_json`, `filter_dir_entries_json`, `apply_verified_patch_json`, `apply_patch_or_gzip_bytes`).
+  - Added **Interactive Delta Block Reuse Heatmap** (`COPY` emerald / `Literal` amber with clickable instruction inspector), **Multi-Block-Size Benchmark Chart** (`auto` vs `256` / `512` / `2048` / `4096`), **Split-Role Online `rdiff` Tools** (`.sig` / `.delta`+`.delta.gz` / auto-gunzip + optional Schema 1/2 manifest verified `patch`), **Universal Artifact Inspector** (`.sig`, `.delta`, `.delta.gz`, `.mbundle`, Schema 1/2/3 JSON), and **`dir-verify` & `--exclude` mode** in the Directory tab — plus aligned `36px` bilingual header buttons in both Chinese and English, Light and Dark mode.
+- **Standalone Zero-Dependency Typed JS/TS SDK (`js/`, `@ykdshaxing/moonlibsync@0.5.0`)**:
+  - Added universal Node.js + Browser ES module wrapper (`js/index.js`), strict zero-`any` TypeScript definitions (`js/index.d.ts`), release bundle builder (`js/build-dist.mjs`), package metadata (`js/package.json`), standalone documentation (`js/README.md`), and end-to-end test suite (`js/test-sdk.mjs`) wired into `scripts/check.py` and `scripts/release_check.py`.
+- **Verification**: 4 new core test suites (`bundle_archive_test.mbt` + `dir_sync_test.mbt` -> **224 tests × 3 targets**), 3 cross-target compression tests (**3 tests × 3 targets**), 4 new Native CLI unit tests (`cmd/moonlibsync/v050_wbtest.mbt` -> **36 total**), and 56 new CLI integration cases (`scripts/cli_v050_cases.py` -> **529** total in `scripts/cli_smoke.py`).
+
+### Compatibility
+- 100% backward-compatible with `0.3.x` / `0.4.0` public APIs, `librsync` (`0x72730147` / `0x72730236`) wire interoperability, schema 1/2/3 manifests, `Limits::default()`, `MatchWork` v2 accounting, and CLI no-overwrite atomic commits. Protected `_build/release-0.4.0` evidence as read-only in `scripts/release_check.py`.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added

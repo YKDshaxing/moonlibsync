@@ -1,5 +1,10 @@
 # 来源与固定版本
 
+## 0.5.0 增量说明
+
+- `bundle_archive.mbt`（`MLSBDL01` 确定性目录归档容器与 Sans-IO `BundleArchiveDecoder`）、`dir_sync.mbt` 新增的 `match_dir_exclude` 与 Schema 3 `verify_dir_snapshot` / `DirVerifyReport`、`cmd/moonlibsync/progress.mbt`（基于锁定标准库 `@async.now()` 的 stderr 节流进度条）、`examples/web-demo/` 5 标签页工作台扩展，以及 `js/` 零运行时依赖 ES Module / TypeScript SDK（`@ykdshaxing/moonlibsync`）均为本项目原创 LGPL-2.1-or-later 代码。
+- 未引入任何新的第三方 Mooncakes 依赖、npm 运行时依赖或 C FFI；根包 `YKDshaxing/moonlibsync` 保持零 `allow-experimental-packages`，`dependencies.lock.json` 与 `toolchain.lock.json` 均保持不变。
+
 ## 0.4.0 增量说明
 
 - `PatchDecoder` / `PatchStep`（`stream_patch.mbt`）、`Sha256Hasher`（`sha256.mbt`）、`dir_sync.mbt`、`cmd/moonlibsync/streaming.mbt`、`cmd/moonlibsync/dir.mbt` 与 `examples/web-demo/` 均为本项目原创 LGPL-2.1-or-later 代码，无任何新增第三方依赖、C FFI 或前端构建依赖。

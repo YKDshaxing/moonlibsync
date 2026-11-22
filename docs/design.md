@@ -1,3 +1,16 @@
+# MoonLibSync 0.5.0：设计与使用
+
+0.5.0 在 100% 保持 `0.3.x` / `0.4.0` 公开 API、CLI 命令与退出码、Schema 1/2/3 清单、标准 `librsync` (`0x72730147` / `0x72730236`) 互操作、`Limits::default()` 及根包零 `allow-experimental-packages` 的前提下，新增六项端到端能力：
+- **单文件确定性目录归档容器 `MLSBDL01`（[bundle_archive.mbt](../bundle_archive.mbt)）**：纯零 IO 确定性容器格式（`.mbundle`），支持一次性编解码与流式 Sans-IO `BundleArchiveDecoder`，在 Native CLI `dir-pack` / `dir-apply` 中支持 `--archive` 与 `--archive --gzip`（单流 RFC 1952 `.mbundle.gz`）。
+- **目录完整性巡检与前置过滤（[dir_sync.mbt](../dir_sync.mbt)、[docs/dir-sync.md](dir-sync.md)）**：新增 `match_dir_exclude`、`verify_dir_snapshot`、`DirVerifyReport`（Schema 3 `kind: "moonlibsync-dir-verify"`）及第 20 条 CLI 子命令 `dir-verify`，并为 `dir-snapshot` / `dir-pack` / `dir-verify` 增加可重复前置剪枝 `--exclude PATTERN`。
+- **CLI stderr 节流实时进度条（[cmd/moonlibsync/progress.mbt](../cmd/moonlibsync/progress.mbt)）**：在全部 15 条流式/传输子命令上支持 `--progress`，按 `@async.now()` 约 150 ms 节流输出字节、百分比、MiB/s 与 ETA 至 `stderr`，严格保证零 `stdout` 污染。
+- **5 标签页纯 JS Web Studio 升级（[examples/web-demo/](../examples/web-demo/index.html)）**：扩展至 17 个 MoonBit JS ES Module 导出，新增 **Delta 块复用热力图**、**多块长对比图表（`auto` / `256` / `512` / `2048` / `4096`）**、**独立角色在线 `rdiff` 工具**（自动识别 `.delta.gz` + 可选 Schema 1/2 manifest 校验）、**通用产物剖析器**（`.sig` / `.delta` / `.delta.gz` / `.mbundle` / Schema 1/2/3 JSON）及目录标签页的 `dir-verify` / `--exclude` 交互，并修复中英文顶栏按钮对齐。
+- **独立零运行依赖 JS/TS SDK（[js/](../js/README.md)，`@ykdshaxing/moonlibsync`）**：提供 Node.js 与现代浏览器通用的 ES Module 封装（`js/index.js`）、严格零 `any` 类型声明（`js/index.d.ts`）、发布打包脚本（`js/build-dist.mjs`）与端到端测试（`js/test-sdk.mjs`）。
+
+下文保留 0.4.0 / 0.3.2 / 0.3.1 / 0.2.0 / 0.1.0 历史设计归属。
+
+---
+
 # MoonLibSync 0.4.0：设计与使用
 
 0.4.0 在完全保持 0.3.x 公开 API、CLI 命令与退出码、schema 1/2 清单、标准 `librsync` (`0x72730147` / `0x72730236`) 互操作与 `Limits::default()` 100% 向前兼容的前提下，实现五项主要扩展：

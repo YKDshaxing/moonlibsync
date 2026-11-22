@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="Live Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.4.0-0ea5e9" alt="Version 0.4.0"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.5.0-0ea5e9" alt="Version 0.5.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -30,14 +30,15 @@
 | --- | --- | --- |
 | **Core Binary Delta** | `signature`, `delta`, `patch` | Wire-compatible with `librsync` (`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`, delta `0x72730236`); O(1) open-addressed weak-hash lookup (`<= 0.50` load) and Pending Literal Run |
 | **Streaming & Sans-IO** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `PatchDecoder`, `Sha256Hasher` | Pure zero-IO chunked pipelines + Sans-IO step decoder (`PatchStep`) & streaming SHA-256 bridging sync `Bytes`, Native `async/fs`, and browser JS |
-| **Directory Sync & Bundles** | `DirLimits`, `DirSnapshot`, `DirSyncPlan`, `DirSignatureIndex`, `DirBundleManifest` | Schema 3 deterministic POSIX-relative snapshots, planning & remote-signature incremental bundles rejecting traversal & ASCII case collisions |
+| **Directory Sync, Bundles & Verification** | `DirSnapshot`, `DirSyncPlan`, `DirSignatureIndex`, `DirBundleManifest`, `DirVerifyReport`, `match_dir_exclude`, `BundleArchiveDecoder` | Schema 3 deterministic POSIX-relative snapshots, planning, verification (`dir-verify`), glob `--exclude`, and single-file `MLSBDL01` `.mbundle` / `.mbundle.gz` archives |
 | **Bounded Gzip Subpackage** | `YKDshaxing/moonlibsync/compress`: `compress_gzip`, `decompress_gzip`, `GzipEncoder`, `GzipDecoder` | Optional cross-target zero-IO single-member RFC 1952 gzip with zip-bomb (`LimitExceeded`) and `TrailingData` guards (root library stays non-experimental) |
 | **Inspection & Preflight** | `inspect_signature`, `inspect_delta`, `check_patch` | O(1) zero-record-allocation signature metadata inspection, delta statistics, and COPY range preflight |
 | **Reusable Prepared Index** | `prepare_signature`, `PreparedSignature::{delta, summary, plan_update}` | Parse and index a signature once; reuse across multiple targets with per-call `Limits` re-checks and independent work budgets |
 | **Auto Block Sizing** | `recommend_block_len`, `signature --block-size auto` | Explicit integer policy v1 (targeting ~512 records, power-of-two rounding, bounded by `Limits`) |
 | **Integrity Manifests** | `create/parse/encode_basis_info`, `create/parse/encode_update_manifest`, `verified_patch` | Strict bounded JSON (schema 1) binding `OLD`, `SIG`, `DELTA`, and `RESULT` via SHA-256 before returning or committing output |
 | **Transfer Planning** | `plan_update`, `create/parse/encode_transfer_manifest`, `apply_update` | Schema 2 `Delta` vs. `Full` payload selection (chooses `Delta` only when strictly smaller and meeting `min_savings_bytes`) |
-| **Native Single-File CLI** | `cmd/moonlibsync` (19 subcommands) | Bounded reads + full `--streaming` 64 KiB pipelines (> 64 MiB), `compress`/`decompress`, `dir-snapshot`/`dir-plan`/`dir-signatures`/`dir-pack`/`dir-apply`, `inspect-manifest`, `--max-*`, symlink refusal, transactional atomic commits |
+| **Native Single-File CLI** | `cmd/moonlibsync` (20 subcommands) | Bounded reads + full `--streaming` 64 KiB pipelines (> 64 MiB), `--progress` stderr meter, `compress`/`decompress`, `dir-snapshot`/`dir-plan`/`dir-signatures`/`dir-pack`/`dir-apply`/`dir-verify`, `--archive [--gzip]`, `--exclude`, `--max-*`, symlink refusal, transactional atomic commits |
+| **Zero-Dep JS/TS SDK & Web Studio** | `js/` (`@ykdshaxing/moonlibsync`) & `examples/web-demo/` | Zero-runtime-dependency Node.js + Browser ES module with strict zero-`any` TypeScript types, plus a 5-tab static Web Studio (Block Reuse Heatmap, Multi-Block-Size Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, `dir-plan`/`dir-verify`, Gzip Security Lab) |
 
 ## Quick Start
 
@@ -91,7 +92,8 @@ More runnable examples (all verified on `native`, `js`, and `wasm-gc`):
 - [examples/auto](examples/auto/main.mbt) — explicit `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` vs. `Full` transfer workflow
 - [examples/streaming](examples/streaming/main.mbt) — zero-IO streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` (plus zero-dependency JS runner: `node examples/streaming/run-node.mjs`)
-- [examples/web-demo](examples/web-demo/index.html) — zero-backend static browser UI + ES module (`node examples/web-demo/test-node.mjs --rebuild`) running pure MoonBit streaming sync & dir-plan in JS
+- [examples/web-demo](examples/web-demo/index.html) — 5-tab zero-backend static browser Studio + 17-export ES module (`node examples/web-demo/test-node.mjs --rebuild`): Delta Block Reuse Heatmap, Multi-Block-Size Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, Schema 3 `dir-plan`/`dir-verify`, and Gzip Security Lab
+- [js/README.md](js/README.md) — standalone zero-dependency typed JS/TS ES module SDK (`@ykdshaxing/moonlibsync`, verified with `node js/test-sdk.mjs`)
 
 ## Native Single-File CLI
 
@@ -122,20 +124,21 @@ moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
 moonlibsync inspect-manifest manifest.json --json
 
-# 5. End-to-end streaming 64 KiB pipeline for > 64 MiB files (explicit --max-* + --streaming + gzip)
-moonlibsync signature large-old.bin large.sig --streaming --block-size auto --max-old-bytes 200000000
+# 5. End-to-end streaming 64 KiB pipeline for > 64 MiB files (explicit --max-* + --streaming + --progress + gzip)
+moonlibsync signature large-old.bin large.sig --streaming --progress --block-size auto --max-old-bytes 200000000
 moonlibsync basis-info large-old.bin large.sig basis.json --streaming --max-old-bytes 200000000
-moonlibsync delta large.sig large-new.bin large.delta --streaming --max-new-bytes 200000000 --max-output-bytes 200000000 --max-match-work 2000000000
-moonlibsync compress large.delta large.delta.gz --streaming --max-new-bytes 200000000 --max-output-bytes 200000000
-moonlibsync decompress large.delta.gz large.delta.raw --streaming --max-delta-bytes 200000000 --max-output-bytes 200000000
+moonlibsync delta large.sig large-new.bin large.delta --streaming --progress --max-new-bytes 200000000 --max-output-bytes 200000000 --max-match-work 2000000000
+moonlibsync compress large.delta large.delta.gz --streaming --progress --max-new-bytes 200000000 --max-output-bytes 200000000
+moonlibsync decompress large.delta.gz large.delta.raw --streaming --progress --max-delta-bytes 200000000 --max-output-bytes 200000000
 moonlibsync make-transfer-manifest basis.json large.sig large-new.bin large.delta.raw transfer.json --streaming --max-old-bytes 200000000 --max-new-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
-moonlibsync apply-update large.delta.raw transfer.json restored.bin --basis large-old.bin --streaming --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
+moonlibsync apply-update large.delta.raw transfer.json restored.bin --basis large-old.bin --streaming --progress --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 
-# 6. End-to-end directory incremental bundle sync (Schema 3; sender never needs BASIS_DIR)
-moonlibsync dir-snapshot ./v1 v1.snapshot.json
-moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming
-moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./bundle --streaming
-moonlibsync dir-apply ./v1 ./bundle ./v2-restored --streaming
+# 6. End-to-end single-file directory archive sync + verification (Schema 3 + MLSBDL01 .mbundle.gz + --exclude)
+moonlibsync dir-snapshot ./v1 v1.snapshot.json --exclude .git --exclude '*.tmp'
+moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming --progress
+moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./v1-to-v2.mbundle.gz --archive --gzip --exclude .git --exclude '*.tmp' --streaming --progress
+moonlibsync dir-apply ./v1 ./v1-to-v2.mbundle.gz ./v2-restored --archive --gzip --streaming --progress
+moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude .git --exclude '*.tmp'
 ```
 
 ### Integrity & Transfer Workflows
@@ -166,12 +169,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # Format, deps, 220 core + 3 compress tests × 3 targets, 6 examples, web-demo ESM, mbti guard
+python scripts/check.py            # Format, deps, 224 core + 3 compress tests × 3 targets, 6 examples, web-demo ESM, JS/TS SDK, mbti guard
 python scripts/verify_fixtures.py  # Reference & opcode fixture integrity
 python scripts/failure_gates.py    # Isolated corruption & assertion failure gates
-./scripts/cli-smoke.ps1            # 32 Native helper tests + Windows CLI integration suite
+./scripts/cli-smoke.ps1            # 36 Native helper tests + Windows CLI integration suite
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
+node js/test-sdk.mjs
 python scripts/release_check.py --clean
 ```
 
@@ -210,7 +214,8 @@ python3 scripts/file_exchange.py
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [js/README.md](js/README.md) — Zero-dependency Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design
 - [docs/cli.md](docs/cli.md) — Native CLI reference (`--streaming`, `dir-snapshot`/`dir-plan`, `--max-*`), JSON schemas, and filesystem guarantees
