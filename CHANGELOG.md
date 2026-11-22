@@ -4,6 +4,28 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-22
+
+### Added
+- **Pure Zero-IO Cryptography Subpackage `YKDshaxing/moonlibsync/crypto` (`crypto/`, zero new third-party dependencies, zero `allow-experimental-packages`)**:
+  - **Ed25519 Publisher Signing & Verification (`crypto/ed25519.mbt`)**: Reuses locked `mooncrypt@0.4.5` (`sign/ed25519`) across `native`, `js`, and `wasm-gc`, enforcing RFC 8032 §5.1.3 canonical on-curve point decoding, small-order point rejection, domain-separated digest signing (`"moonlibsync-ed25519-v1\x00"`), constant-time trusted-key comparison (`@spec.eq`), and bounded Schema 4 JSON (`kind: "moonlibsync-signature"`, `encode/parse_publisher_signature`).
+  - **Streaming Chunked AEAD Encryption `MLSENC01` (`.menc`, `crypto/aead.mbt`)**: Reuses locked `mooncrypt@0.4.5` (`aead/chachapoly` + `kdf/argon2`), providing 56-byte header-bound per-chunk ChaCha20-Poly1305 encryption (`raw-key` or `Argon2id` passphrase with strict `SealLimits` anti-DoS bounds), one-shot `seal/unseal_with_{key,passphrase}`, and fail-closed Sans-IO `SealEncoder` / `SealDecoder` with `@spec.wipe` on pending encoder plaintext.
+- **Dual Modern `librsync` BLAKE2 Signature Profiles (`rollsum.mbt`, `api.mbt`, `signature.mbt`, `stream_*.mbt`)**:
+  - Added scalar `Rollsum` (`RS_BLAKE2_SIG_MAGIC` `0x72730137`) alongside `RS_RK_BLAKE2_SIG_MAGIC` (`0x72730147`), exposed via `SignatureProfile::{RkBlake2, RollsumBlake2}`, `signature_with_profile`, and `SignatureHasher::new_with_profile`; `inspect_signature`, `prepare_signature`, `delta`, `DeltaScanner`, and Schema 1/2 manifests handle both profiles automatically.
+- **Directory Move/Copy 0-Byte Reuse (`--detect-moves`), `.moonlibsyncignore` (`--exclude-from`), and Reverse Rollback (`--save-rollback`, `reverse-delta`)**:
+  - Added `DirPlanOptions { detect_moves }`, `plan_dir_sync_with_options`, `DirActionKind::CopyFromBasis(String)` (0-byte transfer), `DirBundleAction::{CopyFromBasis, UpdateDeltaFrom}` (cross-path delta for moved+edited files), `parse_dir_exclude_file`, and `create_reverse_delta` / `create_reverse_delta_auto` (`NEW -> OLD`).
+- **Native CLI Expanded to 28 Subcommands (`cmd/moonlibsync/crypto_cli.mbt`, `completions.mbt`)**:
+  - Added 8 new subcommands: `keygen`, `sign`, `verify`, `seal`, `unseal`, `reverse-delta`, `inspect-bundle` (read-only streaming `MLSBDL01` / `.mbundle.gz` validator), and `completions (bash|zsh|powershell)`.
+  - Extended existing commands with `--profile rk-blake2|rollsum-blake2` (`signature`, `dir-signatures`), `--detect-moves` (`dir-plan`, `dir-pack`), `--exclude-from FILE` (`dir-snapshot`, `dir-pack`, `dir-verify`), `--verify-sig` / `--verify-key` (`patch-verified`, `apply-update`, `dir-apply --archive` with TOCTOU SHA-256 re-verification), and `--save-rollback OUT.mbundle.gz` (`dir-apply`).
+  - Real Windows Native `--release` acceptance: a `1,179,648`-byte directory (1 MiB moved file + 128 KiB moved & edited file) packed via `--detect-moves --archive --gzip --exclude-from` into **`1,057` B** (`0.069 s`), Ed25519-signed and Argon2id/ChaCha20-Poly1305 sealed into **`1,134` B** (`0.094 s`), rejected 1-byte tamper (`AuthenticationFailed`) and untrusted key (`UntrustedKey`), applied with `--verify-sig --verify-key --save-rollback` (`0.301 s`), and rolled back `v2 -> v1` (`1,921` B `.mbundle.gz`, `0.134 s`) with full `dir-verify` passing bit-for-bit.
+- **Web Studio 0.6.0 (`examples/web-demo/`, 27 JS ESM Exports) & `@ykdshaxing/moonlibsync@0.6.0` SDK (`js/`)**:
+  - Added zero-dependency module **Web Worker (`examples/web-demo/worker.js`)** with animated progress bar and main-thread fallback, **Literal Hexdump + UTF-8 Preview** inside the Interactive Delta Block Reuse Heatmap, Rollsum `0x72730137` + `rollback.delta` download, `--detect-moves` & **In-Browser `.mbundle.gz` Pack & Roundtrip Unpack/Verify**, and upgraded Tab 5 (**Security & Crypto Lab**) with live **Ed25519** & **AEAD `.menc`** drills.
+  - Upgraded `@ykdshaxing/moonlibsync` (`js/`) to `0.6.0` covering all 27 core exports and 23 typed client methods with zero `any` in `js/index.d.ts` and expanded `js/test-sdk.mjs`.
+- **Verification**: 6 new core tests (`rollsum_wbtest.mbt`, `signature_profile_test.mbt`, `dir_sync_test.mbt` -> **230 tests × 3 targets**), **3** `compress` tests × 3 targets, **12** `crypto` tests × 3 targets, 8 new Native CLI unit tests (`cmd/moonlibsync/v060_wbtest.mbt` -> **44 total**), and 115 new CLI integration cases (`scripts/cli_v060_cases.py` -> **644** total in `scripts/cli_smoke.py`).
+
+### Compatibility
+- 100% backward-compatible with `0.1.0`–`0.5.0` public APIs, `librsync` wire interoperability, Schema 1/2/3 formats, `Limits::default()`, and CLI no-overwrite atomic commits. Protected `_build/release-0.5.0` evidence as read-only in `scripts/release_check.py`.
+
 ## [0.5.0] - 2026-11-22
 
 ### Added

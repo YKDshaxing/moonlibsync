@@ -1,3 +1,16 @@
+# MoonLibSync 0.6.0：设计与使用
+
+0.6.0 在 100% 保持 `0.1.0`–`0.5.0` 公开 API、CLI 命令与退出码、Schema 1/2/3 格式及根库零 `allow-experimental-packages` / 零新增第三方依赖的前提下，补齐 7 项生产级安全、算法与体验能力：
+- **纯零 IO 密码学子包 `YKDshaxing/moonlibsync/crypto`（[crypto/ed25519.mbt](../crypto/ed25519.mbt)、[crypto/aead.mbt](../crypto/aead.mbt)）**：复用已锁定 `mooncrypt@0.4.5`，跨 `native` / `js` / `wasm-gc` 提供 RFC 8032 严格点校验 Ed25519 发布者签名（Schema 4 `moonlibsync-signature`）与 `MLSENC01` 流式分块 ChaCha20-Poly1305/Argon2id AEAD 加密封装（`SealEncoder` / `SealDecoder`）。
+- **双 BLAKE2 `librsync` Profile（[rollsum.mbt](../rollsum.mbt)）**：在原有 `0x72730147`（Rabin-Karp + BLAKE2b）之外补齐 `0x72730137`（`RS_BLAKE2_SIG_MAGIC` Rollsum + BLAKE2b），贯通一次性与流式签名/差分/清单全链路。
+- **目录重命名/移动 0 字节复用与反向回滚（[dir_sync.mbt](../dir_sync.mbt)、[api.mbt](../api.mbt)）**：新增 `DirPlanOptions { detect_moves }`、`CopyFromBasis`（0 字节载荷）、`UpdateDeltaFrom`（跨路径增量）、`parse_dir_exclude_file`（`.moonlibsyncignore`）、`create_reverse_delta` / `create_reverse_delta_auto` 及 CLI `dir-apply --save-rollback`。
+- **CLI 28 条子命令补齐**：新增 `keygen`、`sign`、`verify`、`seal`、`unseal`、`reverse-delta`、`inspect-bundle`、`completions`，以及 `--profile`、`--detect-moves`、`--exclude-from`、`--verify-sig`/`--verify-key`、`--save-rollback`。
+- **Web Studio 0.6.0 与 JS/TS SDK `@ykdshaxing/moonlibsync@0.6.0`**：27 项 JS ESM 导出、零依赖 **Web Worker** 后台引擎（[examples/web-demo/worker.js](../examples/web-demo/worker.js)）、热力图 Literal 字节 Hex/UTF-8 透视、浏览器端 `.mbundle.gz` 打包解包验真、Ed25519 & AEAD `.menc` 交互安全实验室，以及严格零 `any` TypeScript SDK（[js/index.js](../js/index.js)、[js/index.d.ts](../js/index.d.ts)）。
+
+下文保留 0.5.0 / 0.4.0 / 0.3.2 / 0.3.1 / 0.2.0 / 0.1.0 历史设计归属。
+
+---
+
 # MoonLibSync 0.5.0：设计与使用
 
 0.5.0 在 100% 保持 `0.3.x` / `0.4.0` 公开 API、CLI 命令与退出码、Schema 1/2/3 清单、标准 `librsync` (`0x72730147` / `0x72730236`) 互操作、`Limits::default()` 及根包零 `allow-experimental-packages` 的前提下，新增六项端到端能力：

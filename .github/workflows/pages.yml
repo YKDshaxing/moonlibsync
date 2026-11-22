@@ -8,6 +8,7 @@ on:
       - 'moon.mod'
       - 'moon.pkg'
       - 'compress/**'
+      - 'crypto/**'
       - 'examples/web-demo/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -50,7 +51,7 @@ jobs:
         run: |
           moon build examples/web-demo --target js --release
           mkdir -p _site
-          cp examples/web-demo/index.html examples/web-demo/demo.js _site/
+          cp examples/web-demo/index.html examples/web-demo/demo.js examples/web-demo/worker.js _site/
           if [ -f _build/js/release/build/examples/web-demo/web-demo.js ]; then
             cp _build/js/release/build/examples/web-demo/web-demo.js _site/web-demo.js
           else

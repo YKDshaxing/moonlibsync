@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="在线 Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.5.0-0ea5e9" alt="Version 0.5.0"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.0-0ea5e9" alt="Version 0.6.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,17 +28,18 @@
 
 | 层次 | 公开入口 | 用途说明 |
 | --- | --- | --- |
-| **标准字节差分** | `signature` / `delta` / `patch` | 与 `librsync` 互操作（`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`、delta `0x72730236`）；O(1) 弱校验开放定址表（`<= 0.50` 装载因子）与 Pending Literal Run |
-| **零 IO 流式与 Sans-IO 解码** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `Sha256Hasher` | 纯核心分块状态机 + Sans-IO 步进解码器（`PatchStep`）与流式 SHA-256，同时适配同步 `Bytes`、Native `async/fs` 与浏览器 JS |
-| **目录快照、归档、规划与巡检** | `DirSnapshot` / `DirSyncPlan` / `DirSignatureIndex` / `DirBundleManifest` / `DirVerifyReport` / `match_dir_exclude` / `BundleArchiveDecoder` | Schema 3 规范 POSIX 相对路径快照、规划、完整性巡检（`dir-verify`）、`--exclude` 过滤以及单文件 `MLSBDL01` `.mbundle` / `.mbundle.gz` 确定性归档容器 |
+| **标准字节差分与双 Profile** | `signature` / `signature_with_profile` / `delta` / `patch` / `create_reverse_delta*` | 与 `librsync` 双 BLAKE2 Profile 互操作（`0x72730147` RK+BLAKE2b 与 `0x72730137` Rollsum+BLAKE2b、delta `0x72730236`）；O(1) 弱校验开放定址表、Pending Literal Run 与反向回滚增量 |
+| **零 IO 流式与 Sans-IO 解码** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `Sha256Hasher` | 纯核心分块状态机 + Sans-IO 步进解码器（`PatchStep`）与流式 SHA-256，同时适配同步 `Bytes`、Native `async/fs` 与浏览器 JS/Web Worker |
+| **目录快照、移动检测、归档与巡检** | `DirSnapshot` / `plan_dir_sync_with_options` / `DirBundleManifest` / `DirVerifyReport` / `parse_dir_exclude_file` / `BundleArchiveDecoder` | Schema 3 确定性快照、`--detect-moves` 0 字节 `CopyFromBasis` 与跨路径 `UpdateDeltaFrom`、完整性巡检（`dir-verify`）、`--exclude`/`--exclude-from` 以及单文件 `MLSBDL01` `.mbundle`/`.mbundle.gz` |
+| **Ed25519 验签与 AEAD 加密子包** | `YKDshaxing/moonlibsync/crypto`：`keypair_from_seed` / `sign_*` / `verify_*` / `seal_*` / `unseal_*` / `SealEncoder` / `SealDecoder` | 纯零 IO 跨三目标 Ed25519 发布者数字签名（RFC 8032 严格点校验，Schema 4）与 `MLSENC01` 流式分块 ChaCha20-Poly1305/Argon2id 加密封装（零新增第三方依赖、零实验包） |
 | **独立有界 Gzip 压缩子包** | `YKDshaxing/moonlibsync/compress`：`compress_gzip` / `decompress_gzip` / `GzipEncoder` / `GzipDecoder` | 纯零 IO 跨三目标单流 RFC 1952 Gzip 封装，内置防解压炸弹（`LimitExceeded`）与拒绝尾随数据（`TrailingData`），根核心库保持零实验包 |
 | **检查与预检** | `inspect_signature` / `inspect_delta` / `check_patch` | O(1) 零记录分配签名头校验、delta 统计以及基于长度的 COPY 范围预检 |
 | **可复用签名索引** | `prepare_signature` / `PreparedSignature::{delta, summary, plan_update}` | 一次解析建索引，跨多个目标复用；每次调用独立重检 `Limits` 并拥有独立工作预算 |
 | **显式自动块长** | `recommend_block_len` / `signature --block-size auto` | 纯整数 `policy v1` 策略（目标约 512 条记录、2 次幂向上舍入并受当前预算约束） |
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
-| **Native 单文件 CLI** | `cmd/moonlibsync`（20 条子命令） | 有界读取 + 全链路 `--streaming` 64 KiB 管线（突破 64 MiB）、`--progress` stderr 实时进度条、`compress`/`decompress`、`dir-snapshot`/`dir-plan`/`dir-signatures`/`dir-pack`/`dir-apply`/`dir-verify`、`--archive [--gzip]`、`--exclude`、`--max-*`、拒绝符号链接与事务原子提交 |
-| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module 与严格零 `any` `.d.ts`；5 标签页静态 Web 工作台（块复用热力图、多块长对比图表、独立角色 rdiff、通用产物剖析器、目录规划 & 巡检、Gzip 安全实验室） |
+| **Native 单文件 CLI** | `cmd/moonlibsync`（28 条子命令） | 全链路 `--streaming` 64 KiB 管线、`--progress`、`keygen`/`sign`/`verify`、`seal`/`unseal`、`reverse-delta`、`inspect-bundle`、`completions`、`--profile`、`--detect-moves`、`--exclude-from`、`--verify-sig`/`--verify-key`、`--save-rollback` 与原子提交 |
+| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module（27 项核心导出 / 23 项类型方法，零 `any` `.d.ts`）；5 标签页 Web Worker 静态工作台（Literal Hex 透视热力图、多块长对比、独立 rdiff、通用剖析器、`.mbundle.gz` 打包解包、Gzip + Ed25519 + AEAD 实验室） |
 
 ## 快速开始
 
@@ -92,7 +93,7 @@ fn sync_demo() -> Unit raise {
 - [examples/auto](examples/auto/main.mbt) — 显式自动块长 `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` / `Full` 更新规划与应用
 - [examples/streaming](examples/streaming/main.mbt) — 零 IO 分块流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier`（含零依赖 Node.js 运行脚本：`node examples/streaming/run-node.mjs`）
-- [examples/web-demo](examples/web-demo/index.html) — 5 标签页零后端静态浏览器工作台 + 17 导出 JS ES 模块（`node examples/web-demo/test-node.mjs --rebuild`）：块复用热力图、多块长基准图、独立角色 rdiff、通用产物剖析、目录规划 & 巡检与 Gzip 安全防线实验室
+- [examples/web-demo](examples/web-demo/index.html) — 5 标签页零后端静态浏览器 Web Worker 工作台 + 27 导出 JS ES 模块（`node examples/web-demo/test-node.mjs --rebuild`）：Literal Hex 透视热力图、多块长基准图、独立角色 rdiff、通用产物剖析、`.mbundle.gz` 打包解包 + `--detect-moves` 与 Gzip/Ed25519/AEAD 安全实验室
 - [js/README.md](js/README.md) — 独立零运行时依赖 JS/TS ES Module SDK（`@ykdshaxing/moonlibsync`，`node js/test-sdk.mjs` 验证）
 
 ## Native 单文件 CLI
@@ -133,12 +134,18 @@ moonlibsync decompress large.delta.gz large.delta.raw --streaming --progress --m
 moonlibsync make-transfer-manifest basis.json large.sig large-new.bin large.delta.raw transfer.json --streaming --max-old-bytes 200000000 --max-new-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 moonlibsync apply-update large.delta.raw transfer.json restored.bin --basis large-old.bin --streaming --progress --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 
-# 6. 端到端单文件目录增量归档与巡检闭环（Schema 3 + MLSBDL01 .mbundle.gz + --exclude）
-moonlibsync dir-snapshot ./v1 v1.snapshot.json --exclude .git --exclude '*.tmp'
-moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming --progress
-moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./v1-to-v2.mbundle.gz --archive --gzip --exclude .git --exclude '*.tmp' --streaming --progress
-moonlibsync dir-apply ./v1 ./v1-to-v2.mbundle.gz ./v2-restored --archive --gzip --streaming --progress
-moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude .git --exclude '*.tmp'
+# 6. 端到端签名 + AEAD 加密 + 移动 0 字节复用 + 自动回滚目录分发闭环（0.6.0）
+moonlibsync keygen publisher.priv publisher.pub
+moonlibsync dir-snapshot ./v1 v1.snapshot.json --exclude-from .moonlibsyncignore
+moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --profile rollsum-blake2 --block-size auto --streaming --progress
+moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./v1-to-v2.mbundle.gz --detect-moves --archive --gzip --exclude-from .moonlibsyncignore --streaming --progress
+moonlibsync inspect-bundle ./v1-to-v2.mbundle.gz --gzip --json
+moonlibsync sign ./v1-to-v2.mbundle.gz publisher.priv ./v1-to-v2.msig.json --streaming
+moonlibsync seal ./v1-to-v2.mbundle.gz ./v1-to-v2.mbundle.gz.menc --passphrase-file pass.txt --streaming --progress
+moonlibsync unseal ./v1-to-v2.mbundle.gz.menc ./unsealed.mbundle.gz --passphrase-file pass.txt --streaming --progress
+moonlibsync dir-apply ./v1 ./unsealed.mbundle.gz ./v2-restored --archive --gzip --verify-sig ./v1-to-v2.msig.json --verify-key publisher.pub --save-rollback ./rollback-v2-to-v1.mbundle.gz --streaming --progress
+moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude-from .moonlibsyncignore
+moonlibsync completions powershell > moonlibsync-completions.ps1
 ```
 
 ### 完整性校验与传输规划流程
@@ -169,10 +176,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、224 项库 + 3 项 compress 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
+python scripts/check.py            # 格式、依赖、230 项库 + 3 项 compress + 12 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 36 项 Native 辅助测试 + Windows CLI 集成测试
+./scripts/cli-smoke.ps1            # 44 项 Native 辅助测试 + 644 项 Windows CLI 集成用例
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs
@@ -207,14 +214,14 @@ python3 scripts/file_exchange.py
 
 ## 兼容范围与安全边界
 
-- **标准协议支持**：支持 `RS_RK_BLAKE2_SIG_MAGIC`（`0x72730147`，BLAKE2b-256 取 `1..32` 字节前缀，默认 `2048/32`）以及标准 delta 全宽度指令（`0x72730236`，严格 `END` 校验且拒绝尾随数据）；其余签名 profile 返回 `UnsupportedSignatureProfile`。
-- **全量缓冲与分块流式内存模型**：一次性入口工作在有界内存 `Bytes` 缓冲上（默认 `Limits` 上限：`OLD`/`NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB），而流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier` 在分块处理期间仅维持 O(1) / O(`block_len`) + 64 KiB 内部暂存缓冲。预算为逻辑上限，不承诺进程级峰值 RSS 或 OOM 恢复，详见 [docs/resources.md](docs/resources.md)。
-- **完整性 vs 发布者认证**：标准 `delta` / `patch` 不认证旧文件身份；`verified_patch` / `apply_update` 对**可信来源**清单做 SHA-256 完整性校验，不内置发布者数字签名。详见 [SECURITY.md](SECURITY.md)。
+- **标准协议支持**：完整支持现代 `librsync` 双 BLAKE2 Profile —— `RS_RK_BLAKE2_SIG_MAGIC`（`0x72730147`，默认 `2048/32`）与 `RS_BLAKE2_SIG_MAGIC`（`0x72730137` Rollsum + BLAKE2b）—— 以及标准 delta 全宽度指令（`0x72730236`，严格 `END` 校验且拒绝尾随数据）；遗留 MD4 Profile（`0x72730136`/`0x72730146`）返回 `UnsupportedSignatureProfile`。
+- **全量缓冲与分块流式内存模型**：一次性入口工作在有界内存 `Bytes` 缓冲上（默认 `Limits` 上限：`OLD`/`NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB），而流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `BundleArchiveDecoder` / `GzipEncoder` / `GzipDecoder` / `SealEncoder` / `SealDecoder` 在分块处理期间维持有界内部暂存缓冲。预算为逻辑上限，不承诺进程级峰值 RSS 或 OOM 恢复，详见 [docs/resources.md](docs/resources.md)。
+- **完整性、发布者认证与机密性**：标准 `delta` / `patch` 不认证旧文件身份；`verified_patch` / `apply_update` / `dir-apply` 校验 SHA-256 完整性，且 `YKDshaxing/moonlibsync/crypto` 提供可选 Ed25519 发布者数字签名（`sign`/`verify`/`--verify-sig`）与 `MLSENC01` 流式 ChaCha20-Poly1305/Argon2id 加密（`seal`/`unseal`）。详见 [SECURITY.md](SECURITY.md)。
 - **文件系统边界**：CLI 无覆盖提交已验证 Windows/NTFS 与 Linux/ext4。WSL DrvFS（`/mnt/*`）不支持无覆盖 `renameat2` 时会明确失败并清理临时文件，不降级覆盖（WSL 下运行正向 CLI 烟雾测试请设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`）。
 
 ## 文档导航
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
 - [js/README.md](js/README.md) — 零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明

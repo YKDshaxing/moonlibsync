@@ -1,5 +1,11 @@
 # 来源与固定版本
 
+## 0.6.0 增量说明
+
+- `rollsum.mbt` / `rollsum_wbtest.mbt` 参考固定提交 `librsync e364852674780e43d578e4239128ff7014190ed3` 的 `src/rollsum.h` 与 `src/rollsum.c`（原声明 Martin Pool 2000–2001 / Donovan Baarda 2003，LGPL-2.1-or-later）实现标量 `Rollsum`（`RS_BLAKE2_SIG_MAGIC` `0x72730137`），许可文本与原声明完整保留。
+- 独立纯零 IO 密码学子包 `crypto/`（`YKDshaxing/moonlibsync/crypto`：`error.mbt`、`ed25519.mbt`、`aead.mbt`、`crypto_test.mbt`）均为本项目原创 LGPL-2.1-or-later 封装，显式调用已固定 `moonbitstack/mooncrypt@0.4.5` 的 `sign/ed25519`、`aead/chachapoly`、`kdf/argon2`、`hash/sha2` 与 `spec`（原 Apache-2.0 版权与 `dependencies.lock.json` 保持不变），无任何新增第三方依赖，且根库 `YKDshaxing/moonlibsync` 与 `crypto/` 均保持零 `allow-experimental-packages`。
+- `dir_sync.mbt` 新增的 `CopyFromBasis` / `UpdateDeltaFrom` / `parse_dir_exclude_file`、`api.mbt` 新增的 `signature_with_profile` / `create_reverse_delta*`、`cmd/moonlibsync/{crypto_cli,completions}.mbt`、`examples/web-demo/worker.js` 及 `js/` `0.6.0` SDK 扩展均为本项目原创 LGPL-2.1-or-later 代码。
+
 ## 0.5.0 增量说明
 
 - `bundle_archive.mbt`（`MLSBDL01` 确定性目录归档容器与 Sans-IO `BundleArchiveDecoder`）、`dir_sync.mbt` 新增的 `match_dir_exclude` 与 Schema 3 `verify_dir_snapshot` / `DirVerifyReport`、`cmd/moonlibsync/progress.mbt`（基于锁定标准库 `@async.now()` 的 stderr 节流进度条）、`examples/web-demo/` 5 标签页工作台扩展，以及 `js/` 零运行时依赖 ES Module / TypeScript SDK（`@ykdshaxing/moonlibsync`）均为本项目原创 LGPL-2.1-or-later 代码。

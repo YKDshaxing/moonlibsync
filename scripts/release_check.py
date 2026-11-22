@@ -31,6 +31,7 @@ assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.0').resolve(
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.1').resolve()), 'Historical 0.3.1 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.2').resolve()), 'Historical 0.3.2 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.4.0').resolve()), 'Historical 0.4.0 evidence is read-only'
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.5.0').resolve()), 'Historical 0.5.0 evidence is read-only'
 
 
 def digest(data):
@@ -145,6 +146,7 @@ def audit_package():
     required |= {'stream_signature.mbt','stream_delta.mbt','stream_patch.mbt','examples/streaming/main.mbt','examples/streaming/moon.pkg','examples/streaming/pkg.generated.mbti','examples/streaming/run-node.mjs'}
     required |= {'dir_sync.mbt','compress/moon.pkg','compress/gzip.mbt','compress/pkg.generated.mbti','cmd/moonlibsync/compress_cli.mbt','cmd/moonlibsync/dir_bundle.mbt','examples/web-demo/main.mbt','examples/web-demo/moon.pkg','examples/web-demo/pkg.generated.mbti','examples/web-demo/index.html','examples/web-demo/demo.js','examples/web-demo/test-node.mjs','docs/dir-sync.md'}
     required |= {'bundle_archive.mbt','cmd/moonlibsync/progress.mbt','js/package.json','js/index.js','js/index.d.ts','js/build-dist.mjs','js/test-sdk.mjs','js/README.md'}
+    required |= {'rollsum.mbt','crypto/moon.pkg','crypto/error.mbt','crypto/ed25519.mbt','crypto/aead.mbt','crypto/pkg.generated.mbti','cmd/moonlibsync/crypto_cli.mbt','cmd/moonlibsync/completions.mbt','examples/web-demo/worker.js'}
     assert required <= actual.keys()
     forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
     assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'

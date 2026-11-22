@@ -1,6 +1,6 @@
-# MoonLibSync 0.5.0 目录级确定性快照、单文件归档、同步规划与巡检（Schema 3 + `MLSBDL01`）
+# MoonLibSync 0.6.0 目录级确定性快照、移动检测、单文件归档、回滚与巡检（Schema 3 + `MLSBDL01`）
 
-0.4.0 / 0.5.0 在纯核心库中提供零 IO、完全兼容 `native` / `js` / `wasm-gc` 的目录快照、差分规划、远端签名索引、自包含增量包、单文件确定性归档容器（`MLSBDL01`，[bundle_archive.mbt](../bundle_archive.mbt)）与目录完整性巡检及 `--exclude` 过滤模型（[dir_sync.mbt](../dir_sync.mbt)），并在 Native CLI 提供 `dir-snapshot`、`dir-plan`、`dir-signatures`、`dir-pack`、`dir-apply` 与 `dir-verify` 六条子命令（[cmd/moonlibsync/dir.mbt](../cmd/moonlibsync/dir.mbt)、[cmd/moonlibsync/dir_bundle.mbt](../cmd/moonlibsync/dir_bundle.mbt)）。
+0.4.0–0.6.0 在纯核心库中提供零 IO、完全兼容 `native` / `js` / `wasm-gc` 的目录快照、差分规划（含 `--detect-moves` 0 字节 `CopyFromBasis` 移动/复制识别）、远端签名索引、自包含增量包（含跨路径 `UpdateDeltaFrom`）、单文件确定性归档容器（`MLSBDL01`，[bundle_archive.mbt](../bundle_archive.mbt)）与目录完整性巡检及 `--exclude` / `--exclude-from` 过滤模型（[dir_sync.mbt](../dir_sync.mbt)），并在 Native CLI 提供 `dir-snapshot`、`dir-plan`、`dir-signatures`、`dir-pack`、`dir-apply`、`dir-verify` 与 `inspect-bundle` 子命令（[cmd/moonlibsync/dir.mbt](../cmd/moonlibsync/dir.mbt)、[cmd/moonlibsync/dir_bundle.mbt](../cmd/moonlibsync/dir_bundle.mbt)、[cmd/moonlibsync/inspect.mbt](../cmd/moonlibsync/inspect.mbt)）。
 
 ---
 

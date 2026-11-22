@@ -1,3 +1,31 @@
+# MoonLibSync 0.6.0 Native 单文件 CLI 手册
+
+0.6.0 在 100% 保持 0.1.0–0.5.0 全部 20 条子命令、参数语法、Schema 1/2/3 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件/核心/认证错误）及无覆盖原子提交兼容的基础上，新增 **8 条子命令（总计 28 条）** 与多项安全/同步/易用性增强：
+
+1. **Ed25519 发布者数字签名与验签（`YKDshaxing/moonlibsync/crypto`，零新增依赖）**：
+   - `moonlibsync keygen OUT_PRIV OUT_PUB`：基于 OS CSPRNG 生成 32 字节 Ed25519 私钥种子与公钥（64 位小写 hex + `\n`，无覆盖原子发布）。
+   - `moonlibsync sign IN PRIV_KEY OUT_SIG [--streaming] [--progress] [LIMITS]`：流式计算文件长度与 SHA-256，产出域分离（`"moonlibsync-ed25519-v1\x00"`）Schema 4 `.msig.json` 发布者签名信封。
+   - `moonlibsync verify IN SIG_FILE PUB_KEY [--pub-key EXTRA]... [--json] [--streaming] [--progress] [LIMITS]`：纯只读校验（支持多公钥信任列表，RFC 8032 严格点校验与小阶点拒绝），通过退出 `0`，任何篡改或非信任公钥退出 `1` 且 `stdout` 为空。
+   - `patch-verified`、`apply-update` 与 `dir-apply --archive` 支持可选 `--verify-sig SIG_FILE --verify-key PUB_KEY...`，在解析/恢复前强制验签（`dir-apply --archive` 同时在解包流中复核 SHA-256 防 TOCTOU）。
+
+2. **AEAD 流式端到端加密封装（`MLSENC01` `.menc`，ChaCha20-Poly1305 + Argon2id）**：
+   - `moonlibsync seal IN OUT (--key-file FILE | --passphrase-file FILE) [--chunk-size N] [--argon2-memory N] [--argon2-passes N] [--streaming] [--progress] [LIMITS]`：64 KiB 分块流式加密，每块独立 nonce 并以 56 字节完整文件头 + 块序号 + `is_final` 作为 AAD。
+   - `moonlibsync unseal IN OUT (--key-file FILE | --passphrase-file FILE) [--streaming] [--progress] [LIMITS]`：流式解密认证，仅在末块认证通过且无尾随数据时原子提交，任意字节篡改/重排/截断均立即中止并清理临时文件。
+
+3. **双 BLAKE2 Profile、目录移动 0 字节复用与反向回滚**：
+   - `signature` 与 `dir-signatures` 新增 `--profile rk-blake2|rollsum-blake2`（支持 `0x72730147` 与 `0x72730137`）；`inspect-signature` 同步识别 `RS_BLAKE2_SIG_MAGIC`。
+   - `dir-plan` 与 `dir-pack` 新增 `--detect-moves`（纯重命名/移动/复制采用 `copy-from-basis` **0 字节载荷**，移动后微调支持跨路径 `update-delta-from`），`dir-apply` 自动执行并校验 SHA-256。
+   - 新增 `moonlibsync reverse-delta OLD NEW OUT_REV_DELTA [--block-size N|auto] [--sum-size N] [--streaming] [--progress] [LIMITS]`，以及 `dir-apply --save-rollback OUT.mbundle.gz`（在不修改 `BASIS_DIR` 前提下自动产出 `OUT_DIR -> BASIS_DIR` 回滚归档）。
+
+4. **CLI 工程易用性补齐**：
+   - `moonlibsync inspect-bundle ARCHIVE [--gzip] [--json] [--progress] [LIMITS] [DIR_LIMITS]`：只读流式校验 `.mbundle` / `.mbundle.gz` 全部头部、载荷长度与 SHA-256。
+   - `dir-snapshot` / `dir-pack` / `dir-verify` 新增可重复 `--exclude-from FILE`（读取 `.moonlibsyncignore` 规则文件，跳过空行与 `#` 注释）。
+   - `moonlibsync completions (bash|zsh|powershell)`：输出涵盖全部 28 条命令及选项的 Shell 自动补全脚本。
+
+以下保留 0.5.0 及历史各阶段详细契约与测试证据。
+
+---
+
 # MoonLibSync 0.5.0 Native 单文件 CLI 手册
 
 0.5.0 保留 0.4.0 全部 19 条子命令、参数语法、schema 1/2/3 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并新增四项关键能力（总计 **20 条子命令**）：

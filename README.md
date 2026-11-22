@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="Live Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.5.0-0ea5e9" alt="Version 0.5.0"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.0-0ea5e9" alt="Version 0.6.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,17 +28,18 @@
 
 | Layer | Public Entry Points | Purpose |
 | --- | --- | --- |
-| **Core Binary Delta** | `signature`, `delta`, `patch` | Wire-compatible with `librsync` (`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`, delta `0x72730236`); O(1) open-addressed weak-hash lookup (`<= 0.50` load) and Pending Literal Run |
-| **Streaming & Sans-IO** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `PatchDecoder`, `Sha256Hasher` | Pure zero-IO chunked pipelines + Sans-IO step decoder (`PatchStep`) & streaming SHA-256 bridging sync `Bytes`, Native `async/fs`, and browser JS |
-| **Directory Sync, Bundles & Verification** | `DirSnapshot`, `DirSyncPlan`, `DirSignatureIndex`, `DirBundleManifest`, `DirVerifyReport`, `match_dir_exclude`, `BundleArchiveDecoder` | Schema 3 deterministic POSIX-relative snapshots, planning, verification (`dir-verify`), glob `--exclude`, and single-file `MLSBDL01` `.mbundle` / `.mbundle.gz` archives |
+| **Core Binary Delta** | `signature`, `signature_with_profile`, `delta`, `patch`, `create_reverse_delta*` | Wire-compatible with `librsync` dual BLAKE2 profiles (`0x72730147` RK+BLAKE2b & `0x72730137` Rollsum+BLAKE2b, delta `0x72730236`); O(1) open-addressed weak-hash lookup, Pending Literal Run, and rollback deltas |
+| **Streaming & Sans-IO** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `PatchDecoder`, `Sha256Hasher` | Pure zero-IO chunked pipelines + Sans-IO step decoder (`PatchStep`) & streaming SHA-256 bridging sync `Bytes`, Native `async/fs`, and browser JS/Workers |
+| **Directory Sync, Moves & Archives** | `DirSnapshot`, `plan_dir_sync_with_options`, `DirBundleManifest`, `DirVerifyReport`, `parse_dir_exclude_file`, `BundleArchiveDecoder` | Schema 3 deterministic snapshots, `--detect-moves` 0-byte `CopyFromBasis` & cross-path `UpdateDeltaFrom`, `dir-verify`, `--exclude`/`--exclude-from`, and single-file `MLSBDL01` `.mbundle`/`.mbundle.gz` archives |
+| **Publisher Signing & AEAD Crypto** | `YKDshaxing/moonlibsync/crypto`: `keypair_from_seed`, `sign_*`, `verify_*`, `seal_*`, `unseal_*`, `SealEncoder`, `SealDecoder` | Pure zero-IO cross-target Ed25519 publisher signatures (RFC 8032 strict point validation, Schema 4) and `MLSENC01` chunked ChaCha20-Poly1305 + Argon2id streaming encryption (zero new third-party deps) |
 | **Bounded Gzip Subpackage** | `YKDshaxing/moonlibsync/compress`: `compress_gzip`, `decompress_gzip`, `GzipEncoder`, `GzipDecoder` | Optional cross-target zero-IO single-member RFC 1952 gzip with zip-bomb (`LimitExceeded`) and `TrailingData` guards (root library stays non-experimental) |
 | **Inspection & Preflight** | `inspect_signature`, `inspect_delta`, `check_patch` | O(1) zero-record-allocation signature metadata inspection, delta statistics, and COPY range preflight |
 | **Reusable Prepared Index** | `prepare_signature`, `PreparedSignature::{delta, summary, plan_update}` | Parse and index a signature once; reuse across multiple targets with per-call `Limits` re-checks and independent work budgets |
 | **Auto Block Sizing** | `recommend_block_len`, `signature --block-size auto` | Explicit integer policy v1 (targeting ~512 records, power-of-two rounding, bounded by `Limits`) |
 | **Integrity Manifests** | `create/parse/encode_basis_info`, `create/parse/encode_update_manifest`, `verified_patch` | Strict bounded JSON (schema 1) binding `OLD`, `SIG`, `DELTA`, and `RESULT` via SHA-256 before returning or committing output |
 | **Transfer Planning** | `plan_update`, `create/parse/encode_transfer_manifest`, `apply_update` | Schema 2 `Delta` vs. `Full` payload selection (chooses `Delta` only when strictly smaller and meeting `min_savings_bytes`) |
-| **Native Single-File CLI** | `cmd/moonlibsync` (20 subcommands) | Bounded reads + full `--streaming` 64 KiB pipelines (> 64 MiB), `--progress` stderr meter, `compress`/`decompress`, `dir-snapshot`/`dir-plan`/`dir-signatures`/`dir-pack`/`dir-apply`/`dir-verify`, `--archive [--gzip]`, `--exclude`, `--max-*`, symlink refusal, transactional atomic commits |
-| **Zero-Dep JS/TS SDK & Web Studio** | `js/` (`@ykdshaxing/moonlibsync`) & `examples/web-demo/` | Zero-runtime-dependency Node.js + Browser ES module with strict zero-`any` TypeScript types, plus a 5-tab static Web Studio (Block Reuse Heatmap, Multi-Block-Size Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, `dir-plan`/`dir-verify`, Gzip Security Lab) |
+| **Native Single-File CLI** | `cmd/moonlibsync` (28 subcommands) | Full `--streaming` 64 KiB pipelines, `--progress`, `keygen`/`sign`/`verify`, `seal`/`unseal`, `reverse-delta`, `inspect-bundle`, `completions`, `--profile`, `--detect-moves`, `--exclude-from`, `--verify-sig`/`--verify-key`, `--save-rollback`, symlink refusal & atomic commits |
+| **Zero-Dep JS/TS SDK & Web Studio** | `js/` (`@ykdshaxing/moonlibsync`) & `examples/web-demo/` | Zero-runtime-dependency Node.js + Browser ES module (27 core exports, 23 typed methods, zero `any`), plus a 5-tab Web Worker Studio (Literal Hexdump Heatmap, Multi-Block Benchmark, Split-Role `rdiff`, Universal Inspector, `.mbundle.gz` Pack/Unpack, Gzip + Ed25519 + AEAD Crypto Lab) |
 
 ## Quick Start
 
@@ -92,7 +93,7 @@ More runnable examples (all verified on `native`, `js`, and `wasm-gc`):
 - [examples/auto](examples/auto/main.mbt) — explicit `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` vs. `Full` transfer workflow
 - [examples/streaming](examples/streaming/main.mbt) — zero-IO streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` (plus zero-dependency JS runner: `node examples/streaming/run-node.mjs`)
-- [examples/web-demo](examples/web-demo/index.html) — 5-tab zero-backend static browser Studio + 17-export ES module (`node examples/web-demo/test-node.mjs --rebuild`): Delta Block Reuse Heatmap, Multi-Block-Size Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, Schema 3 `dir-plan`/`dir-verify`, and Gzip Security Lab
+- [examples/web-demo](examples/web-demo/index.html) — 5-tab zero-backend static browser Web Worker Studio + 27-export ES module (`node examples/web-demo/test-node.mjs --rebuild`): Literal Hexdump Heatmap, Multi-Block Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, `.mbundle.gz` Pack/Unpack + `--detect-moves`, and Gzip + Ed25519 + AEAD Crypto Lab
 - [js/README.md](js/README.md) — standalone zero-dependency typed JS/TS ES module SDK (`@ykdshaxing/moonlibsync`, verified with `node js/test-sdk.mjs`)
 
 ## Native Single-File CLI
@@ -133,12 +134,18 @@ moonlibsync decompress large.delta.gz large.delta.raw --streaming --progress --m
 moonlibsync make-transfer-manifest basis.json large.sig large-new.bin large.delta.raw transfer.json --streaming --max-old-bytes 200000000 --max-new-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 moonlibsync apply-update large.delta.raw transfer.json restored.bin --basis large-old.bin --streaming --progress --max-old-bytes 200000000 --max-delta-bytes 200000000 --max-output-bytes 200000000
 
-# 6. End-to-end single-file directory archive sync + verification (Schema 3 + MLSBDL01 .mbundle.gz + --exclude)
-moonlibsync dir-snapshot ./v1 v1.snapshot.json --exclude .git --exclude '*.tmp'
-moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --block-size auto --streaming --progress
-moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./v1-to-v2.mbundle.gz --archive --gzip --exclude .git --exclude '*.tmp' --streaming --progress
-moonlibsync dir-apply ./v1 ./v1-to-v2.mbundle.gz ./v2-restored --archive --gzip --streaming --progress
-moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude .git --exclude '*.tmp'
+# 6. End-to-end signed, AEAD-sealed, move-aware directory archive sync + rollback (0.6.0)
+moonlibsync keygen publisher.priv publisher.pub
+moonlibsync dir-snapshot ./v1 v1.snapshot.json --exclude-from .moonlibsyncignore
+moonlibsync dir-signatures ./v1 v1.snapshot.json ./v1-sigs --profile rollsum-blake2 --block-size auto --streaming --progress
+moonlibsync dir-pack v1.snapshot.json ./v1-sigs ./v2 ./v1-to-v2.mbundle.gz --detect-moves --archive --gzip --exclude-from .moonlibsyncignore --streaming --progress
+moonlibsync inspect-bundle ./v1-to-v2.mbundle.gz --gzip --json
+moonlibsync sign ./v1-to-v2.mbundle.gz publisher.priv ./v1-to-v2.msig.json --streaming
+moonlibsync seal ./v1-to-v2.mbundle.gz ./v1-to-v2.mbundle.gz.menc --passphrase-file pass.txt --streaming --progress
+moonlibsync unseal ./v1-to-v2.mbundle.gz.menc ./unsealed.mbundle.gz --passphrase-file pass.txt --streaming --progress
+moonlibsync dir-apply ./v1 ./unsealed.mbundle.gz ./v2-restored --archive --gzip --verify-sig ./v1-to-v2.msig.json --verify-key publisher.pub --save-rollback ./rollback-v2-to-v1.mbundle.gz --streaming --progress
+moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude-from .moonlibsyncignore
+moonlibsync completions powershell > moonlibsync-completions.ps1
 ```
 
 ### Integrity & Transfer Workflows
@@ -169,10 +176,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # Format, deps, 224 core + 3 compress tests × 3 targets, 6 examples, web-demo ESM, JS/TS SDK, mbti guard
+python scripts/check.py            # Format, deps, 230 core + 3 compress + 12 crypto tests × 3 targets, 6 examples, web-demo ESM, JS/TS SDK, mbti guard
 python scripts/verify_fixtures.py  # Reference & opcode fixture integrity
 python scripts/failure_gates.py    # Isolated corruption & assertion failure gates
-./scripts/cli-smoke.ps1            # 36 Native helper tests + Windows CLI integration suite
+./scripts/cli-smoke.ps1            # 44 Native helper tests + 644 Windows CLI integration cases
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs
@@ -207,14 +214,14 @@ python3 scripts/file_exchange.py
 
 ## Compatibility, Security & Boundaries
 
-- **Wire profile**: Supports `RS_RK_BLAKE2_SIG_MAGIC` (`0x72730147`, BLAKE2b-256 truncated to `1..32` bytes, default `2048/32`) and full standard delta opcodes (`0x72730236`, 1/2/4/8-byte parameters, strict `END` with no trailing data). Other signature magics return `UnsupportedSignatureProfile`.
-- **Full-buffer & streaming memory models**: One-shot operations work on bounded in-memory `Bytes` buffers (`Limits::default()` caps `OLD`/`NEW` at 64 MiB, `SIG` at 16 MiB, `DELTA` at 80 MiB), while streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` keep internal buffers O(1) / O(`block_len`) + 64 KiB across chunks. Limits are logical bounds, not process-wide RSS guarantees.
-- **Integrity vs. authentication**: Standard `delta`/`patch` do not verify basis identity; `verified_patch` / `apply_update` verify SHA-256 digests against a **trusted** manifest (no built-in publisher signing). See [SECURITY.md](SECURITY.md).
+- **Wire profiles**: Supports both modern BLAKE2 `librsync` profiles — `RS_RK_BLAKE2_SIG_MAGIC` (`0x72730147`, default `2048/32`) and `RS_BLAKE2_SIG_MAGIC` (`0x72730137` Rollsum + BLAKE2b) — plus full standard delta opcodes (`0x72730236`, 1/2/4/8-byte parameters, strict `END` with no trailing data). Legacy MD4 profiles (`0x72730136`, `0x72730146`) return `UnsupportedSignatureProfile`.
+- **Full-buffer & streaming memory models**: One-shot operations work on bounded in-memory `Bytes` buffers (`Limits::default()` caps `OLD`/`NEW` at 64 MiB, `SIG` at 16 MiB, `DELTA` at 80 MiB), while streaming `SignatureHasher`, `DeltaScanner`, `PatchApplier`/`PatchDecoder`, `BundleArchiveDecoder`, `GzipEncoder`/`GzipDecoder`, and `SealEncoder`/`SealDecoder` keep internal buffers bounded across chunks. Limits are logical bounds, not process-wide RSS guarantees.
+- **Integrity, publisher authentication & confidentiality**: Standard `delta`/`patch` do not verify basis identity; `verified_patch` / `apply_update` / `dir-apply` verify SHA-256 digests, and `YKDshaxing/moonlibsync/crypto` adds optional Ed25519 publisher signing (`sign`/`verify`/`--verify-sig`) and `MLSENC01` ChaCha20-Poly1305/Argon2id streaming encryption (`seal`/`unseal`). See [SECURITY.md](SECURITY.md).
 - **Filesystems**: CLI atomic no-overwrite publication is validated on Windows/NTFS and Linux/ext4. WSL DrvFS (`/mnt/*`) lacks atomic no-replace rename and fails explicitly without falling back to overwrite (set `MOONLIBSYNC_CLI_TMP_PARENT=/tmp` for positive Linux CLI smoke runs under WSL).
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
 - [js/README.md](js/README.md) — Zero-dependency Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design
