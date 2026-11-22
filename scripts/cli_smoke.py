@@ -150,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(44,44,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(46,46,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -461,7 +461,7 @@ try:
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 44 Native helper tests (36 previous + 8 v060); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 46 Native helper tests (36 previous + 10 v060); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:

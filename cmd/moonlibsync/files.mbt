@@ -29,10 +29,59 @@ async fn entry_exists(path : String) -> Bool {
 }
 
 ///|
+fn is_windows_reserved_device_name(leaf : String) -> Bool {
+  let stem_buf = StringBuilder()
+  for c in leaf {
+    if c == '.' || c == ':' {
+      break
+    }
+    stem_buf.write_char(c)
+  }
+  let chars = stem_buf.to_string().to_array()
+  let mut end = chars.length()
+  while end > 0 && chars[end - 1] == ' ' {
+    end = end - 1
+  }
+  let trimmed = StringBuilder()
+  for i in 0..<end {
+    trimmed.write_char(chars[i])
+  }
+  match dir_ascii_lower(trimmed.to_string()) {
+    "con"
+    | "prn"
+    | "aux"
+    | "nul"
+    | "com1"
+    | "com2"
+    | "com3"
+    | "com4"
+    | "com5"
+    | "com6"
+    | "com7"
+    | "com8"
+    | "com9"
+    | "lpt1"
+    | "lpt2"
+    | "lpt3"
+    | "lpt4"
+    | "lpt5"
+    | "lpt6"
+    | "lpt7"
+    | "lpt8"
+    | "lpt9" => true
+    _ => false
+  }
+}
+
+///|
 /// Resolve the actual parent; lstat the leaf, including dangling links.
 /// Existing outputs also reject all aliases of an existing input by OS semantics.
 async fn prepare_output(path : String) -> String {
   let absolute = @path.Path(path).resolve()
+  let leaf = absolute.basename().to_owned()
+  if @path.sep != '/' && is_windows_reserved_device_name(leaf) {
+    raise FileFailure("reserved Windows device output path: " + path)
+  }
   guard !entry_exists(absolute.to_string()) else {
     raise FileFailure("output already exists: " + path)
   }
@@ -40,7 +89,6 @@ async fn prepare_output(path : String) -> String {
   guard @fs.kind(parent) is @fs.FileKind::Directory else {
     raise FileFailure("output parent is not a directory: " + path)
   }
-  let leaf = absolute.basename().to_owned()
   guard leaf != "" && leaf != "." && leaf != ".." else {
     raise FileFailure("invalid output filename: " + path)
   }

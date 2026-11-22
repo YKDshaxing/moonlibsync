@@ -135,3 +135,44 @@ test "create_reverse_delta and create_reverse_delta_auto revert new back to old"
   let rev_from_empty = @moonlibsync.create_reverse_delta_auto(v1, b"", d)
   assert_eq(@moonlibsync.patch(b"", rev_from_empty, d), v1)
 }
+
+///|
+test "create_reverse_delta and auto respect asymmetric max_old_bytes and max_new_bytes" {
+  let d = @moonlibsync.Limits::default()
+  let small = Bytes::makei(100, i => (i & 0xff).to_byte())
+  let big = Bytes::makei(500, i => ((i * 7) & 0xff).to_byte())
+
+  // old = 100B, new = 500B with exact tight limits
+  let lim1 : @moonlibsync.Limits = {
+    ..d,
+    max_old_bytes: 100L,
+    max_new_bytes: 500L,
+    max_output_bytes: 500L,
+  }
+  let r1 = @moonlibsync.create_reverse_delta(
+    small,
+    big,
+    { block_len: 64L, strong_sum_len: 16L, },
+    lim1,
+  )
+  assert_eq(@moonlibsync.patch(big, r1, { ..d, max_old_bytes: 500L, }), small)
+  let r1a = @moonlibsync.create_reverse_delta_auto(small, big, lim1)
+  assert_eq(@moonlibsync.patch(big, r1a, { ..d, max_old_bytes: 500L, }), small)
+
+  // old = 500B, new = 100B with exact tight limits
+  let lim2 : @moonlibsync.Limits = {
+    ..d,
+    max_old_bytes: 500L,
+    max_new_bytes: 100L,
+    max_output_bytes: 500L,
+  }
+  let r2 = @moonlibsync.create_reverse_delta(
+    big,
+    small,
+    { block_len: 64L, strong_sum_len: 16L, },
+    lim2,
+  )
+  assert_eq(@moonlibsync.patch(small, r2, { ..d, max_old_bytes: 100L, }), big)
+  let r2a = @moonlibsync.create_reverse_delta_auto(big, small, lim2)
+  assert_eq(@moonlibsync.patch(small, r2a, { ..d, max_old_bytes: 100L, }), big)
+}

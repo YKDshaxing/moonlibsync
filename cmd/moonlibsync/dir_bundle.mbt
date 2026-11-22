@@ -1304,7 +1304,18 @@ async fn apply_verified_bundle_delta(
     let old = bounded_read(old_src, max_old)
     let delta = bounded_read(delta_src, limits.max_delta_bytes)
     let restored = @lib.verified_patch(old, delta, m, limits)
-    @fs.write_binary(dst, restored[:], create_mode=CreateNew, permission=0o600)
+    let dst_file = @fs.open(
+      dst,
+      mode=WriteOnly,
+      create_mode=CreateNew,
+      permission=0o600,
+    )
+    let mut opened = true
+    errdefer (if opened { dst_file.close() })
+    write_content(dst_file, restored)
+    sync_content(dst_file)
+    dst_file.close()
+    opened = false
     advance_progress(
       progress,
       old.length().to_int64() + delta.length().to_int64(),
@@ -1607,10 +1618,65 @@ async fn pack_rollback_update(
 }
 
 ///|
+async fn try_resolve_safe_regular_under(
+  root_dir : String,
+  rel_posix : String,
+) -> String? {
+  guard @fs.kind(root_dir, follow_symlink=false) is @fs.FileKind::Directory else {
+    raise FileFailure("unsupported directory or symlink root: " + root_dir)
+  }
+  let segs = split_posix_segments(rel_posix)
+  let mut cur = @path.Path(root_dir)
+  for i in 0..<segs.length() {
+    let seg = segs[i]
+    guard seg.length() > 0 && seg != "." && seg != ".." else {
+      raise @lib.ManifestError::InvalidField("path")
+    }
+    cur = cur.join(@path.Path(seg))
+    let cur_str = cur.to_string()
+    let kind_opt : @fs.FileKind? = Some(@fs.kind(cur_str, follow_symlink=false)) catch {
+      @os_error.OsError::OsError(NotFound, ..) => None
+      error => raise error
+    }
+    match kind_opt {
+      None => return None
+      Some(kind) =>
+        if i + 1 < segs.length() {
+          if !(kind is @fs.FileKind::Directory) {
+            return None
+          }
+        } else if kind is @fs.FileKind::Regular {
+          return Some(cur_str)
+        } else {
+          return None
+        }
+    }
+  }
+  None
+}
+
+///|
+fn record_basis_digest(
+  seen_basis : Map[String, @lib.FileDigest],
+  path : String,
+  digest : @lib.FileDigest,
+) -> Unit raise @lib.ManifestError {
+  match seen_basis.get(path) {
+    Some(existing) =>
+      if existing.byte_length != digest.byte_length ||
+        existing.sha256 != digest.sha256 {
+        raise @lib.ManifestError::BindingMismatch("basis_digest")
+      }
+    None => seen_basis[path] = digest
+  }
+}
+
+///|
 async fn build_rollback_archive_to_temp(
   plan : Plan,
   staging_out : String,
   basis_dir : String,
+  applied_manifest : @lib.DirBundleManifest,
   rb_final : String,
 ) -> String {
   let limits = plan.limits
@@ -1624,9 +1690,42 @@ async fn build_rollback_archive_to_temp(
   let new_entries : Array[@lib.DirEntry] = []
   collect_dir_entries(staging_out, "", 1L, dir_limits, seen_new, new_entries)
   let new_snap = @lib.create_dir_snapshot(new_entries, dir_limits)
-  let seen_old : Map[String, String] = Map([])
-  let old_entries : Array[@lib.DirEntry] = []
-  collect_dir_entries(basis_dir, "", 1L, dir_limits, seen_old, old_entries)
+  let seen_basis : Map[String, @lib.FileDigest] = Map([])
+  for entry in applied_manifest.entries {
+    match entry.action {
+      Unchanged(d) => record_basis_digest(seen_basis, entry.path, d)
+      UpdateDelta(_, m) => record_basis_digest(seen_basis, entry.path, m.basis)
+      UpdateFull(_, b, _) => record_basis_digest(seen_basis, entry.path, b)
+      Delete(b) => record_basis_digest(seen_basis, entry.path, b)
+      CopyFromBasis(src, target_d) =>
+        record_basis_digest(seen_basis, src, target_d)
+      UpdateDeltaFrom(src, _, m) =>
+        record_basis_digest(seen_basis, src, m.basis)
+      AddFull(_, _) => ()
+    }
+  }
+  for entry in applied_manifest.entries {
+    match entry.action {
+      CopyFromBasis(_, _) | UpdateDeltaFrom(_, _, _) =>
+        if !seen_basis.contains(entry.path) {
+          match try_resolve_safe_regular_under(basis_dir, entry.path) {
+            Some(existing_path) => {
+              let actual = stream_hash_regular_file(
+                existing_path,
+                dir_limits.max_file_bytes,
+              )
+              record_basis_digest(seen_basis, entry.path, actual)
+            }
+            None => ()
+          }
+        }
+      _ => ()
+    }
+  }
+  let old_entries : Array[@lib.DirEntry] = Array(capacity=seen_basis.length())
+  for path, digest in seen_basis {
+    old_entries.push({ path, digest, })
+  }
   let old_snap = @lib.create_dir_snapshot(old_entries, dir_limits)
   let rev_plan = @lib.plan_dir_sync_with_options(
     new_snap,
@@ -1733,7 +1832,7 @@ async fn publish_dir_apply_tx(
   basis_dir : String,
   out_dir : String,
   rb_final_opt : String?,
-  builder : async (String) -> Unit,
+  builder : async (String) -> @lib.DirBundleManifest,
 ) -> Unit {
   let final_path = prepare_output(out_dir)
   match rb_final_opt {
@@ -1756,11 +1855,13 @@ async fn publish_dir_apply_tx(
   let mut rb_tmp_opt : String? = None
   let mut out_committed = false
   try {
-    builder(staging)
+    let applied_manifest = builder(staging)
     match rb_final_opt {
       Some(rb_final) =>
         rb_tmp_opt = Some(
-          build_rollback_archive_to_temp(plan, staging, basis_dir, rb_final),
+          build_rollback_archive_to_temp(
+            plan, staging, basis_dir, applied_manifest, rb_final,
+          ),
         )
       None => ()
     }
@@ -1852,6 +1953,7 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
           plan, basis_dir, unpack_dir, staging, manifest, progress,
         )
         @fs.rmdir(unpack_dir, recursive=true, allow_missing=true)
+        manifest
       } catch {
         error => {
           let detail = stream_error_detail(error)
@@ -1900,6 +2002,7 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
       apply_bundle_entries(
         plan, basis_dir, bundle_input, staging, bundle, progress,
       )
+      bundle
     })
     finish_progress(progress)
   }

@@ -206,3 +206,59 @@ test "gzip decoder rejects zip bomb trailing data truncation and corruption" {
   }
   assert_true(bad_level)
 }
+
+///|
+test "gzip encoder step finish=true preserves all bytes on large chunks >16 KiB into 64 KiB and 16 B buffers" {
+  // Pseudo-random incompressible 65,536-byte and 200,000-byte payloads (forces partial consumption in @flate).
+  for total_len in [65536, 200000] {
+    let data = Bytes::makei(total_len, i => {
+      let x = (i * 1103515245 + 12345) ^ (i >> 5)
+      (x & 0xff).to_byte()
+    })
+    for out_cap in [65536, 16] {
+      let enc = @compress.GzipEncoder::new(
+        total_len.to_int64(),
+        (total_len + 65536).to_int64(),
+        level=6,
+      )
+      let out_buf = FixedArray::make(out_cap, b'\x00')
+      let compressed = @buffer.Buffer()
+      let mut pos = 0
+      while pos < data.length() {
+        let step = enc.step(data[pos:], out_buf, finish=true)
+        if step.produced > 0 {
+          compressed.write_bytes(Bytes::from_array(out_buf[0:step.produced]))
+        }
+        pos = pos + step.consumed
+        if step.status is Done {
+          assert_eq(pos, data.length())
+          break
+        }
+      }
+      // Drain remaining finish output if not yet Done
+      let mut finished = try {
+        let _ = enc.summary()
+        true
+      } catch {
+        _ => false
+      }
+      while !finished {
+        let step = enc.step(b""[:], out_buf, finish=true)
+        if step.produced > 0 {
+          compressed.write_bytes(Bytes::from_array(out_buf[0:step.produced]))
+        }
+        if step.status is Done {
+          finished = true
+        }
+      }
+      let summary = enc.summary()
+      assert_eq(summary.input_bytes, total_len.to_int64())
+      let restored = @compress.decompress_gzip(
+        compressed.to_bytes(),
+        (total_len + 65536).to_int64(),
+        total_len.to_int64(),
+      )
+      assert_eq(restored, data)
+    }
+  }
+}

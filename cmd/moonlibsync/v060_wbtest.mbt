@@ -915,3 +915,392 @@ async test "cli v060 completions emit all 28 commands for bash zsh and powershel
     assert_true(text.contains("--passphrase-file"))
   }
 }
+
+///|
+async test "cli v060 redteam2 Windows device guard seal output ceiling and zsh completions" {
+  // Windows DOS reserved device name detector (exact, case-insensitive, extension, trailing space)
+  for
+    bad_leaf in [
+      "CON", "con", "Prn", "AUX", "nul", "NUL.txt", "con.tar.gz", "aux .log", "COM1",
+      "com9.bin", "LPT1", "lpt9.json", "NUL:stream",
+    ] {
+    assert_true(is_windows_reserved_device_name(bad_leaf))
+  }
+  for
+    ok_leaf in [
+      "console.txt", "null.bin", "auxiliary", "com0", "com10", "lpt0", "lpt10", "my-nul.txt",
+      "archive.mbundle.gz",
+    ] {
+    assert_true(!is_windows_reserved_device_name(ok_leaf))
+  }
+
+  // On Windows, prepare_output rejects reserved DOS device output paths cleanly
+  if @path.sep != '/' {
+    cli_test_scope(dir => {
+      for bad_name in ["NUL", "con.txt", "Aux", "COM1.bin", "lpt9.log"] {
+        expect_file_failure(
+          () => {
+            let _ = prepare_output(dir + "/" + bad_name)
+          },
+          "reserved Windows device output path",
+        )
+      }
+    })
+  }
+
+  // seal default output ceiling stays 80 MiB unless --max-output-bytes is explicitly passed
+  let seal_default_plan = parse_plan([
+    "seal", "in.bin", "out.menc", "--key-file", "k.hex",
+  ])
+  assert_true(!seal_default_plan.explicit_max_output)
+  let sl_def = seal_limits_for_plan(seal_default_plan)
+  assert_eq(sl_def.max_input_bytes, 67108864L)
+  assert_eq(sl_def.max_output_bytes, 83886080L)
+
+  let seal_explicit_small = parse_plan([
+    "seal", "in.bin", "out.menc", "--key-file", "k.hex", "--max-output-bytes", "100",
+  ])
+  assert_true(seal_explicit_small.explicit_max_output)
+  assert_eq(seal_limits_for_plan(seal_explicit_small).max_output_bytes, 100L)
+
+  let seal_explicit_large = parse_plan([
+    "seal", "in.bin", "out.menc", "--key-file", "k.hex", "--max-output-bytes", "100000000",
+  ])
+  assert_true(seal_explicit_large.explicit_max_output)
+  assert_eq(
+    seal_limits_for_plan(seal_explicit_large).max_output_bytes,
+    100000000L,
+  )
+
+  let unseal_default_plan = parse_plan([
+    "unseal", "in.menc", "out.bin", "--key-file", "k.hex",
+  ])
+  let usl_def = seal_limits_for_plan(unseal_default_plan)
+  assert_eq(usl_def.max_input_bytes, 83886080L)
+  assert_eq(usl_def.max_output_bytes, 67108864L)
+
+  // Verify explicit --max-output-bytes 100 actually rejects seal output > 100 bytes
+  cli_test_scope(dir => {
+    let key_p = dir + "/k.hex"
+    let in_p = dir + "/in.bin"
+    @fs.write_binary(
+      key_p,
+      b"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\n",
+      create_mode=CreateNew,
+    )
+    @fs.write_binary(
+      in_p,
+      Bytes::makei(256, i => (i % 256).to_byte()),
+      create_mode=CreateNew,
+    )
+    for streaming in [false, true] {
+      let args = [
+        "seal",
+        in_p,
+        dir + "/too-big-\{streaming}.menc",
+        "--key-file",
+        key_p,
+        "--max-output-bytes",
+        "100",
+      ]
+      if streaming {
+        args.push("--streaming")
+      }
+      expect_file_failure(() => execute(parse_plan(args)), "LimitExceeded")
+      assert_true(!entry_exists(dir + "/too-big-\{streaming}.menc"))
+    }
+  })
+
+  // zsh completion splits write commands and non-streaming inspect commands cleanly
+  let zsh = completion_script_for_shell("zsh")
+  assert_true(
+    zsh.contains(
+      "delta|patch|basis-info|make-manifest|compress|decompress|sign)\n      _arguments '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;",
+    ),
+  )
+  assert_true(
+    zsh.contains(
+      "inspect-signature|inspect-manifest)\n      _arguments '--json[Output JSON]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;",
+    ),
+  )
+  assert_true(
+    zsh.contains(
+      "inspect-delta|check-patch)\n      _arguments '--json[Output JSON]' '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;",
+    ),
+  )
+  assert_true(zsh.contains("*)\n      _arguments '*:file:_files' ;;"))
+}
+
+///|
+async test "cli v060 redteam2 rollback exclude isolation cyclic swap and reverse-delta limits" {
+  cli_test_scope(dir => {
+    let dl = @lib.DirLimits::default()
+
+    // 1. Rollback exclude isolation (excluded secret + excluded oversized file > --max-file-bytes)
+    let ex_basis = dir + "/ex-basis"
+    let ex_target = dir + "/ex-target"
+    @fs.mkdir(ex_basis)
+    @fs.mkdir(ex_target)
+    let edit_v1 = Bytes::makei(3000, i => ((i * 23 + 7) % 256).to_byte())
+    let edit_v2 = edit_v1[0:1500].to_owned() +
+      b"PATCHED-SYNCED" +
+      edit_v1[1514:].to_owned()
+    @fs.write_binary(ex_basis + "/keep.bin", b"keep-v1", create_mode=CreateNew)
+    @fs.write_binary(ex_basis + "/edit.bin", edit_v1, create_mode=CreateNew)
+    @fs.write_binary(ex_basis + "/drop.bin", b"drop-v1", create_mode=CreateNew)
+    @fs.write_binary(
+      ex_basis + "/secret.log",
+      b"TOP-SECRET-EXCLUDED",
+      create_mode=CreateNew,
+    )
+    @fs.write_binary(
+      ex_basis + "/huge.log",
+      Bytes::make(12000, b'\x41'),
+      create_mode=CreateNew,
+    )
+
+    @fs.write_binary(ex_target + "/keep.bin", b"keep-v1", create_mode=CreateNew)
+    @fs.write_binary(ex_target + "/edit.bin", edit_v2, create_mode=CreateNew)
+    @fs.write_binary(ex_target + "/add.bin", b"added-v2", create_mode=CreateNew)
+
+    let ex_bs = dir + "/ex-b.snap.json"
+    let ex_ts = dir + "/ex-t.snap.json"
+    let ex_sigs = dir + "/ex-sigs"
+    let ex_arch = dir + "/ex.mbundle.gz"
+    let ex_bdir = dir + "/ex-bundle-dir"
+    let ex_out = dir + "/ex-out"
+    let ex_out_buf = dir + "/ex-out-buf"
+    let ex_rb = dir + "/ex-rb.mbundle.gz"
+    let ex_restored = dir + "/ex-restored"
+
+    execute(
+      parse_plan([
+        "dir-snapshot", ex_basis, ex_bs, "--exclude", "*.log", "--max-file-bytes",
+        "4096",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "dir-snapshot", ex_target, ex_ts, "--exclude", "*.log", "--max-file-bytes",
+        "4096",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "dir-signatures", ex_basis, ex_bs, ex_sigs, "--block-size", "256", "--max-file-bytes",
+        "4096",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "dir-pack", ex_bs, ex_sigs, ex_target, ex_arch, "--archive", "--gzip", "--exclude",
+        "*.log", "--max-file-bytes", "4096",
+      ]),
+    )
+    // Also pack & apply directory bundle non-streaming (exercises synced delta output)
+    execute(
+      parse_plan([
+        "dir-pack", ex_bs, ex_sigs, ex_target, ex_bdir, "--exclude", "*.log", "--max-file-bytes",
+        "4096",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "dir-apply", ex_basis, ex_bdir, ex_out_buf, "--max-file-bytes", "4096",
+      ]),
+    )
+    assert_eq(bounded_read(ex_out_buf + "/edit.bin", 4096L), edit_v2)
+
+    // dir-apply --save-rollback MUST NOT touch secret.log or huge.log!
+    execute(
+      parse_plan([
+        "dir-apply", ex_basis, ex_arch, ex_out, "--archive", "--gzip", "--max-file-bytes",
+        "4096", "--save-rollback", ex_rb,
+      ]),
+    )
+    let rb_ib = StringBuilder()
+    execute_inspect_bundle(
+      parse_plan([
+        "inspect-bundle", ex_rb, "--gzip", "--json", "--max-file-bytes", "4096",
+      ]),
+      true,
+      writer=b => rb_ib.write_string(@utf8.decode(b)),
+    )
+    let rb_ib_str = rb_ib.to_string()
+    assert_true(!rb_ib_str.contains("secret.log"))
+    assert_true(!rb_ib_str.contains("huge.log"))
+
+    execute(
+      parse_plan([
+        "dir-apply", ex_out, ex_rb, ex_restored, "--archive", "--gzip", "--max-file-bytes",
+        "4096",
+      ]),
+    )
+    let ver_rb = StringBuilder()
+    execute_dir_verify(
+      parse_plan([
+        "dir-verify", ex_restored, ex_bs, "--json", "--max-file-bytes", "4096",
+      ]),
+      true,
+      writer=b => ver_rb.write_string(@utf8.decode(b)),
+    )
+    let ver_rb_rep = @lib.parse_dir_verify_report(
+      @utf8.encode(ver_rb.to_string()),
+      dl,
+    )
+    assert_true(
+      ver_rb_rep.ok &&
+      ver_rb_rep.matched_count == 3L &&
+      ver_rb_rep.extra_count == 0L,
+    )
+
+    // 2. Cyclic swap (a.bin <-> b.bin) + overwrite-from-sibling (c.bin <- d.bin)
+    let sw_basis = dir + "/sw-basis"
+    let sw_target = dir + "/sw-target"
+    @fs.mkdir(sw_basis)
+    @fs.mkdir(sw_target)
+    let data_a = Bytes::makei(4096, i => ((i * 13 + 1) % 256).to_byte())
+    let data_b = Bytes::makei(5000, i => ((i * 37 + 9) % 256).to_byte())
+    let data_c = Bytes::makei(2048, i => ((i * 59 + 3) % 256).to_byte())
+    let data_d = Bytes::makei(3072, i => ((i * 71 + 17) % 256).to_byte())
+    @fs.write_binary(sw_basis + "/a.bin", data_a, create_mode=CreateNew)
+    @fs.write_binary(sw_basis + "/b.bin", data_b, create_mode=CreateNew)
+    @fs.write_binary(sw_basis + "/c.bin", data_c, create_mode=CreateNew)
+    @fs.write_binary(sw_basis + "/d.bin", data_d, create_mode=CreateNew)
+    @fs.write_binary(sw_target + "/a.bin", data_b, create_mode=CreateNew)
+    @fs.write_binary(sw_target + "/b.bin", data_a, create_mode=CreateNew)
+    @fs.write_binary(sw_target + "/c.bin", data_d, create_mode=CreateNew)
+    @fs.write_binary(sw_target + "/d.bin", data_d, create_mode=CreateNew)
+
+    let sw_bs = dir + "/sw-b.snap.json"
+    let sw_ts = dir + "/sw-t.snap.json"
+    let sw_sigs = dir + "/sw-sigs"
+    let sw_arch = dir + "/sw.mbundle.gz"
+    let sw_out = dir + "/sw-out"
+    let sw_rb = dir + "/sw-rb.mbundle.gz"
+    let sw_restored = dir + "/sw-restored"
+    execute(parse_plan(["dir-snapshot", sw_basis, sw_bs]))
+    execute(parse_plan(["dir-snapshot", sw_target, sw_ts]))
+    execute(parse_plan(["dir-signatures", sw_basis, sw_bs, sw_sigs]))
+    execute(
+      parse_plan([
+        "dir-pack", sw_bs, sw_sigs, sw_target, sw_arch, "--detect-moves", "--archive",
+        "--gzip",
+      ]),
+    )
+    let sw_ib = StringBuilder()
+    execute_inspect_bundle(
+      parse_plan(["inspect-bundle", sw_arch, "--gzip", "--json"]),
+      true,
+      writer=b => sw_ib.write_string(@utf8.decode(b)),
+    )
+    let sw_ib_str = sw_ib.to_string()
+    assert_true(sw_ib_str.contains("\"copy_from_basis\":\"3\""))
+    assert_true(sw_ib_str.contains("\"total_payload_bytes\":\"0\""))
+
+    execute(
+      parse_plan([
+        "dir-apply", sw_basis, sw_arch, sw_out, "--archive", "--gzip", "--save-rollback",
+        sw_rb,
+      ]),
+    )
+    assert_eq(bounded_read(sw_out + "/a.bin", 8192L), data_b)
+    assert_eq(bounded_read(sw_out + "/b.bin", 8192L), data_a)
+    assert_eq(bounded_read(sw_out + "/c.bin", 8192L), data_d)
+    assert_eq(bounded_read(sw_out + "/d.bin", 8192L), data_d)
+
+    execute(
+      parse_plan([
+        "dir-apply", sw_out, sw_rb, sw_restored, "--archive", "--gzip",
+      ]),
+    )
+    assert_eq(bounded_read(sw_restored + "/a.bin", 8192L), data_a)
+    assert_eq(bounded_read(sw_restored + "/b.bin", 8192L), data_b)
+    assert_eq(bounded_read(sw_restored + "/c.bin", 8192L), data_c)
+    assert_eq(bounded_read(sw_restored + "/d.bin", 8192L), data_d)
+
+    // 3. reverse-delta asymmetric --max-old-bytes / --max-new-bytes (buffered & streaming)
+    let small_p = dir + "/rev-small.bin"
+    let big_p = dir + "/rev-big.bin"
+    let small_bytes = Bytes::makei(200, i => ((i * 11 + 3) % 256).to_byte())
+    let big_bytes = Bytes::makei(5000, i => ((i * 31 + 5) % 256).to_byte())
+    @fs.write_binary(small_p, small_bytes, create_mode=CreateNew)
+    @fs.write_binary(big_p, big_bytes, create_mode=CreateNew)
+
+    // Small OLD (200) -> Big NEW (5000) with --max-old-bytes 500 --max-new-bytes 6000
+    let r1_buf = dir + "/r1-buf.delta"
+    let r1_str = dir + "/r1-str.delta"
+    execute(
+      parse_plan([
+        "reverse-delta", small_p, big_p, r1_buf, "--block-size", "auto", "--max-old-bytes",
+        "500", "--max-new-bytes", "6000",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "reverse-delta", small_p, big_p, r1_str, "--block-size", "auto", "--streaming",
+        "--max-old-bytes", "500", "--max-new-bytes", "6000",
+      ]),
+    )
+    assert_eq(bounded_read(r1_buf, 65536L), bounded_read(r1_str, 65536L))
+    execute(parse_plan(["patch", big_p, r1_str, dir + "/r1-restored.bin"]))
+    assert_eq(bounded_read(dir + "/r1-restored.bin", 1024L), small_bytes)
+
+    // Tighter --max-old-bytes rejects OLD; tighter --max-new-bytes rejects NEW
+    for streaming in [false, true] {
+      let args_old = [
+        "reverse-delta",
+        small_p,
+        big_p,
+        dir + "/r1-fail-old-\{streaming}.delta",
+        "--max-old-bytes",
+        "100",
+        "--max-new-bytes",
+        "6000",
+      ]
+      if streaming {
+        args_old.push("--streaming")
+      }
+      expect_file_failure(
+        () => execute(parse_plan(args_old)),
+        "ReadLimitExceeded",
+      )
+      let args_new = [
+        "reverse-delta",
+        small_p,
+        big_p,
+        dir + "/r1-fail-new-\{streaming}.delta",
+        "--max-old-bytes",
+        "500",
+        "--max-new-bytes",
+        "4000",
+      ]
+      if streaming {
+        args_new.push("--streaming")
+      }
+      expect_file_failure(
+        () => execute(parse_plan(args_new)),
+        "ReadLimitExceeded",
+      )
+    }
+
+    // Big OLD (5000) -> Small NEW (200) with --max-old-bytes 6000 --max-new-bytes 500
+    let r2_buf = dir + "/r2-buf.delta"
+    let r2_str = dir + "/r2-str.delta"
+    execute(
+      parse_plan([
+        "reverse-delta", big_p, small_p, r2_buf, "--block-size", "auto", "--max-old-bytes",
+        "6000", "--max-new-bytes", "500",
+      ]),
+    )
+    execute(
+      parse_plan([
+        "reverse-delta", big_p, small_p, r2_str, "--block-size", "auto", "--streaming",
+        "--max-old-bytes", "6000", "--max-new-bytes", "500",
+      ]),
+    )
+    assert_eq(bounded_read(r2_buf, 65536L), bounded_read(r2_str, 65536L))
+    execute(parse_plan(["patch", small_p, r2_str, dir + "/r2-restored.bin"]))
+    assert_eq(bounded_read(dir + "/r2-restored.bin", 8192L), big_bytes)
+  })
+}

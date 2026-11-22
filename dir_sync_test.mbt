@@ -649,3 +649,152 @@ test "dir bundle manifest CopyFromBasis and UpdateDeltaFrom roundtrip and exclud
   }
   assert_true(bom_rej)
 }
+
+///|
+test "dir sync rejects reserved DOS names, file-vs-dir prefix and dir-case collisions, self-ref, and handles cyclic swaps" {
+  let d = @moonlibsync.DirLimits::default()
+  let fl = @moonlibsync.Limits::default()
+  let d1 = digest_of(b"content-one")
+  let d2 = digest_of(b"content-two")
+
+  // 1. Windows DOS reserved device names rejected in any segment
+  for
+    bad in [
+      "NUL", "nul.txt", "sub/CON", "PRN", "AUX", "COM1", "com9.bin", "LPT1", "dir/lpt9.dat",
+    ] {
+    let rej = try {
+      let _ = @moonlibsync.create_dir_snapshot([{ path: bad, digest: d1, }], d)
+      false
+    } catch {
+      @moonlibsync.ManifestError::InvalidField("path") => true
+      _ => false
+    }
+    assert_true(rej)
+  }
+
+  // 2. File-vs-directory ancestor prefix & intermediate dir case collisions rejected
+  for
+    pair in [
+      ("foo", "foo/bar.txt"),
+      ("Foo", "foo/bar.txt"),
+      ("a/B", "a/b/c/d.txt"),
+      ("DIR/b.txt", "dir/a.txt"),
+    ] {
+    let rej = try {
+      let _ = @moonlibsync.create_dir_snapshot(
+        [{ path: pair.0, digest: d1, }, { path: pair.1, digest: d2, }],
+        d,
+      )
+      false
+    } catch {
+      @moonlibsync.ManifestError::InvalidField("path_collision") => true
+      _ => false
+    }
+    assert_true(rej)
+  }
+
+  // 3. Non-prefix siblings are allowed
+  let ok_sibs = @moonlibsync.create_dir_snapshot(
+    [
+      { path: "foo", digest: d1, },
+      { path: "foo.txt", digest: d2, },
+      { path: "foo-bar/baz", digest: d1, },
+    ],
+    d,
+  )
+  assert_eq(ok_sibs.entries.length(), 3)
+
+  // 4. Legal file <-> directory replacement across snapshots is allowed, while cross-snapshot dir-case collision is rejected
+  let snap_file = @moonlibsync.create_dir_snapshot(
+    [{ path: "foo", digest: d1, }],
+    d,
+  )
+  let snap_dir = @moonlibsync.create_dir_snapshot(
+    [{ path: "foo/bar.txt", digest: d2, }],
+    d,
+  )
+  let repl_plan = @moonlibsync.plan_dir_sync(snap_file, snap_dir, d)
+  let _ = @moonlibsync.parse_dir_plan(
+    @moonlibsync.encode_dir_plan(repl_plan, d),
+    d,
+  )
+
+  let snap_upper = @moonlibsync.create_dir_snapshot(
+    [{ path: "DIR/a.txt", digest: d1, }],
+    d,
+  )
+  let snap_lower = @moonlibsync.create_dir_snapshot(
+    [{ path: "dir/b.txt", digest: d2, }],
+    d,
+  )
+  let cross_rej = try {
+    let _ = @moonlibsync.plan_dir_sync(snap_upper, snap_lower, d)
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("path_collision") => true
+    _ => false
+  }
+  assert_true(cross_rej)
+
+  // 5. Cyclic swap a.bin <-> b.bin under detect_moves emits 2x CopyFromBasis (0 transfer bytes) & roundtrips
+  let swap_v1 = @moonlibsync.create_dir_snapshot(
+    [{ path: "a.bin", digest: d1, }, { path: "b.bin", digest: d2, }],
+    d,
+  )
+  let swap_v2 = @moonlibsync.create_dir_snapshot(
+    [{ path: "a.bin", digest: d2, }, { path: "b.bin", digest: d1, }],
+    d,
+  )
+  let swap_plan = @moonlibsync.plan_dir_sync_with_options(
+    swap_v1,
+    swap_v2,
+    { detect_moves: true, },
+    d,
+  )
+  assert_eq(swap_plan.copy_from_basis_count, 2L)
+  assert_eq(swap_plan.transfer_upper_bound_bytes, 0L)
+  let parsed_swap = @moonlibsync.parse_dir_plan(
+    @moonlibsync.encode_dir_plan(swap_plan, d),
+    d,
+  )
+  assert_eq(parsed_swap.copy_from_basis_count, 2L)
+  assert_true(parsed_swap.actions[0].kind is CopyFromBasis("b.bin"))
+  assert_true(parsed_swap.actions[1].kind is CopyFromBasis("a.bin"))
+
+  // 6. Case-folded self-reference in CopyFromBasis rejected
+  let self_ref_rej = try {
+    let _ = @moonlibsync.create_dir_bundle_manifest(
+      [{ path: "foo.txt", action: CopyFromBasis("FOO.TXT", d1), }],
+      d,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("source_path") => true
+    _ => false
+  }
+  assert_true(self_ref_rej)
+
+  // 7. DirVerifyReport aggregate count > max_entries rejected
+  let tight : @moonlibsync.DirLimits = { ..d, max_entries: 2L, }
+  let agg_rej = try {
+    let _ = @moonlibsync.encode_dir_verify_report(
+      {
+        ok: false,
+        matched_count: 2L,
+        modified_count: 0L,
+        missing_count: 1L,
+        extra_count: 0L,
+        issues: [
+          { path: "z.bin", kind: Missing, expected: Some(d1), actual: None, },
+        ],
+      },
+      tight,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::ResourceLimit("dir_entries") => true
+    _ => false
+  }
+  assert_true(agg_rej)
+}

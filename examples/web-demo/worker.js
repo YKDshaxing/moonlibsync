@@ -3,6 +3,7 @@ const IS_REPO_LOCAL = self.location.pathname.includes('/examples/web-demo/');
 const MODULE_PATHS = IS_REPO_LOCAL
   ? [
       '../../_build/js/release/build/examples/web-demo/web-demo.js',
+      '../../_build/js/release/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       './web-demo.js',
@@ -10,28 +11,38 @@ const MODULE_PATHS = IS_REPO_LOCAL
   : [
       './web-demo.js',
       '../../_build/js/release/build/examples/web-demo/web-demo.js',
+      '../../_build/js/release/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
     ];
 
 let coreMod = null;
 let loadedPath = '';
+let loadPromise = null;
 
 async function loadCore() {
   if (coreMod) {
     return { loadedPath, exportCount: Object.keys(coreMod).length };
   }
-  let lastErr = null;
-  for (const path of MODULE_PATHS) {
-    try {
-      coreMod = await import(path);
-      loadedPath = path;
-      return { loadedPath, exportCount: Object.keys(coreMod).length };
-    } catch (err) {
-      lastErr = err;
-    }
+  if (loadPromise) {
+    return loadPromise;
   }
-  throw lastErr || new Error('Failed to load compiled MoonLibSync web-demo.js');
+  loadPromise = (async () => {
+    let lastErr = null;
+    for (const path of MODULE_PATHS) {
+      try {
+        const mod = await import(path);
+        coreMod = mod;
+        loadedPath = path;
+        return { loadedPath, exportCount: Object.keys(coreMod).length };
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    loadPromise = null;
+    throw lastErr || new Error('Failed to load compiled MoonLibSync web-demo.js');
+  })();
+  return loadPromise;
 }
 
 self.addEventListener('message', async (event) => {
@@ -60,6 +71,7 @@ self.addEventListener('message', async (event) => {
     self.postMessage({ type: 'progress', id, phase: method, pct: 100 });
     self.postMessage({ id, ok: true, result });
   } catch (err) {
+    self.postMessage({ type: 'progress', id, phase: method || 'error', pct: 0 });
     self.postMessage({
       id,
       ok: false,

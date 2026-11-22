@@ -287,19 +287,36 @@ async fn execute_verify(
 }
 
 ///|
+fn seal_limits_for_plan(plan : Plan) -> @crypto.SealLimits {
+  let base_sl = @crypto.SealLimits::default()
+  let limits = plan.limits
+  if plan.operation == "seal" {
+    let max_output_bytes = if plan.explicit_max_output {
+      limits.max_output_bytes
+    } else if limits.max_output_bytes > base_sl.max_output_bytes {
+      limits.max_output_bytes
+    } else {
+      base_sl.max_output_bytes
+    }
+    { ..base_sl, max_input_bytes: limits.max_new_bytes, max_output_bytes, }
+  } else {
+    {
+      ..base_sl,
+      max_input_bytes: limits.max_delta_bytes,
+      max_output_bytes: limits.max_output_bytes,
+    }
+  }
+}
+
+///|
 async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
   let limits = plan.limits
   try {
     limits.validate()
     let in_path = plan.inputs[0]
     let output = prepare_output(output_path)
-    let base_sl = @crypto.SealLimits::default()
+    let seal_limits = seal_limits_for_plan(plan)
     if plan.operation == "seal" {
-      let seal_limits : @crypto.SealLimits = {
-        ..base_sl,
-        max_input_bytes: limits.max_new_bytes,
-        max_output_bytes: limits.max_output_bytes,
-      }
       let salt = match @env.rand(16) {
         Some(b) if b.length() == 16 => b
         _ => raise FileFailure("CSPRNG randomness unavailable for salt")
@@ -381,11 +398,6 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
         emit_instant_progress(plan, plain.length().to_int64())
       }
     } else {
-      let seal_limits : @crypto.SealLimits = {
-        ..base_sl,
-        max_input_bytes: limits.max_delta_bytes,
-        max_output_bytes: limits.max_output_bytes,
-      }
       let raw_key : Bytes? = match plan.key_file {
         Some(kf) => Some(read_hex_key_file(kf, "key"))
         None => None

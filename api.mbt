@@ -85,28 +85,42 @@ pub fn signature(
 ///|
 /// Generate a rollback delta (`NEW -> OLD`) that reverts `new_bytes` back to
 /// `old_bytes` when passed to `patch(new_bytes, rev_delta, limits)`.
+/// `limits.max_old_bytes` bounds `old_bytes` and `limits.max_new_bytes` bounds `new_bytes`.
 pub fn create_reverse_delta(
   old_bytes : Bytes,
   new_bytes : Bytes,
   options : SignatureOptions,
   limits : Limits,
 ) -> Bytes raise SyncError {
-  let new_sig = signature(new_bytes, options, limits)
-  delta(new_sig, old_bytes, limits)
+  limits.validate()
+  let rev_limits : Limits = {
+    ..limits,
+    max_old_bytes: limits.max_new_bytes,
+    max_new_bytes: limits.max_old_bytes,
+  }
+  let new_sig = signature(new_bytes, options, rev_limits)
+  delta(new_sig, old_bytes, rev_limits)
 }
 
 ///|
 /// Generate a rollback delta (`NEW -> OLD`) using policy-v1 auto block sizing
 /// (`recommend_block_len` with 16-byte BLAKE2b strong digests).
+/// `limits.max_old_bytes` bounds `old_bytes` and `limits.max_new_bytes` bounds `new_bytes`.
 pub fn create_reverse_delta_auto(
   old_bytes : Bytes,
   new_bytes : Bytes,
   limits : Limits,
 ) -> Bytes raise SyncError {
+  limits.validate()
+  let rev_limits : Limits = {
+    ..limits,
+    max_old_bytes: limits.max_new_bytes,
+    max_new_bytes: limits.max_old_bytes,
+  }
   let block_len = recommend_block_len(
     new_bytes.length().to_int64(),
     16L,
-    limits,
+    rev_limits,
   )
   create_reverse_delta(
     old_bytes,

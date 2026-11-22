@@ -93,17 +93,19 @@
   1. 8 字节魔数：`MLSBDL01`（`4D 4C 53 42 44 4C 30 31`）
   2. 4 字节大端 `u32`：`manifest_len`（Schema 3 `DirBundleManifest` 规范 JSON 字节数）
   3. `manifest_len` 字节：规范 UTF-8 `DirBundleManifest` JSON
-  4. 零个或多个载荷块（严格按 `manifest.entries` 声明顺序与长度一一对应）：
-     - 2 字节大端 `u16`：`payload_path_len`（UTF-8 字节数）
+  4. 4 字节大端 `u32`：`payload_count`（必须严格等于清单声明的载荷总数）
+  5. `payload_count` 个载荷块（严格按 `manifest.entries` 声明顺序与长度一一对应）：
+     - 4 字节大端 `u32`：`payload_path_len`（UTF-8 字节数）
      - `payload_path_len` 字节：必须逐字节等于清单中下一条 `payload_path`
      - 8 字节大端 `u64`：`payload_len`（必须等于清单中该条载荷声明字节数）
-     - `payload_len` 字节：对应 `.delta` 或全量文件原始载荷字节
-  5. 严格 EOF：拒绝任意缺失、路径失配、长度失配或尾随多余字节。
+     - `payload_len` 字节：对应 `.delta` 或全量文件原始载荷字节（编解码全程校验 SHA-256）
+  6. 严格 EOF：拒绝任意缺失、路径失配、长度失配、SHA-256 失配或尾随多余字节。
 - 核心库同时提供一次性 `encode_bundle_archive` / `parse_bundle_archive` 与流式 Sans-IO `BundleArchiveDecoder`（`new` / `has_pending_event` / `step` / `finish`）；CLI 可叠加 `--gzip` 使用独立 `compress/` 子包封装为标准单流 RFC 1952 `.mbundle.gz`。
 
-### 6. 前置 `--exclude` Glob 规则（`match_dir_exclude`，0.5.0 新增）
+### 6. 前置 `--exclude` / `--exclude-from` Glob 规则（`match_dir_exclude`，0.5.0/0.6.0）
 
-- 支持 POSIX 风格通配符 `*`（跨段或单段匹配）与 `?`（单字符），对不带 `/` 的模式匹配任意层级路径段（如 `.git`、`node_modules`、`*.tmp`），对含 `/` 的模式匹配完整相对路径（如 `build/*.o`）。CLI 在遍历目录前即剪枝匹配的子目录，避免深入忽略目录或误触其中符号链接。
+- 支持 POSIX 风格通配符 `*`（单段内任意字符）与 `?`（单字符），无指数回溯。
+- 不含 `/` 的单段模式（如 `.git`、`node_modules`、`*.tmp`）匹配相对路径中的任意一级路径段；含 `/` 的多段模式（如 `dist/*`、`build/*.o`）从根起按路径段前缀匹配。CLI 在遍历目录前即剪枝匹配的子目录，避免深入忽略目录或误触其中符号链接。
 
 ---
 

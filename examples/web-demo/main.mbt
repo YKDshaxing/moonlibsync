@@ -136,20 +136,97 @@ fn decode_hex_bytes(
 }
 
 ///|
-fn literal_preview_ascii_json(view : BytesView) -> String {
+fn literal_preview_utf8_json(view : BytesView) -> String {
   let out = StringBuilder()
-  for i in 0..<view.length() {
-    let b = view[i].to_int()
-    if b >= 0x20 && b < 0x7f {
-      if b == 0x22 {
-        out.write_string("\\\"")
-      } else if b == 0x5c {
-        out.write_string("\\\\")
+  let n = view.length()
+  let mut i = 0
+  while i < n {
+    let b0 = view[i].to_int()
+    if b0 < 0x80 {
+      if b0 >= 0x20 && b0 < 0x7f {
+        if b0 == 0x22 {
+          out.write_string("\\\"")
+        } else if b0 == 0x5c {
+          out.write_string("\\\\")
+        } else {
+          out.write_char(b0.unsafe_to_char())
+        }
       } else {
-        out.write_char(b.unsafe_to_char())
+        out.write_char('.')
+      }
+      i = i + 1
+    } else if b0 >= 0xc2 && b0 <= 0xdf {
+      if i + 1 < n {
+        let b1 = view[i + 1].to_int()
+        if b1 >= 0x80 && b1 <= 0xbf {
+          let cp = ((b0 & 0x1f) << 6) | (b1 & 0x3f)
+          if cp >= 0x80 && cp <= 0x9f {
+            out.write_char('.')
+          } else {
+            out.write_char(cp.unsafe_to_char())
+          }
+          i = i + 2
+        } else {
+          out.write_char('.')
+          i = i + 1
+        }
+      } else {
+        out.write_char('.')
+        i = i + 1
+      }
+    } else if b0 >= 0xe0 && b0 <= 0xef {
+      if i + 2 < n {
+        let b1 = view[i + 1].to_int()
+        let b2 = view[i + 2].to_int()
+        let b1_ok = if b0 == 0xe0 {
+          b1 >= 0xa0 && b1 <= 0xbf
+        } else if b0 == 0xed {
+          b1 >= 0x80 && b1 <= 0x9f
+        } else {
+          b1 >= 0x80 && b1 <= 0xbf
+        }
+        if b1_ok && b2 >= 0x80 && b2 <= 0xbf {
+          let cp = ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f)
+          out.write_char(cp.unsafe_to_char())
+          i = i + 3
+        } else {
+          out.write_char('.')
+          i = i + 1
+        }
+      } else {
+        out.write_char('.')
+        i = i + 1
+      }
+    } else if b0 >= 0xf0 && b0 <= 0xf4 {
+      if i + 3 < n {
+        let b1 = view[i + 1].to_int()
+        let b2 = view[i + 2].to_int()
+        let b3 = view[i + 3].to_int()
+        let b1_ok = if b0 == 0xf0 {
+          b1 >= 0x90 && b1 <= 0xbf
+        } else if b0 == 0xf4 {
+          b1 >= 0x80 && b1 <= 0x8f
+        } else {
+          b1 >= 0x80 && b1 <= 0xbf
+        }
+        if b1_ok && b2 >= 0x80 && b2 <= 0xbf && b3 >= 0x80 && b3 <= 0xbf {
+          let cp = ((b0 & 0x07) << 18) |
+            ((b1 & 0x3f) << 12) |
+            ((b2 & 0x3f) << 6) |
+            (b3 & 0x3f)
+          out.write_char(cp.unsafe_to_char())
+          i = i + 4
+        } else {
+          out.write_char('.')
+          i = i + 1
+        }
+      } else {
+        out.write_char('.')
+        i = i + 1
       }
     } else {
       out.write_char('.')
+      i = i + 1
     }
   }
   out.to_string()
@@ -401,9 +478,15 @@ pub fn compress_gzip_bytes(data : Bytes, level : Int32) -> Bytes {
 ///|
 /// Decompress a bounded single-member RFC 1952 gzip frame.
 pub fn decompress_gzip_bytes(data : Bytes, max_output : Int32) -> Bytes {
+  if max_output < 0 {
+    return b""
+  }
   let limits = @lib.Limits::default()
-  let cap = if max_output < 0 { 0L } else { max_output.to_int64() }
-  @compress.decompress_gzip(data[:], limits.max_delta_bytes, cap) catch {
+  @compress.decompress_gzip(
+    data[:],
+    limits.max_delta_bytes,
+    max_output.to_int64(),
+  ) catch {
     _ => b""
   }
 }
@@ -613,7 +696,7 @@ fn inspect_delta_detailed_impl(
       let preview_len = if lit_len > 64 { 64 } else { lit_len }
       let preview_view = delta_bytes[lit_start:lit_start + preview_len]
       let preview_hex = bytes_view_to_hex(preview_view)
-      let preview_utf8 = literal_preview_ascii_json(preview_view)
+      let preview_utf8 = literal_preview_utf8_json(preview_view)
       let preview_truncated = lit_len > 64
       items.write_string(
         "{\"index\":\{emitted},\"kind\":\"literal\",\"offset\":\"\{offset}\",\"length\":\"\{length}\",\"output_offset\":\"\{output_offset}\",\"preview_hex\":\"\{preview_hex}\",\"preview_utf8\":\"\{preview_utf8}\",\"preview_truncated\":\{preview_truncated}}",
@@ -992,9 +1075,31 @@ fn apply_verified_patch_impl(
   manifest_json : String,
 ) -> String raise {
   let limits = @lib.Limits::default()
-  let is_gz = delta_or_gz.length() >= 2 &&
+  let trimmed = trim_ascii_whitespace(manifest_json)
+  let mut parsed_tm : @lib.TransferManifest? = None
+  let mut tm_err : Error? = None
+  if trimmed.length() > 0 {
+    let m_bytes = @utf8.encode(trimmed)
+    try {
+      parsed_tm = Some(@lib.parse_transfer_manifest(m_bytes, limits))
+    } catch {
+      err => tm_err = Some(err)
+    }
+  }
+  let has_gz_magic = delta_or_gz.length() >= 2 &&
     delta_or_gz[0] == b'\x1f' &&
     delta_or_gz[1] == b'\x8b'
+  let raw_full_matches = if has_gz_magic {
+    match parsed_tm {
+      Some(@lib.TransferManifest::Full(p, _)) =>
+        delta_or_gz.length().to_int64() == p.byte_length &&
+        sha256_file_digest(delta_or_gz, limits.max_new_bytes).sha256 == p.sha256
+      _ => false
+    }
+  } else {
+    false
+  }
+  let is_gz = has_gz_magic && !raw_full_matches
   let payload = if is_gz {
     @compress.decompress_gzip(
       delta_or_gz[:],
@@ -1004,20 +1109,12 @@ fn apply_verified_patch_impl(
   } else {
     delta_or_gz
   }
-  let trimmed = trim_ascii_whitespace(manifest_json)
   let (restored, verified_manifest) = if trimmed.length() > 0 {
-    let m_bytes = @utf8.encode(trimmed)
-    let mut parsed_tm : @lib.TransferManifest? = None
-    let mut tm_err : Error? = None
-    try {
-      parsed_tm = Some(@lib.parse_transfer_manifest(m_bytes, limits))
-    } catch {
-      err => tm_err = Some(err)
-    }
     match parsed_tm {
       Some(tm) =>
         (@lib.apply_update(Some(old_bytes), payload, tm, limits), true)
       None => {
+        let m_bytes = @utf8.encode(trimmed)
         let mut parsed_um : @lib.UpdateManifest? = None
         let mut um_err : Error? = None
         try {
@@ -1090,25 +1187,29 @@ pub fn apply_patch_or_gzip_bytes(
 
 ///|
 /// Generate signature bytes for either `rk-blake2` (`0x72730147`) or
-/// `rollsum-blake2` (`0x72730137`); `block_len <= 0` uses auto policy v1.
+/// `rollsum-blake2` (`0x72730137`); `block_len = 0` uses auto policy v1.
+/// Returns empty bytes on negative options, unknown profiles, or exceeded limits.
 pub fn create_signature_with_profile_bytes(
   basis : Bytes,
   block_len : Int32,
   strong_sum_len : Int32,
   profile : String,
 ) -> Bytes {
+  if block_len < 0 || strong_sum_len < 0 {
+    return b""
+  }
+  let prof = match profile {
+    "rk-blake2" | "0x72730147" => @lib.SignatureProfile::RkBlake2
+    "rollsum-blake2" | "0x72730137" => @lib.SignatureProfile::RollsumBlake2
+    _ => return b""
+  }
   let limits = @lib.Limits::default()
   try {
     let sum_len = strong_sum_len.to_int64()
-    let actual_block = if block_len <= 0 {
+    let actual_block = if block_len == 0 {
       @lib.recommend_block_len(basis.length().to_int64(), sum_len, limits)
     } else {
       block_len.to_int64()
-    }
-    let prof = if profile == "rollsum-blake2" || profile == "0x72730137" {
-      @lib.SignatureProfile::RollsumBlake2
-    } else {
-      @lib.SignatureProfile::RkBlake2
     }
     @lib.signature_with_profile(
       basis,
@@ -1124,16 +1225,21 @@ pub fn create_signature_with_profile_bytes(
 ///|
 /// Generate a rollback delta (`NEW -> OLD`) that reverts `new_bytes` back to
 /// `old_bytes` when passed to `apply_patch_bytes(new_bytes, rev_delta)`.
+/// `block_len = 0` selects auto; `strong_sum_len = 0` selects default `16`.
+/// Returns empty bytes on negative options or exceeded limits.
 pub fn create_reverse_delta_bytes(
   old_bytes : Bytes,
   new_bytes : Bytes,
   block_len : Int32,
   strong_sum_len : Int32,
 ) -> Bytes {
+  if block_len < 0 || strong_sum_len < 0 {
+    return b""
+  }
   let limits = @lib.Limits::default()
   try {
-    let sum = if strong_sum_len <= 0 { 16L } else { strong_sum_len.to_int64() }
-    let actual_block = if block_len <= 0 {
+    let sum = if strong_sum_len == 0 { 16L } else { strong_sum_len.to_int64() }
+    let actual_block = if block_len == 0 {
       @lib.recommend_block_len(new_bytes.length().to_int64(), sum, limits)
     } else {
       block_len.to_int64()
@@ -1734,13 +1840,22 @@ fn seal_bytes_impl(
   argon2_memory_kib : Int32,
   argon2_passes : Int32,
 ) -> String raise {
-  let actual_chunk = if chunk_size <= 0 { 65536 } else { chunk_size }
-  let actual_mem = if argon2_memory_kib <= 0 {
+  guard chunk_size >= 0 else {
+    raise @crypto.CryptoError::InvalidOptions("chunk_size")
+  }
+  guard argon2_memory_kib >= 0 else {
+    raise @crypto.CryptoError::InvalidOptions("argon2_memory_kib")
+  }
+  guard argon2_passes >= 0 else {
+    raise @crypto.CryptoError::InvalidOptions("argon2_passes")
+  }
+  let actual_chunk = if chunk_size == 0 { 65536 } else { chunk_size }
+  let actual_mem = if argon2_memory_kib == 0 {
     16384
   } else {
     argon2_memory_kib
   }
-  let actual_passes = if argon2_passes <= 0 { 2 } else { argon2_passes }
+  let actual_passes = if argon2_passes == 0 { 2 } else { argon2_passes }
   let opts : @crypto.SealOptions = {
     chunk_size: actual_chunk,
     argon2_memory_kib: actual_mem,

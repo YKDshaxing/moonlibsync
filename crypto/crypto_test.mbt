@@ -1360,3 +1360,29 @@ test "Schema 4 JSON edge cases and CryptoError Eq behavior" {
     "InvalidSignature:ed25519",
   )
 }
+
+///|
+test "seal encoder with passphrase checks header output budget before running argon2" {
+  let salt = Bytes::make(16, b'\x11')
+  let nonce = Bytes::make(8, b'\x22') + b"\x00\x00\x00\x00"
+  let opts : @crypto.SealOptions = {
+    chunk_size: 1024,
+    argon2_memory_kib: 64,
+    argon2_passes: 1,
+    argon2_lanes: 1,
+  }
+  let tiny_limits : @crypto.SealLimits = {
+    ..@crypto.SealLimits::default(),
+    max_output_bytes: 55L,
+  }
+  let rej = try {
+    let _ = @crypto.SealEncoder::new_with_passphrase(
+      b"pw", salt, nonce, opts, tiny_limits,
+    )
+    false
+  } catch {
+    @crypto.CryptoError::LimitExceeded("max_output_bytes") => true
+    _ => false
+  }
+  assert_true(rej)
+}

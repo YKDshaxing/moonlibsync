@@ -159,6 +159,42 @@ fn json_escape_string(text : String) -> String {
 }
 
 ///|
+fn is_windows_reserved_segment(seg : String) -> Bool {
+  let stem_buf = StringBuilder()
+  for c in seg {
+    if c == '.' {
+      break
+    }
+    stem_buf.write_char(c)
+  }
+  match ascii_lower(stem_buf.to_string()) {
+    "con"
+    | "prn"
+    | "aux"
+    | "nul"
+    | "com1"
+    | "com2"
+    | "com3"
+    | "com4"
+    | "com5"
+    | "com6"
+    | "com7"
+    | "com8"
+    | "com9"
+    | "lpt1"
+    | "lpt2"
+    | "lpt3"
+    | "lpt4"
+    | "lpt5"
+    | "lpt6"
+    | "lpt7"
+    | "lpt8"
+    | "lpt9" => true
+    _ => false
+  }
+}
+
+///|
 fn validate_dir_path(
   path : String,
   limits : DirLimits,
@@ -184,6 +220,9 @@ fn validate_dir_path(
     guard !s.has_suffix(".") && !s.has_suffix(" ") else {
       raise ManifestError::InvalidField("path")
     }
+    guard !is_windows_reserved_segment(s) else {
+      raise ManifestError::InvalidField("path")
+    }
   }
   for c in path {
     let code = c.to_int()
@@ -205,32 +244,88 @@ fn validate_dir_path(
 }
 
 ///|
+/// Validate a single filesystem tree's paths against:
+/// 1) exact and ASCII case-folded leaf duplicates,
+/// 2) intermediate directory ASCII case-folding collisions (`DIR/a` vs `dir/b`),
+/// 3) exact and ASCII case-folded file-vs-directory ancestor prefix collisions (`foo` vs `foo/bar`).
+fn validate_tree_paths(
+  paths : Array[String],
+  collision_field : String,
+) -> (Map[String, String], Map[String, String]) raise ManifestError {
+  let seen_files : Map[String, String] = Map([])
+  let seen_dirs : Map[String, String] = Map([])
+  for path in paths {
+    let lower = ascii_lower(path)
+    guard !seen_files.contains(lower) else {
+      raise ManifestError::InvalidField(collision_field)
+    }
+    seen_files[lower] = path
+    let prefix = StringBuilder()
+    for c in path {
+      if c == '/' {
+        let dir_path = prefix.to_string()
+        let dir_lower = ascii_lower(dir_path)
+        match seen_dirs.get(dir_lower) {
+          Some(existing) =>
+            if existing != dir_path {
+              raise ManifestError::InvalidField(collision_field)
+            }
+          None => seen_dirs[dir_lower] = dir_path
+        }
+        prefix.write_char('/')
+      } else {
+        prefix.write_char(c)
+      }
+    }
+  }
+  for lower, _ in seen_files {
+    guard !seen_dirs.contains(lower) else {
+      raise ManifestError::InvalidField(collision_field)
+    }
+  }
+  (seen_files, seen_dirs)
+}
+
+///|
+fn check_cross_tree_dir_case(
+  a_dirs : Map[String, String],
+  b_dirs : Map[String, String],
+  collision_field : String,
+) -> Unit raise ManifestError {
+  for lower, b_exact in b_dirs {
+    match a_dirs.get(lower) {
+      Some(a_exact) =>
+        if a_exact != b_exact {
+          raise ManifestError::InvalidField(collision_field)
+        }
+      None => ()
+    }
+  }
+}
+
+///|
 fn validate_snapshot_entries(
   entries : Array[DirEntry],
   limits : DirLimits,
   require_sorted~ : Bool,
-) -> Map[String, String] raise ManifestError {
+) -> (Map[String, String], Map[String, String]) raise ManifestError {
   limits.validate()
   guard entries.length().to_int64() <= limits.max_entries else {
     raise ManifestError::ResourceLimit("dir_entries")
   }
-  let seen_lower : Map[String, String] = Map([])
+  let paths : Array[String] = Array(capacity=entries.length())
   for i in 0..<entries.length() {
     let entry = entries[i]
     validate_dir_path(entry.path, limits)
     validate_file_digest(entry.digest, 0L, limits.max_file_bytes, "entry")
-    let lower = ascii_lower(entry.path)
-    guard !seen_lower.contains(lower) else {
-      raise ManifestError::InvalidField("path_collision")
-    }
-    seen_lower[lower] = entry.path
     if require_sorted && i > 0 {
       guard lexical_path_compare(entries[i - 1].path, entry.path) < 0 else {
         raise ManifestError::InvalidField("path_order")
       }
     }
+    paths.push(entry.path)
   }
-  seen_lower
+  validate_tree_paths(paths, "path_collision")
 }
 
 ///|
@@ -396,6 +491,8 @@ fn validate_sync_plan(
     raise ManifestError::ResourceLimit("dir_entries")
   }
   let seen_lower : Map[String, String] = Map([])
+  let basis_paths : Array[String] = []
+  let target_paths : Array[String] = []
   let mut unchanged = 0L
   let mut add = 0L
   let mut update = 0L
@@ -425,6 +522,8 @@ fn validate_sync_plan(
         guard same_digest(b, t) else {
           raise ManifestError::BindingMismatch("unchanged_digest")
         }
+        basis_paths.push(action.path)
+        target_paths.push(action.path)
         unchanged = unchanged + 1L
       }
       AddFull => {
@@ -432,6 +531,7 @@ fn validate_sync_plan(
           raise ManifestError::InvalidField("action")
         }
         validate_file_digest(t, 0L, limits.max_file_bytes, "target")
+        target_paths.push(action.path)
         add = add + 1L
         transfer_upper = checked_add_i64(transfer_upper, t.byte_length)
       }
@@ -444,6 +544,8 @@ fn validate_sync_plan(
         guard !same_digest(b, t) else {
           raise ManifestError::BindingMismatch("update_digest")
         }
+        basis_paths.push(action.path)
+        target_paths.push(action.path)
         update = update + 1L
         transfer_upper = checked_add_i64(transfer_upper, t.byte_length)
       }
@@ -452,21 +554,40 @@ fn validate_sync_plan(
           raise ManifestError::InvalidField("action")
         }
         validate_file_digest(b, 0L, limits.max_file_bytes, "basis")
+        basis_paths.push(action.path)
         del = del + 1L
       }
       CopyFromBasis(source_path) => {
-        guard action.basis is None && action.target is Some(t) else {
+        guard action.target is Some(t) else {
           raise ManifestError::InvalidField("action")
         }
         validate_dir_path(source_path, limits)
-        guard source_path != action.path else {
+        guard ascii_lower(source_path) != ascii_lower(action.path) else {
           raise ManifestError::InvalidField("source_path")
         }
         validate_file_digest(t, 0L, limits.max_file_bytes, "target")
+        match action.basis {
+          Some(b) => {
+            validate_file_digest(b, 0L, limits.max_file_bytes, "basis")
+            guard !same_digest(b, t) else {
+              raise ManifestError::BindingMismatch("update_digest")
+            }
+            basis_paths.push(action.path)
+          }
+          None => ()
+        }
+        target_paths.push(action.path)
         copy_from_basis = copy_from_basis + 1L
       }
     }
   }
+  guard basis_paths.length().to_int64() <= limits.max_entries &&
+    target_paths.length().to_int64() <= limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let (_, basis_dirs) = validate_tree_paths(basis_paths, "path_collision")
+  let (_, target_dirs) = validate_tree_paths(target_paths, "path_collision")
+  check_cross_tree_dir_case(basis_dirs, target_dirs, "path_collision")
   guard plan.unchanged_count == unchanged &&
     plan.add_count == add &&
     plan.update_count == update &&
@@ -484,19 +605,26 @@ fn digest_lookup_key(d : FileDigest) -> String {
 
 ///|
 /// Reconcile two validated snapshots in O(N + M) sorted order with optional
-/// content-digest move/copy detection (`CopyFromBasis` for 0-byte transfers).
+/// content-digest move/copy detection (`CopyFromBasis` for 0-byte transfers,
+/// including cyclic swaps; callers applying plans must materialize into a fresh
+/// staging directory rather than mutating `basis` in place).
 pub fn plan_dir_sync_with_options(
   basis : DirSnapshot,
   target : DirSnapshot,
   options : DirPlanOptions,
   limits : DirLimits,
 ) -> DirSyncPlan raise ManifestError {
-  let basis_lower = validate_snapshot_entries(
+  let (basis_lower, basis_dirs) = validate_snapshot_entries(
     basis.entries,
     limits,
     require_sorted=true,
   )
-  let _ = validate_snapshot_entries(target.entries, limits, require_sorted=true)
+  let (_, target_dirs) = validate_snapshot_entries(
+    target.entries,
+    limits,
+    require_sorted=true,
+  )
+  check_cross_tree_dir_case(basis_dirs, target_dirs, "path_collision")
   for entry in target.entries {
     let lower = ascii_lower(entry.path)
     match basis_lower.get(lower) {
@@ -540,7 +668,8 @@ pub fn plan_dir_sync_with_options(
       i = i + 1
     } else if cmp > 0 {
       match basis_by_digest.get(digest_lookup_key(t.digest)) {
-        Some(src_path) if options.detect_moves && src_path != t.path => {
+        Some(src_path) if options.detect_moves &&
+          ascii_lower(src_path) != ascii_lower(t.path) => {
           actions.push({
             path: t.path,
             kind: CopyFromBasis(src_path),
@@ -574,17 +703,31 @@ pub fn plan_dir_sync_with_options(
         })
         unchanged_count = unchanged_count + 1L
       } else {
-        actions.push({
-          path: t.path,
-          kind: UpdateCandidate,
-          basis: Some(b.digest),
-          target: Some(t.digest),
-        })
-        update_count = update_count + 1L
-        transfer_upper_bound_bytes = checked_add_i64(
-          transfer_upper_bound_bytes,
-          t.digest.byte_length,
-        )
+        match basis_by_digest.get(digest_lookup_key(t.digest)) {
+          Some(src_path) if options.detect_moves &&
+            ascii_lower(src_path) != ascii_lower(t.path) => {
+            actions.push({
+              path: t.path,
+              kind: CopyFromBasis(src_path),
+              basis: Some(b.digest),
+              target: Some(t.digest),
+            })
+            copy_from_basis_count = copy_from_basis_count + 1L
+          }
+          _ => {
+            actions.push({
+              path: t.path,
+              kind: UpdateCandidate,
+              basis: Some(b.digest),
+              target: Some(t.digest),
+            })
+            update_count = update_count + 1L
+            transfer_upper_bound_bytes = checked_add_i64(
+              transfer_upper_bound_bytes,
+              t.digest.byte_length,
+            )
+          }
+        }
       }
       i = i + 1
       j = j + 1
@@ -604,7 +747,8 @@ pub fn plan_dir_sync_with_options(
   while j < target.entries.length() {
     let t = target.entries[j]
     match basis_by_digest.get(digest_lookup_key(t.digest)) {
-      Some(src_path) if options.detect_moves && src_path != t.path => {
+      Some(src_path) if options.detect_moves &&
+        ascii_lower(src_path) != ascii_lower(t.path) => {
         actions.push({
           path: t.path,
           kind: CopyFromBasis(src_path),
@@ -808,14 +952,27 @@ pub fn parse_dir_plan(
         None,
       )
     } else if kind_str == "copy-from-basis" {
-      let f = manifest_object(item, ["path", "kind", "source_path", "target"])
-      (
-        DirActionKind::CopyFromBasis(
-          manifest_string(manifest_get(f, "source_path"), "source_path"),
-        ),
-        None,
-        Some(parse_file_digest(manifest_get(f, "target"))),
-      )
+      if af.contains("basis") {
+        let f = manifest_object(item, [
+          "path", "kind", "source_path", "basis", "target",
+        ])
+        (
+          DirActionKind::CopyFromBasis(
+            manifest_string(manifest_get(f, "source_path"), "source_path"),
+          ),
+          Some(parse_file_digest(manifest_get(f, "basis"))),
+          Some(parse_file_digest(manifest_get(f, "target"))),
+        )
+      } else {
+        let f = manifest_object(item, ["path", "kind", "source_path", "target"])
+        (
+          DirActionKind::CopyFromBasis(
+            manifest_string(manifest_get(f, "source_path"), "source_path"),
+          ),
+          None,
+          Some(parse_file_digest(manifest_get(f, "target"))),
+        )
+      }
     } else {
       raise ManifestError::InvalidSchema
     }
@@ -925,16 +1082,12 @@ fn validate_dir_signature_entries(
   guard entries.length().to_int64() <= dir_limits.max_entries else {
     raise ManifestError::ResourceLimit("dir_entries")
   }
-  let seen_path : Map[String, String] = Map([])
   let seen_sig : Map[String, String] = Map([])
+  let entry_paths : Array[String] = Array(capacity=entries.length())
+  let sig_paths : Array[String] = Array(capacity=entries.length())
   for i in 0..<entries.length() {
     let entry = entries[i]
     validate_dir_path(entry.path, dir_limits)
-    let lower = ascii_lower(entry.path)
-    guard !seen_path.contains(lower) else {
-      raise ManifestError::InvalidField("path_collision")
-    }
-    seen_path[lower] = entry.path
     if require_sorted && i > 0 {
       guard lexical_path_compare(entries[i - 1].path, entry.path) < 0 else {
         raise ManifestError::InvalidField("path_order")
@@ -956,7 +1109,11 @@ fn validate_dir_signature_entries(
       limits.max_signature_bytes,
       "signature",
     )
+    entry_paths.push(entry.path)
+    sig_paths.push(entry.signature_path)
   }
+  let _ = validate_tree_paths(entry_paths, "path_collision")
+  let _ = validate_tree_paths(sig_paths, "signature_path_collision")
 }
 
 ///|
@@ -1072,6 +1229,9 @@ fn validate_dir_bundle_entries(
   }
   let seen_path : Map[String, String] = Map([])
   let seen_payload : Map[String, String] = Map([])
+  let basis_paths : Array[String] = []
+  let target_paths : Array[String] = []
+  let payload_paths : Array[String] = []
   let mut unchanged = 0L
   let mut add_full = 0L
   let mut update_delta = 0L
@@ -1097,6 +1257,8 @@ fn validate_dir_bundle_entries(
         validate_file_digest(d, 0L, dir_limits.max_file_bytes, "basis")
         validate_file_digest(d, 0L, limits.max_old_bytes, "basis")
         validate_file_digest(d, 0L, limits.max_output_bytes, "result")
+        basis_paths.push(entry.path)
+        target_paths.push(entry.path)
         unchanged = unchanged + 1L
       }
       AddFull(payload_path, target) => {
@@ -1106,6 +1268,8 @@ fn validate_dir_bundle_entries(
         validate_file_digest(target, 0L, dir_limits.max_file_bytes, "target")
         validate_file_digest(target, 0L, limits.max_new_bytes, "target")
         validate_file_digest(target, 0L, limits.max_output_bytes, "result")
+        target_paths.push(entry.path)
+        payload_paths.push(payload_path)
         add_full = add_full + 1L
         total_payload = checked_add_i64(total_payload, target.byte_length)
       }
@@ -1119,6 +1283,9 @@ fn validate_dir_bundle_entries(
         guard !same_digest(m.basis, m.result) else {
           raise ManifestError::BindingMismatch("update_digest")
         }
+        basis_paths.push(entry.path)
+        target_paths.push(entry.path)
+        payload_paths.push(payload_path)
         update_delta = update_delta + 1L
         total_payload = checked_add_i64(total_payload, m.delta.byte_length)
       }
@@ -1134,27 +1301,32 @@ fn validate_dir_bundle_entries(
         guard !same_digest(basis, target) else {
           raise ManifestError::BindingMismatch("update_digest")
         }
+        basis_paths.push(entry.path)
+        target_paths.push(entry.path)
+        payload_paths.push(payload_path)
         update_full = update_full + 1L
         total_payload = checked_add_i64(total_payload, target.byte_length)
       }
       Delete(basis) => {
         validate_file_digest(basis, 0L, dir_limits.max_file_bytes, "basis")
         validate_file_digest(basis, 0L, limits.max_old_bytes, "basis")
+        basis_paths.push(entry.path)
         del = del + 1L
       }
       CopyFromBasis(source_path, target) => {
         validate_dir_path(source_path, dir_limits)
-        guard source_path != entry.path else {
+        guard ascii_lower(source_path) != ascii_lower(entry.path) else {
           raise ManifestError::InvalidField("source_path")
         }
         validate_file_digest(target, 0L, dir_limits.max_file_bytes, "target")
         validate_file_digest(target, 0L, limits.max_old_bytes, "basis")
         validate_file_digest(target, 0L, limits.max_output_bytes, "result")
+        target_paths.push(entry.path)
         copy_from_basis = copy_from_basis + 1L
       }
       UpdateDeltaFrom(source_path, payload_path, m) => {
         validate_dir_path(source_path, dir_limits)
-        guard source_path != entry.path else {
+        guard ascii_lower(source_path) != ascii_lower(entry.path) else {
           raise ManifestError::InvalidField("source_path")
         }
         validate_scoped_rel_path(
@@ -1166,11 +1338,21 @@ fn validate_dir_bundle_entries(
         guard !same_digest(m.basis, m.result) else {
           raise ManifestError::BindingMismatch("update_digest")
         }
+        target_paths.push(entry.path)
+        payload_paths.push(payload_path)
         update_delta = update_delta + 1L
         total_payload = checked_add_i64(total_payload, m.delta.byte_length)
       }
     }
   }
+  guard basis_paths.length().to_int64() <= dir_limits.max_entries &&
+    target_paths.length().to_int64() <= dir_limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let (_, basis_dirs) = validate_tree_paths(basis_paths, "path_collision")
+  let (_, target_dirs) = validate_tree_paths(target_paths, "path_collision")
+  check_cross_tree_dir_case(basis_dirs, target_dirs, "path_collision")
+  let _ = validate_tree_paths(payload_paths, "payload_path_collision")
   (
     unchanged, add_full, update_delta, update_full, del, copy_from_basis, total_payload,
   )
@@ -1670,6 +1852,8 @@ fn validate_dir_verify_report(
     raise ManifestError::ResourceLimit("dir_entries")
   }
   let seen_lower : Map[String, String] = Map([])
+  let expected_paths : Array[String] = []
+  let actual_paths : Array[String] = []
   let mut modified = 0L
   let mut missing = 0L
   let mut extra = 0L
@@ -1696,6 +1880,8 @@ fn validate_dir_verify_report(
         guard !same_digest(e, a) else {
           raise ManifestError::BindingMismatch("verify_digest")
         }
+        expected_paths.push(item.path)
+        actual_paths.push(item.path)
         modified = modified + 1L
       }
       Missing => {
@@ -1703,6 +1889,7 @@ fn validate_dir_verify_report(
           raise ManifestError::InvalidField("issue")
         }
         validate_file_digest(e, 0L, limits.max_file_bytes, "expected")
+        expected_paths.push(item.path)
         missing = missing + 1L
       }
       Extra => {
@@ -1710,9 +1897,17 @@ fn validate_dir_verify_report(
           raise ManifestError::InvalidField("issue")
         }
         validate_file_digest(a, 0L, limits.max_file_bytes, "actual")
+        actual_paths.push(item.path)
         extra = extra + 1L
       }
     }
+  }
+  let (_, exp_dirs) = validate_tree_paths(expected_paths, "path_collision")
+  let (_, act_dirs) = validate_tree_paths(actual_paths, "path_collision")
+  check_cross_tree_dir_case(exp_dirs, act_dirs, "path_collision")
+  guard report.matched_count + modified + missing <= limits.max_entries &&
+    report.matched_count + modified + extra <= limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
   }
   let expected_ok = modified == 0L && missing == 0L && extra == 0L
   guard report.ok == expected_ok &&

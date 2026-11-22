@@ -138,6 +138,7 @@ for target in ("native", "js", "wasm-gc"):
     if target == "js":
         run("node", "examples/streaming/run-node.mjs")
         run("node", "examples/web-demo/test-node.mjs")
+        moon("build", "examples/web-demo", "--target", "js", "--release")
         run("node", "js/test-sdk.mjs")
 run(sys.executable, "scripts/check_prepared_interface.py")
 run(sys.executable, "scripts/native_probe.py")

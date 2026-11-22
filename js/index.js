@@ -367,12 +367,28 @@ function normalizeArtifactInspection(parsed) {
   return parsed;
 }
 
+function stringifyJsonStrict(value, name) {
+  try {
+    const text = JSON.stringify(value);
+    if (typeof text !== 'string') {
+      throw new TypeError(`Value for "${name}" is not JSON-serializable`);
+    }
+    return text;
+  } catch (cause) {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Failed to serialize "${name}" to JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
+}
+
 function serializeSnapshotInput(snapshot, name) {
   if (typeof snapshot === 'string') {
     return snapshot;
   }
   if (snapshot !== null && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
-    return JSON.stringify(snapshot);
+    return stringifyJsonStrict(snapshot, name);
   }
   throw new MoonLibSyncError(
     `InvalidOptions:${name}`,
@@ -398,7 +414,7 @@ function extractDirSnapshotEntriesJson(jsonText) {
   ) {
     return null;
   }
-  return JSON.stringify(obj.entries);
+  return stringifyJsonStrict(obj.entries, 'entries');
 }
 
 function serializeDirEntriesInput(entries) {
@@ -421,7 +437,7 @@ function serializeDirEntriesInput(entries) {
     }
     return entry;
   });
-  return JSON.stringify(normalized);
+  return stringifyJsonStrict(normalized, 'entries');
 }
 
 function serializeDirFilesInput(files, name) {
@@ -449,7 +465,7 @@ function serializeDirFilesInput(files, name) {
     const bytes = assertBytes(item.bytes, `${name}[${i}].bytes`);
     out[i] = { path: item.path, content_hex: bytesToHex(bytes) };
   }
-  return JSON.stringify(out);
+  return stringifyJsonStrict(out, name);
 }
 
 function serializeManifestInput(manifestJson) {
@@ -460,7 +476,7 @@ function serializeManifestInput(manifestJson) {
     return manifestJson;
   }
   if (typeof manifestJson === 'object' && !Array.isArray(manifestJson)) {
-    return JSON.stringify(manifestJson);
+    return stringifyJsonStrict(manifestJson, 'manifestJson');
   }
   throw new MoonLibSyncError(
     'InvalidOptions:manifestJson',
@@ -477,7 +493,7 @@ function serializeSignatureJsonInput(signatureJson) {
     typeof signatureJson === 'object' &&
     !Array.isArray(signatureJson)
   ) {
-    return JSON.stringify(signatureJson);
+    return stringifyJsonStrict(signatureJson, 'signatureJson');
   }
   throw new MoonLibSyncError(
     'InvalidOptions:signatureJson',
@@ -506,7 +522,7 @@ function serializeTrustedPublicKeys(trustedPublicKeys) {
       );
     }
   }
-  return JSON.stringify(normalized);
+  return stringifyJsonStrict(normalized, 'trustedPublicKeys');
 }
 
 function getMissingExports(mod) {
@@ -860,16 +876,29 @@ export class MoonLibSyncClient {
     if (check.output_bytes === '0') {
       bytes = new Uint8Array(0);
     } else {
-      bytes = this.raw.apply_patch_or_gzip_bytes(basis, payload);
-      const patchMatches =
-        bytes instanceof Uint8Array &&
-        String(bytes.length) === check.output_bytes &&
-        (!check.verified_manifest || this.raw.sha256_hex_bytes(bytes) === check.sha256);
-      if (!patchMatches && check.verified_manifest === true) {
+      let isFullManifest = false;
+      if (check.verified_manifest === true && manifestText.trim().length > 0) {
+        try {
+          const parsedManifest = JSON.parse(manifestText);
+          if (
+            parsedManifest !== null &&
+            typeof parsedManifest === 'object' &&
+            parsedManifest.schema_version === 2 &&
+            parsedManifest.kind === 'full-file'
+          ) {
+            isFullManifest = true;
+          }
+        } catch {
+          // Manifest was already parsed and verified by the MoonBit core.
+        }
+      }
+      if (isFullManifest) {
         // Schema 2 full-file TransferManifest: payload itself (after optional gzip) is the verified file.
         bytes = check.decompressed_gzip
           ? this.raw.decompress_gzip_bytes(payload, expectedLen)
           : payload.slice();
+      } else {
+        bytes = this.raw.apply_patch_or_gzip_bytes(basis, payload);
       }
       if (
         !(bytes instanceof Uint8Array) ||
@@ -1034,7 +1063,10 @@ export class MoonLibSyncClient {
     }
     const rawJson =
       excludes.length > 0
-        ? this.raw.filter_dir_entries_json(entriesJson, JSON.stringify(excludes))
+        ? this.raw.filter_dir_entries_json(
+            entriesJson,
+            stringifyJsonStrict(excludes, 'excludes'),
+          )
         : this.raw.create_dir_snapshot_json(entriesJson);
     return parseSchema3Json(
       rawJson,
@@ -1270,15 +1302,36 @@ export class MoonLibSyncClient {
       opts.noncePrefix12 !== undefined
         ? assertBytes(opts.noncePrefix12, 'noncePrefix12')
         : generateNoncePrefix12();
-    const chunkSize = assertInt32(opts.chunkSize ?? DEFAULT_SEAL_CHUNK_SIZE, 'chunk_size');
-    const argon2MemoryKib = assertInt32(
-      opts.argon2MemoryKib ?? DEFAULT_ARGON2_MEMORY_KIB,
-      'argon2_memory_kib',
-    );
-    const argon2Passes = assertInt32(
-      opts.argon2Passes ?? DEFAULT_ARGON2_PASSES,
-      'argon2_passes',
-    );
+    const chunkSize =
+      opts.chunkSize !== undefined
+        ? assertInt32(opts.chunkSize, 'chunk_size')
+        : DEFAULT_SEAL_CHUNK_SIZE;
+    if (chunkSize <= 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:chunk_size',
+        'chunkSize must be a positive 32-bit integer',
+      );
+    }
+    const argon2MemoryKib =
+      opts.argon2MemoryKib !== undefined
+        ? assertInt32(opts.argon2MemoryKib, 'argon2_memory_kib')
+        : DEFAULT_ARGON2_MEMORY_KIB;
+    if (argon2MemoryKib <= 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:argon2_memory_kib',
+        'argon2MemoryKib must be a positive 32-bit integer',
+      );
+    }
+    const argon2Passes =
+      opts.argon2Passes !== undefined
+        ? assertInt32(opts.argon2Passes, 'argon2_passes')
+        : DEFAULT_ARGON2_PASSES;
+    if (argon2Passes <= 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:argon2_passes',
+        'argon2Passes must be a positive 32-bit integer',
+      );
+    }
     const res = parseOkJson(
       this.raw.seal_bytes_json(
         plainBytes,
@@ -1343,6 +1396,7 @@ export function createClient(rawModule) {
  */
 export async function loadMoonLibSync(options = {}) {
   const opts = assertOptionsObject(options);
+  const explicitModulePath = opts.modulePath !== undefined;
   const candidateUrls = [];
   const seen = new Set();
   const pushUnique = (urls) => {
@@ -1354,26 +1408,26 @@ export async function loadMoonLibSync(options = {}) {
     }
   };
 
-  if (opts.modulePath !== undefined) {
+  if (explicitModulePath) {
     pushUnique(await resolveSpecifierCandidates(opts.modulePath));
+  } else {
+    pushUnique([new URL('./moonlibsync-core.js', import.meta.url).href]);
+
+    const envBuildDir =
+      typeof process !== 'undefined' &&
+      process !== null &&
+      typeof process.env === 'object' &&
+      process.env !== null &&
+      typeof process.env.MOONLIBSYNC_BUILD_DIR === 'string' &&
+      process.env.MOONLIBSYNC_BUILD_DIR.trim().length > 0
+        ? process.env.MOONLIBSYNC_BUILD_DIR.trim()
+        : null;
+
+    if (envBuildDir !== null) {
+      pushUnique(await buildDirCandidates(envBuildDir));
+    }
+    pushUnique(await buildDirCandidates('_build'));
   }
-
-  pushUnique([new URL('./moonlibsync-core.js', import.meta.url).href]);
-
-  const envBuildDir =
-    typeof process !== 'undefined' &&
-    process !== null &&
-    typeof process.env === 'object' &&
-    process.env !== null &&
-    typeof process.env.MOONLIBSYNC_BUILD_DIR === 'string' &&
-    process.env.MOONLIBSYNC_BUILD_DIR.trim().length > 0
-      ? process.env.MOONLIBSYNC_BUILD_DIR.trim()
-      : null;
-
-  if (envBuildDir !== null) {
-    pushUnique(await buildDirCandidates(envBuildDir));
-  }
-  pushUnique(await buildDirCandidates('_build'));
 
   const failures = [];
   for (const specifier of candidateUrls) {
@@ -1390,6 +1444,15 @@ export async function loadMoonLibSync(options = {}) {
       const reason = err instanceof Error ? err.message : String(err);
       failures.push(reason);
     }
+  }
+
+  if (explicitModulePath) {
+    const requestedPath =
+      opts.modulePath instanceof URL ? opts.modulePath.href : String(opts.modulePath);
+    throw new MoonLibSyncError(
+      'LoadFailed',
+      `Failed to load MoonLibSync module from explicit modulePath "${requestedPath}": ${failures[failures.length - 1] || 'unknown'}`,
+    );
   }
 
   throw new MoonLibSyncError(

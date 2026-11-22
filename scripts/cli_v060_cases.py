@@ -1,6 +1,7 @@
 """0.6.0 CLI integration cases: rollsum-blake2 profile, reverse-delta, --exclude-from, --detect-moves, inspect-bundle, --save-rollback, Ed25519 keygen/sign/verify/--verify-sig, MLSENC01 seal/unseal, and shell completions."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -451,8 +452,207 @@ def exercise(root, case, report, links):
         for cmd_name in all_28:
             assert cmd_name in text, (shell, cmd_name)
         assert '--detect-moves' in text and '--save-rollback' in text and '--verify-sig' in text
+        if shell == 'zsh':
+            assert 'delta|patch|basis-info|make-manifest|compress|decompress|sign)' in text
+            assert 'inspect-signature|inspect-manifest)' in text
+            assert 'inspect-delta|check-patch)' in text
 
-    # 7. Usage gating (exit code 2).
+    # 7. Red-Team Audit #2 adversarial regression cases.
+    def _craft_mbundle(manifest_obj, payloads=()):
+        m_bytes = (json.dumps(manifest_obj, separators=(',', ':')) + '\n').encode('utf-8')
+        buf = bytearray(b'MLSBDL01')
+        buf += struct.pack('>I', len(m_bytes))
+        buf += m_bytes
+        buf += struct.pack('>I', len(payloads))
+        for rel_path, data in payloads:
+            p_bytes = rel_path.encode('utf-8')
+            buf += struct.pack('>I', len(p_bytes))
+            buf += p_bytes
+            buf += struct.pack('>Q', len(data))
+            buf += data
+        return bytes(buf)
+
+    # 7a. Crafted .mbundle with DOS reserved path "NUL", intermediate dir case collision, and file/dir prefix collision.
+    rt_basis = root / 'v060-rt-empty-basis'
+    rt_basis.mkdir()
+    p_one = b'one'
+    p_two = b'two'
+    d_one = dict(byte_length=str(len(p_one)), sha256=hashlib.sha256(p_one).hexdigest())
+    d_two = dict(byte_length=str(len(p_two)), sha256=hashlib.sha256(p_two).hexdigest())
+
+    crafted_nul = root / 'v060-rt-nul.mbundle'
+    crafted_nul.write_bytes(_craft_mbundle(
+        dict(
+            schema_version=3,
+            kind='moonlibsync-dir-bundle',
+            summary=dict(unchanged='0', add_full='1', update_delta='0', update_full='0', delete='0', total_payload_bytes=str(len(p_one))),
+            entries=[dict(path='NUL', kind='add-full', payload_path='payloads/000000.full', target=d_one)],
+        ),
+        [('payloads/000000.full', p_one)],
+    ))
+    inspect_run('redteam2/inspect-crafted-nul', ['inspect-bundle', crafted_nul], 1, watch=[crafted_nul], contains='InvalidField:path')
+    rt_nul_out = root / 'v060-rt-nul-out'
+    run('redteam2/apply-crafted-nul', ['dir-apply', rt_basis, crafted_nul, rt_nul_out, '--archive'], 1, watch=[crafted_nul], output=rt_nul_out, contains='InvalidField:path')
+    assert not rt_nul_out.exists()
+
+    crafted_dircase = root / 'v060-rt-dircase.mbundle'
+    crafted_dircase.write_bytes(_craft_mbundle(
+        dict(
+            schema_version=3,
+            kind='moonlibsync-dir-bundle',
+            summary=dict(unchanged='0', add_full='2', update_delta='0', update_full='0', delete='0', total_payload_bytes='6'),
+            entries=[
+                dict(path='DIR/b.txt', kind='add-full', payload_path='payloads/000000.full', target=d_one),
+                dict(path='dir/a.txt', kind='add-full', payload_path='payloads/000001.full', target=d_two),
+            ],
+        ),
+        [('payloads/000000.full', p_one), ('payloads/000001.full', p_two)],
+    ))
+    inspect_run('redteam2/inspect-crafted-dircase', ['inspect-bundle', crafted_dircase], 1, watch=[crafted_dircase], contains='InvalidField:path_collision')
+    rt_dircase_out = root / 'v060-rt-dircase-out'
+    run('redteam2/apply-crafted-dircase', ['dir-apply', rt_basis, crafted_dircase, rt_dircase_out, '--archive'], 1, watch=[crafted_dircase], output=rt_dircase_out, contains='InvalidField:path_collision')
+    assert not rt_dircase_out.exists()
+
+    crafted_prefix = root / 'v060-rt-prefix.mbundle'
+    crafted_prefix.write_bytes(_craft_mbundle(
+        dict(
+            schema_version=3,
+            kind='moonlibsync-dir-bundle',
+            summary=dict(unchanged='0', add_full='2', update_delta='0', update_full='0', delete='0', total_payload_bytes='6'),
+            entries=[
+                dict(path='foo', kind='add-full', payload_path='payloads/000000.full', target=d_one),
+                dict(path='foo/bar.txt', kind='add-full', payload_path='payloads/000001.full', target=d_two),
+            ],
+        ),
+        [('payloads/000000.full', p_one), ('payloads/000001.full', p_two)],
+    ))
+    inspect_run('redteam2/inspect-crafted-prefix', ['inspect-bundle', crafted_prefix], 1, watch=[crafted_prefix], contains='InvalidField:path_collision')
+    rt_prefix_out = root / 'v060-rt-prefix-out'
+    run('redteam2/apply-crafted-prefix', ['dir-apply', rt_basis, crafted_prefix, rt_prefix_out, '--archive'], 1, watch=[crafted_prefix], output=rt_prefix_out, contains='InvalidField:path_collision')
+    assert not rt_prefix_out.exists()
+
+    if os.name == 'nt':
+        run('redteam2/win-reserved-nul', ['signature', prof_old, root / 'NUL'], 1, watch=[prof_old], contains='reserved Windows device output path')
+        run('redteam2/win-reserved-con-ext', ['signature', prof_old, root / 'con.txt'], 1, watch=[prof_old], contains='reserved Windows device output path')
+
+    # 7b. dir-apply --save-rollback exclude boundary isolation (excluded secret + excluded oversized file + optional excluded symlink).
+    rb_ex_b = root / 'v060-rt-rb-basis'
+    rb_ex_t = root / 'v060-rt-rb-target'
+    rb_ex_b.mkdir()
+    rb_ex_t.mkdir()
+    rb_edit_v1 = bytes(((i * 19 + 5) % 256) for i in range(3000))
+    rb_edit_v2 = rb_edit_v1[:1400] + b'RT2-SYNCED-DELTA' + rb_edit_v1[1416:]
+    (rb_ex_b / 'keep.bin').write_bytes(b'tracked-keep')
+    (rb_ex_b / 'edit.bin').write_bytes(rb_edit_v1)
+    (rb_ex_b / 'drop.bin').write_bytes(b'tracked-drop')
+    (rb_ex_b / 'secret.log').write_bytes(b'DO-NOT-LEAK-INTO-ROLLBACK')
+    (rb_ex_b / 'huge.log').write_bytes(b'H' * 16384)
+    if links:
+        (rb_ex_b / 'ignored.link').symlink_to(rb_ex_b / 'secret.log')
+    if os.name == 'nt':
+        junc_target = root / 'v060-rt-junc-target'
+        junc_target.mkdir()
+        (junc_target / 'outside.bin').write_bytes(b'OUTSIDE-JUNCTION')
+        mkj = subprocess.run(['cmd', '/c', 'mklink', '/J', str(rb_ex_b / 'ignored_junc'), str(junc_target)], capture_output=True)
+        assert mkj.returncode == 0, mkj.stderr
+    (rb_ex_t / 'keep.bin').write_bytes(b'tracked-keep')
+    (rb_ex_t / 'edit.bin').write_bytes(rb_edit_v2)
+    (rb_ex_t / 'add.bin').write_bytes(b'tracked-add')
+
+    rb_ex_bs = root / 'v060-rt-rb-b.snap.json'
+    rb_ex_ts = root / 'v060-rt-rb-t.snap.json'
+    rb_ex_sigs = root / 'v060-rt-rb-sigs'
+    rb_ex_arch = root / 'v060-rt-rb.mbundle.gz'
+    rb_ex_out = root / 'v060-rt-rb-out'
+    rb_ex_rollback = root / 'v060-rt-rb-save.mbundle.gz'
+    rb_ex_restored = root / 'v060-rt-rb-restored'
+    rb_excl = ['--exclude', '*.log', '--exclude', '*.link', '--exclude', 'ignored_junc', '--max-file-bytes', '4096']
+    run('redteam2/rb-snap-b', ['dir-snapshot', rb_ex_b, rb_ex_bs, *rb_excl], output=rb_ex_bs)
+    run('redteam2/rb-snap-t', ['dir-snapshot', rb_ex_t, rb_ex_ts, *rb_excl], output=rb_ex_ts)
+    run('redteam2/rb-sigs', ['dir-signatures', rb_ex_b, rb_ex_bs, rb_ex_sigs, '--block-size', '256', '--max-file-bytes', '4096'], watch=[rb_ex_bs], output=rb_ex_sigs)
+    run('redteam2/rb-pack', ['dir-pack', rb_ex_bs, rb_ex_sigs, rb_ex_t, rb_ex_arch, '--archive', '--gzip', *rb_excl], watch=[rb_ex_bs], output=rb_ex_arch)
+    run('redteam2/rb-apply-save', ['dir-apply', rb_ex_b, rb_ex_arch, rb_ex_out, '--archive', '--gzip', '--max-file-bytes', '4096', '--save-rollback', rb_ex_rollback], watch=[rb_ex_arch], output=rb_ex_out)
+    rb_ex_insp = json.loads(inspect_run('redteam2/rb-inspect', ['inspect-bundle', rb_ex_rollback, '--gzip', '--json', '--max-file-bytes', '4096'], watch=[rb_ex_rollback]).stdout.decode('utf-8'))
+    rb_ex_paths = [e['path'] for e in rb_ex_insp['manifest']['entries']]
+    assert 'secret.log' not in rb_ex_paths and 'huge.log' not in rb_ex_paths and 'ignored.link' not in rb_ex_paths and not any('ignored_junc' in p or 'outside.bin' in p for p in rb_ex_paths)
+    run('redteam2/rb-apply-rollback', ['dir-apply', rb_ex_out, rb_ex_rollback, rb_ex_restored, '--archive', '--gzip', '--max-file-bytes', '4096'], watch=[rb_ex_rollback], output=rb_ex_restored)
+    rb_ex_ver = json.loads(inspect_run('redteam2/rb-verify-restored', ['dir-verify', rb_ex_restored, rb_ex_bs, '--json', '--max-file-bytes', '4096'], watch=[rb_ex_bs]).stdout.decode('utf-8'))
+    assert rb_ex_ver['ok'] is True and rb_ex_ver['summary']['extra'] == '0' and rb_ex_ver['summary']['matched'] == '3'
+
+    # 7c. Cyclic swap (a.bin <-> b.bin) with --detect-moves, 0 payload bytes, apply, verify, and rollback.
+    sw_b = root / 'v060-rt-swap-basis'
+    sw_t = root / 'v060-rt-swap-target'
+    sw_b.mkdir()
+    sw_t.mkdir()
+    sw_data_a = bytes(((i * 17 + 1) % 256) for i in range(4096))
+    sw_data_b = bytes(((i * 43 + 9) % 256) for i in range(5120))
+    (sw_b / 'a.bin').write_bytes(sw_data_a)
+    (sw_b / 'b.bin').write_bytes(sw_data_b)
+    (sw_t / 'a.bin').write_bytes(sw_data_b)
+    (sw_t / 'b.bin').write_bytes(sw_data_a)
+    sw_bs = root / 'v060-rt-swap-b.snap.json'
+    sw_ts = root / 'v060-rt-swap-t.snap.json'
+    sw_sigs = root / 'v060-rt-swap-sigs'
+    sw_arch = root / 'v060-rt-swap.mbundle.gz'
+    sw_out = root / 'v060-rt-swap-out'
+    sw_rb = root / 'v060-rt-swap-rb.mbundle.gz'
+    sw_restored = root / 'v060-rt-swap-restored'
+    run('redteam2/swap-snap-b', ['dir-snapshot', sw_b, sw_bs], output=sw_bs)
+    run('redteam2/swap-snap-t', ['dir-snapshot', sw_t, sw_ts], output=sw_ts)
+    sw_plan = json.loads(inspect_run('redteam2/swap-plan', ['dir-plan', sw_bs, sw_ts, '--detect-moves', '--json'], watch=[sw_bs, sw_ts]).stdout.decode('utf-8'))
+    assert sw_plan['summary']['copy_from_basis'] == '2' and sw_plan['summary']['transfer_upper_bound_bytes'] == '0'
+    run('redteam2/swap-sigs', ['dir-signatures', sw_b, sw_bs, sw_sigs], watch=[sw_bs], output=sw_sigs)
+    run('redteam2/swap-pack', ['dir-pack', sw_bs, sw_sigs, sw_t, sw_arch, '--detect-moves', '--archive', '--gzip'], watch=[sw_bs], output=sw_arch)
+    sw_ib = json.loads(inspect_run('redteam2/swap-inspect', ['inspect-bundle', sw_arch, '--gzip', '--json'], watch=[sw_arch]).stdout.decode('utf-8'))
+    assert sw_ib['manifest']['summary']['copy_from_basis'] == '2' and sw_ib['manifest']['summary']['total_payload_bytes'] == '0'
+    run('redteam2/swap-apply', ['dir-apply', sw_b, sw_arch, sw_out, '--archive', '--gzip', '--save-rollback', sw_rb], watch=[sw_arch], output=sw_out)
+    assert json.loads(inspect_run('redteam2/swap-verify-target', ['dir-verify', sw_out, sw_ts, '--json'], watch=[sw_ts]).stdout.decode('utf-8'))['ok'] is True
+    sw_rb_ib = json.loads(inspect_run('redteam2/swap-inspect-rb', ['inspect-bundle', sw_rb, '--gzip', '--json'], watch=[sw_rb]).stdout.decode('utf-8'))
+    assert sw_rb_ib['manifest']['summary']['copy_from_basis'] == '2' and sw_rb_ib['manifest']['summary']['total_payload_bytes'] == '0'
+    run('redteam2/swap-apply-rb', ['dir-apply', sw_out, sw_rb, sw_restored, '--archive', '--gzip'], watch=[sw_rb], output=sw_restored)
+    assert json.loads(inspect_run('redteam2/swap-verify-basis', ['dir-verify', sw_restored, sw_bs, '--json'], watch=[sw_bs]).stdout.decode('utf-8'))['ok'] is True
+
+    # 7d. reverse-delta asymmetric --max-old-bytes / --max-new-bytes (buffered & streaming).
+    rev_small = root / 'v060-rt-rev-small.bin'
+    rev_big = root / 'v060-rt-rev-big.bin'
+    rev_small_bytes = bytes(((i * 11 + 3) % 256) for i in range(256))
+    rev_big_bytes = bytes(((i * 29 + 7) % 256) for i in range(6000))
+    rev_small.write_bytes(rev_small_bytes)
+    rev_big.write_bytes(rev_big_bytes)
+
+    rev_asym1_buf = root / 'v060-rt-rev1-buf.delta'
+    rev_asym1_str = root / 'v060-rt-rev1-str.delta'
+    rev_asym1_out = root / 'v060-rt-rev1.out'
+    run('redteam2/rev-asym1-buf', ['reverse-delta', rev_small, rev_big, rev_asym1_buf, '--block-size', 'auto', '--max-old-bytes', '512', '--max-new-bytes', '8192'], watch=[rev_small, rev_big], output=rev_asym1_buf)
+    run('redteam2/rev-asym1-str', ['reverse-delta', rev_small, rev_big, rev_asym1_str, '--block-size', 'auto', '--streaming', '--max-old-bytes', '512', '--max-new-bytes', '8192'], watch=[rev_small, rev_big], output=rev_asym1_str)
+    assert rev_asym1_buf.read_bytes() == rev_asym1_str.read_bytes()
+    run('redteam2/rev-asym1-patch', ['patch', rev_big, rev_asym1_str, rev_asym1_out], watch=[rev_big, rev_asym1_str], output=rev_asym1_out)
+    assert rev_asym1_out.read_bytes() == rev_small_bytes
+
+    run('redteam2/rev-asym1-reject-old-buf', ['reverse-delta', rev_small, rev_big, root / 'v060-rt-rf1', '--max-old-bytes', '128', '--max-new-bytes', '8192'], 1, watch=[rev_small, rev_big], output=root / 'v060-rt-rf1', contains='ReadLimitExceeded')
+    run('redteam2/rev-asym1-reject-old-str', ['reverse-delta', rev_small, rev_big, root / 'v060-rt-rf2', '--streaming', '--max-old-bytes', '128', '--max-new-bytes', '8192'], 1, watch=[rev_small, rev_big], output=root / 'v060-rt-rf2', contains='ReadLimitExceeded')
+    run('redteam2/rev-asym1-reject-new-buf', ['reverse-delta', rev_small, rev_big, root / 'v060-rt-rf3', '--max-old-bytes', '512', '--max-new-bytes', '2048'], 1, watch=[rev_small, rev_big], output=root / 'v060-rt-rf3', contains='ReadLimitExceeded')
+    run('redteam2/rev-asym1-reject-new-str', ['reverse-delta', rev_small, rev_big, root / 'v060-rt-rf4', '--streaming', '--max-old-bytes', '512', '--max-new-bytes', '2048'], 1, watch=[rev_small, rev_big], output=root / 'v060-rt-rf4', contains='ReadLimitExceeded')
+
+    rev_asym2_buf = root / 'v060-rt-rev2-buf.delta'
+    rev_asym2_str = root / 'v060-rt-rev2-str.delta'
+    rev_asym2_out = root / 'v060-rt-rev2.out'
+    run('redteam2/rev-asym2-buf', ['reverse-delta', rev_big, rev_small, rev_asym2_buf, '--block-size', 'auto', '--max-old-bytes', '8192', '--max-new-bytes', '512'], watch=[rev_big, rev_small], output=rev_asym2_buf)
+    run('redteam2/rev-asym2-str', ['reverse-delta', rev_big, rev_small, rev_asym2_str, '--block-size', 'auto', '--streaming', '--max-old-bytes', '8192', '--max-new-bytes', '512'], watch=[rev_big, rev_small], output=rev_asym2_str)
+    assert rev_asym2_buf.read_bytes() == rev_asym2_str.read_bytes()
+    run('redteam2/rev-asym2-patch', ['patch', rev_small, rev_asym2_str, rev_asym2_out], watch=[rev_small, rev_asym2_str], output=rev_asym2_out)
+    assert rev_asym2_out.read_bytes() == rev_big_bytes
+
+    # 7e. seal with default limits on input > 64 KiB + explicit --max-output-bytes 100 rejection.
+    seal_def_out = root / 'v060-rt-seal-def.menc'
+    seal_def_dec = root / 'v060-rt-seal-def.out'
+    run('redteam2/seal-default-limits', ['seal', big_plain, seal_def_out, '--key-file', sym_key, '--streaming'], watch=[big_plain, sym_key], output=seal_def_out)
+    run('redteam2/unseal-default-limits', ['unseal', seal_def_out, seal_def_dec, '--key-file', sym_key, '--streaming'], watch=[seal_def_out, sym_key], output=seal_def_dec)
+    assert seal_def_dec.read_bytes() == big_plain_bytes
+    run('redteam2/seal-explicit-max-output-buf', ['seal', big_plain, root / 'v060-rt-seal-cap1.menc', '--key-file', sym_key, '--max-output-bytes', '100'], 1, watch=[big_plain, sym_key], output=root / 'v060-rt-seal-cap1.menc', contains='LimitExceeded')
+    run('redteam2/seal-explicit-max-output-str', ['seal', big_plain, root / 'v060-rt-seal-cap2.menc', '--key-file', sym_key, '--streaming', '--max-output-bytes', '100'], 1, watch=[big_plain, sym_key], output=root / 'v060-rt-seal-cap2.menc', contains='LimitExceeded')
+
+    # 8. Usage gating (exit code 2).
     for label, args, needle in [
         ('bad-profile', ['signature', prof_old, root / 'u1', '--profile', 'md4'], 'usage:'),
         ('dup-profile', ['signature', prof_old, root / 'u2', '--profile', 'rk-blake2', '--profile', 'rollsum-blake2'], 'usage:'),

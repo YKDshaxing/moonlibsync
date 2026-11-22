@@ -160,8 +160,14 @@ let zsh_completions : String =
   #|      _arguments '1:shell:(bash zsh powershell)' ;;
   #|    keygen)
   #|      _arguments '*:output:_files' ;;
-  #|    *)
+  #|    delta|patch|basis-info|make-manifest|compress|decompress|sign)
+  #|      _arguments '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;
+  #|    inspect-signature|inspect-manifest)
+  #|      _arguments '--json[Output JSON]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;
+  #|    inspect-delta|check-patch)
   #|      _arguments '--json[Output JSON]' '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;
+  #|    *)
+  #|      _arguments '*:file:_files' ;;
   #|  esac
   #|}
   #|compdef _moonlibsync moonlibsync

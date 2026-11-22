@@ -657,12 +657,24 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
       "reverse-delta" => {
         let old_path = plan.inputs[0]
         let new_path = plan.inputs[1]
+        let rev_limits : @lib.Limits = {
+          ..limits,
+          max_old_bytes: limits.max_new_bytes,
+          max_new_bytes: limits.max_old_bytes,
+        }
+        let old_file = open_regular_input(old_path)
+        defer old_file.close()
+        let old_size = check_open_regular_sized(
+          old_file,
+          old_path,
+          limits.max_old_bytes,
+        )
         let new_file = open_regular_input(new_path)
         defer new_file.close()
         let new_size = check_open_regular_sized(
           new_file,
           new_path,
-          limits.max_old_bytes,
+          limits.max_new_bytes,
         )
         let block = match plan.block_choice {
           Explicit(v) => v
@@ -670,16 +682,9 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
             @lib.recommend_block_len(
               new_size,
               plan.options.strong_sum_len,
-              limits,
+              rev_limits,
             )
         }
-        let old_file = open_regular_input(old_path)
-        defer old_file.close()
-        let old_size = check_open_regular_sized(
-          old_file,
-          old_path,
-          limits.max_new_bytes,
-        )
         guard old_size <= limits.max_output_bytes else {
           raise @lib.SyncError::LimitExceeded
         }
@@ -687,7 +692,7 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
         let progress = make_progress(plan, new_size + old_size)
         let sig_hasher = @lib.SignatureHasher::new(
           { block_len: block, strong_sum_len: plan.options.strong_sum_len, },
-          limits,
+          rev_limits,
         )
         let sig_buf = @buffer.Buffer(size_hint=256)
         sig_buf.write_bytes(sig_hasher.take_ready())
@@ -696,8 +701,8 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
           sig_buf.write_bytes(sig_hasher.take_ready())
         })
         sig_buf.write_bytes(sig_hasher.finish())
-        let prepared = @lib.prepare_signature(sig_buf.to_bytes(), limits)
-        let scanner = @lib.DeltaScanner::new(prepared, limits)
+        let prepared = @lib.prepare_signature(sig_buf.to_bytes(), rev_limits)
+        let scanner = @lib.DeltaScanner::new(prepared, rev_limits)
         publish_stream(output, tmp_file => {
           write_nonempty(tmp_file, scanner.take_ready()[:])
           stream_open_chunks(old_file, old_path, old_size, progress~, chunk => {

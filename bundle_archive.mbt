@@ -56,20 +56,32 @@ fn decode_be_u64(buf : FixedArray[Byte]) -> UInt64 {
 }
 
 ///|
+fn bundle_expected_payload_specs(
+  bundle : DirBundleManifest,
+) -> Array[(String, FileDigest)] {
+  let out : Array[(String, FileDigest)] = []
+  for entry in bundle.entries {
+    match entry.action {
+      Unchanged(_) | Delete(_) | CopyFromBasis(_, _) => ()
+      AddFull(path, target) => out.push((path, target))
+      UpdateDelta(path, m) | UpdateDeltaFrom(_, path, m) =>
+        out.push((path, m.delta))
+      UpdateFull(path, _, target) => out.push((path, target))
+    }
+  }
+  out
+}
+
+///|
 /// Return the canonical ordered list of `(payload_path, expected_byte_length)`
 /// entries carried by a `DirBundleManifest`.
 pub fn bundle_expected_payloads(
   bundle : DirBundleManifest,
 ) -> Array[(String, Int64)] {
-  let out : Array[(String, Int64)] = []
-  for entry in bundle.entries {
-    match entry.action {
-      Unchanged(_) | Delete(_) | CopyFromBasis(_, _) => ()
-      AddFull(path, target) => out.push((path, target.byte_length))
-      UpdateDelta(path, m) | UpdateDeltaFrom(_, path, m) =>
-        out.push((path, m.delta.byte_length))
-      UpdateFull(path, _, target) => out.push((path, target.byte_length))
-    }
+  let specs = bundle_expected_payload_specs(bundle)
+  let out : Array[(String, Int64)] = Array(capacity=specs.length())
+  for spec in specs {
+    out.push((spec.0, spec.1.byte_length))
   }
   out
 }
@@ -118,6 +130,7 @@ pub fn encode_bundle_payload_header(
 
 ///|
 /// One-shot pure zero-IO `.mbundle` archive encoder for in-memory payloads.
+/// Verifies every payload's exact byte length and SHA-256 against `bundle`.
 pub fn encode_bundle_archive(
   bundle : DirBundleManifest,
   payloads : Map[String, Bytes],
@@ -125,23 +138,29 @@ pub fn encode_bundle_archive(
   limits : Limits,
 ) -> Bytes raise ManifestError {
   let preamble = encode_bundle_archive_preamble(bundle, dir_limits, limits)
-  let expected = bundle_expected_payloads(bundle)
+  let expected = bundle_expected_payload_specs(bundle)
   guard payloads.length() == expected.length() else {
     raise ManifestError::BindingMismatch("archive_payload_count")
   }
   let out = @buffer.Buffer(size_hint=preamble.length() + 256)
   out.write_bytes(preamble)
   for pair in expected {
-    let (path, expected_len) = pair
+    let (path, digest) = pair
     let data = match payloads.get(path) {
       Some(b) => b
       None => raise ManifestError::BindingMismatch("archive_payload_missing")
     }
-    guard data.length().to_int64() == expected_len else {
+    guard data.length().to_int64() == digest.byte_length else {
       raise ManifestError::BindingMismatch("archive_payload_length")
     }
+    let hasher = Sha256Hasher::new(digest.byte_length)
+    hasher.update(data[:])
+    let actual = hasher.finish()
+    guard actual.sha256 == digest.sha256 else {
+      raise ManifestError::BindingMismatch("payload_sha256")
+    }
     out.write_bytes(
-      encode_bundle_payload_header(path, expected_len, dir_limits),
+      encode_bundle_payload_header(path, digest.byte_length, dir_limits),
     )
     out.write_bytes(data)
   }
@@ -183,7 +202,8 @@ pub struct BundleArchiveDecoder {
   priv header_buf : FixedArray[Byte]
   priv scratch : @buffer.Buffer
   priv mut manifest : DirBundleManifest?
-  priv mut expected_payloads : Array[(String, Int64)]
+  priv mut expected_payloads : Array[(String, FileDigest)]
+  priv mut payload_hasher : Sha256Hasher?
   priv mut closed : Bool
   priv mut failed : Bool
 }
@@ -203,8 +223,30 @@ pub fn BundleArchiveDecoder::new(
     scratch: @buffer.Buffer(size_hint=256),
     manifest: None,
     expected_payloads: [],
+    payload_hasher: None,
     closed: false,
     failed: false,
+  }
+}
+
+///|
+fn BundleArchiveDecoder::verify_finished_payload(
+  self : BundleArchiveDecoder,
+  idx : Int32,
+) -> Unit raise ManifestError {
+  match self.payload_hasher {
+    Some(hasher) => {
+      self.payload_hasher = None
+      let actual = hasher.finish()
+      let expected = self.expected_payloads[idx].1
+      guard actual.byte_length == expected.byte_length else {
+        raise ManifestError::BindingMismatch("archive_payload_length")
+      }
+      guard actual.sha256 == expected.sha256 else {
+        raise ManifestError::BindingMismatch("payload_sha256")
+      }
+    }
+    None => raise ManifestError::InvalidSchema
   }
 }
 
@@ -234,6 +276,7 @@ pub fn BundleArchiveDecoder::step(
   }
   match self.state {
     InPayload(idx, 0UL) => {
+      self.verify_finished_payload(idx)
       let path = self.expected_payloads[idx].0
       let next_idx = idx + 1
       self.state = if next_idx == self.expected_payloads.length() {
@@ -308,7 +351,7 @@ pub fn BundleArchiveDecoder::step(
             self.limits,
           )
           self.manifest = Some(parsed)
-          self.expected_payloads = bundle_expected_payloads(parsed)
+          self.expected_payloads = bundle_expected_payload_specs(parsed)
           self.state = NeedPayloadCount(0)
         } else {
           self.state = NeedJson(left)
@@ -397,10 +440,12 @@ pub fn BundleArchiveDecoder::step(
         let next_have = have + take
         if next_have == 8 {
           let data_len = decode_be_u64(self.header_buf)
-          let expected_len = self.expected_payloads[idx].1
+          let expected_len = self.expected_payloads[idx].1.byte_length
           guard data_len == expected_len.reinterpret_as_uint64() else {
             raise ManifestError::BindingMismatch("archive_payload_length")
           }
+          let hasher = Sha256Hasher::new(expected_len)
+          self.payload_hasher = Some(hasher)
           self.state = InPayload(idx, data_len)
           return (
             pos,
@@ -412,6 +457,7 @@ pub fn BundleArchiveDecoder::step(
       }
       InPayload(idx, rem) => {
         if rem == 0UL {
+          self.verify_finished_payload(idx)
           let path = self.expected_payloads[idx].0
           let next_idx = idx + 1
           self.state = if next_idx == self.expected_payloads.length() {
@@ -426,6 +472,10 @@ pub fn BundleArchiveDecoder::step(
         let take_u64 = if avail < max_step { avail } else { max_step }
         let take = take_u64.to_int()
         let view = chunk[pos:pos + take]
+        match self.payload_hasher {
+          Some(hasher) => hasher.update(view)
+          None => raise ManifestError::InvalidSchema
+        }
         pos = pos + take
         self.state = InPayload(idx, rem - take_u64)
         return (pos, PayloadChunk(view))

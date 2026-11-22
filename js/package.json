@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "node ./build-dist.mjs",
+    "prepack": "node build-dist.mjs",
     "test": "node ./test-sdk.mjs"
   },
   "keywords": [

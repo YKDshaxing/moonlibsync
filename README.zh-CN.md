@@ -176,10 +176,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、230 项库 + 3 项 compress + 12 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
+python scripts/check.py            # 格式、依赖、233 项库 + 4 项 compress + 13 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 44 项 Native 辅助测试 + 644 项 Windows CLI 集成用例
+./scripts/cli-smoke.ps1            # 46 项 Native 辅助测试 + 685 项 Windows CLI 集成用例（Linux/ext4 为 709 项）
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs

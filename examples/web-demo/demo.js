@@ -3,6 +3,7 @@ const IS_REPO_LOCAL = window.location.pathname.includes('/examples/web-demo/');
 const MODULE_PATHS = IS_REPO_LOCAL
   ? [
       '../../_build/js/release/build/examples/web-demo/web-demo.js',
+      '../../_build/js/release/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       './web-demo.js',
@@ -10,6 +11,7 @@ const MODULE_PATHS = IS_REPO_LOCAL
   : [
       './web-demo.js',
       '../../_build/js/release/build/examples/web-demo/web-demo.js',
+      '../../_build/js/release/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/examples/web-demo/web-demo.js',
       '../../_build/js/debug/build/YKDshaxing/moonlibsync/examples/web-demo/web-demo.js',
     ];
@@ -413,9 +415,14 @@ const themeToggle = document.getElementById('themeToggle');
 let droppedOldFile = null;
 let droppedNewFile = null;
 let progressHideTimer = null;
+let inFlightCount = 0;
 
 function t(key) {
   return I18N[lang][key];
+}
+
+function errMessage(err) {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function escapeHtml(text) {
@@ -423,7 +430,8 @@ function escapeHtml(text) {
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function fmtBytes(n) {
@@ -441,14 +449,22 @@ function bytesToHex(bytes) {
   return out;
 }
 
+function hexNibble(code) {
+  if (code >= 0x30 && code <= 0x39) return code - 0x30;
+  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;
+  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;
+  return -1;
+}
+
 function hexToBytes(hex) {
   const clean = String(hex || '').trim();
   if (clean.length % 2 !== 0) return new Uint8Array(0);
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < out.length; i++) {
-    const byte = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    if (Number.isNaN(byte)) return new Uint8Array(0);
-    out[i] = byte;
+    const hi = hexNibble(clean.charCodeAt(i * 2));
+    const lo = hexNibble(clean.charCodeAt(i * 2 + 1));
+    if (hi < 0 || lo < 0) return new Uint8Array(0);
+    out[i] = (hi << 4) | lo;
   }
   return out;
 }
@@ -464,22 +480,38 @@ function toHexPreview(bytes, maxLen = 28) {
 
 function formatHexdump(previewHex, previewUtf8, baseOffset = 0) {
   const hex = String(previewHex || '');
-  const ascii = String(previewUtf8 || '');
+  const text = String(previewUtf8 || '');
   const byteLen = Math.floor(hex.length / 2);
   if (byteLen === 0) return '(empty literal)';
+  const hasMultibyte = text.length !== byteLen;
   const lines = [];
   for (let row = 0; row < byteLen; row += 16) {
     const offStr = (baseOffset + row).toString(16).padStart(8, '0');
     const left = [];
     const right = [];
+    let rowAscii = '';
     for (let i = 0; i < 16; i++) {
       const idx = row + i;
-      const cell = idx < byteLen ? hex.slice(idx * 2, idx * 2 + 2) : '  ';
-      if (i < 8) left.push(cell);
-      else right.push(cell);
+      if (idx < byteLen) {
+        const cell = hex.slice(idx * 2, idx * 2 + 2);
+        if (i < 8) left.push(cell);
+        else right.push(cell);
+        if (hasMultibyte) {
+          const hi = hexNibble(cell.charCodeAt(0));
+          const lo = hexNibble(cell.charCodeAt(1));
+          const b = hi >= 0 && lo >= 0 ? (hi << 4) | lo : 0;
+          rowAscii += b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.';
+        }
+      } else {
+        if (i < 8) left.push('  ');
+        else right.push('  ');
+      }
     }
-    const textSlice = ascii.slice(row, Math.min(byteLen, row + 16));
+    const textSlice = hasMultibyte ? rowAscii : text.slice(row, Math.min(byteLen, row + 16));
     lines.push(`${offStr}  ${left.join(' ')}  ${right.join(' ')}  |${textSlice}|`);
+  }
+  if (hasMultibyte && text.length > 0) {
+    lines.push(`UTF-8: ${text}`);
   }
   return lines.join('\n');
 }
@@ -515,14 +547,21 @@ function setProgress(pct) {
     progressHideTimer = null;
   }
   if (pct <= 0) {
+    if (inFlightCount > 0) return;
     engineProgressFill.classList.remove('active');
     engineProgressFill.style.width = '0%';
+    return;
+  }
+  if (pct >= 100 && inFlightCount > 0) {
+    engineProgressFill.classList.add('active');
+    engineProgressFill.style.width = '85%';
     return;
   }
   engineProgressFill.classList.add('active');
   engineProgressFill.style.width = `${Math.min(100, Math.max(8, pct))}%`;
   if (pct >= 100) {
     progressHideTimer = setTimeout(() => {
+      if (inFlightCount > 0) return;
       engineProgressFill.classList.remove('active');
       engineProgressFill.style.width = '0%';
     }, 320);
@@ -547,37 +586,76 @@ class WorkerEngineClient {
     this.worker = worker;
     this.nextId = 1;
     this.pending = new Map();
+    this.proxy = null;
+    this.dead = false;
     this.worker.addEventListener('message', (ev) => {
       const msg = ev.data || {};
       if (msg.type === 'progress') {
-        setProgress(Number(msg.pct) || 50);
+        const pct = Number(msg.pct);
+        setProgress(Number.isFinite(pct) ? pct : 50);
         return;
       }
       const entry = this.pending.get(msg.id);
       if (!entry) return;
       this.pending.delete(msg.id);
-      if (msg.ok) entry.resolve(msg.result);
-      else entry.reject(new Error(msg.error || 'Worker call failed'));
+      inFlightCount = Math.max(0, inFlightCount - 1);
+      if (msg.ok) {
+        if (inFlightCount === 0) setProgress(100);
+        entry.resolve(msg.result);
+      } else {
+        if (inFlightCount === 0) setProgress(0);
+        entry.reject(new Error(msg.error || 'Worker call failed'));
+      }
     });
     this.worker.addEventListener('error', (err) => {
-      const e = new Error(err.message || 'Web Worker error');
-      for (const entry of this.pending.values()) entry.reject(e);
-      this.pending.clear();
+      this.terminateWithError(new Error(err.message || 'Web Worker error'));
     });
+  }
+
+  terminateWithError(error) {
+    if (this.dead) return;
+    this.dead = true;
+    const dropped = this.pending.size;
+    const entries = Array.from(this.pending.values());
+    this.pending.clear();
+    inFlightCount = Math.max(0, inFlightCount - dropped);
+    if (inFlightCount === 0) setProgress(0);
+    try {
+      this.worker.terminate();
+    } catch (_) {}
+    if (this.proxy && engineClient === this.proxy) {
+      engineClient = null;
+      engineMode = null;
+      engineLoadPromise = null;
+    }
+    for (const entry of entries) entry.reject(error);
   }
 
   call(method, ...args) {
     return new Promise((resolve, reject) => {
+      if (this.dead) {
+        reject(new Error('Web Worker has terminated'));
+        return;
+      }
       const id = this.nextId++;
       this.pending.set(id, { resolve, reject });
+      inFlightCount += 1;
       setProgress(18);
-      this.worker.postMessage({ id, method, args });
+      try {
+        this.worker.postMessage({ id, method, args });
+      } catch (err) {
+        this.pending.delete(id);
+        inFlightCount = Math.max(0, inFlightCount - 1);
+        if (inFlightCount === 0) setProgress(0);
+        reject(err);
+      }
     });
   }
 
   asProxy() {
+    if (this.proxy) return this.proxy;
     const client = this;
-    return new Proxy(
+    this.proxy = new Proxy(
       {},
       {
         get(_target, prop) {
@@ -586,6 +664,7 @@ class WorkerEngineClient {
         },
       },
     );
+    return this.proxy;
   }
 }
 
@@ -596,13 +675,16 @@ function createMainThreadProxy(rawMod) {
       get(_target, prop) {
         if (prop === 'then' || typeof prop === 'symbol') return undefined;
         return async (...args) => {
+          inFlightCount += 1;
           setProgress(35);
           try {
             const out = rawMod[String(prop)](...args);
-            setProgress(100);
+            inFlightCount = Math.max(0, inFlightCount - 1);
+            if (inFlightCount === 0) setProgress(100);
             return out;
           } catch (err) {
-            setProgress(0);
+            inFlightCount = Math.max(0, inFlightCount - 1);
+            if (inFlightCount === 0) setProgress(0);
             throw err;
           }
         };
@@ -617,16 +699,17 @@ async function tryInitWorker() {
   }
   const worker = new Worker('./worker.js', { type: 'module' });
   const client = new WorkerEngineClient(worker);
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Worker init timeout')), 4500),
-  );
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Worker init timeout')), 15000);
+  });
   try {
     await Promise.race([client.call('__init__'), timeoutPromise]);
+    clearTimeout(timeoutId);
     return client.asProxy();
   } catch (err) {
-    try {
-      worker.terminate();
-    } catch (_) {}
+    clearTimeout(timeoutId);
+    client.terminateWithError(err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
 }
@@ -1176,11 +1259,17 @@ function renderResult(data, elapsedMs) {
 
   document.getElementById('runBenchmarkBtn').addEventListener('click', async () => {
     if (!lastInputs) return;
-    const mod = await loadEngine();
-    const raw = await mod.benchmark_block_sizes_json(lastInputs.oldBuf, lastInputs.newBuf, Number(sumSelect.value));
-    lastBenchmarkState = JSON.parse(raw);
     const outEl = document.getElementById('benchmarkOut');
-    if (outEl) outEl.innerHTML = buildBenchmarkContentHtml(lastBenchmarkState);
+    try {
+      const mod = await loadEngine();
+      const raw = await mod.benchmark_block_sizes_json(lastInputs.oldBuf, lastInputs.newBuf, Number(sumSelect.value));
+      lastBenchmarkState = JSON.parse(raw);
+      if (outEl) outEl.innerHTML = buildBenchmarkContentHtml(lastBenchmarkState);
+    } catch (err) {
+      if (outEl) {
+        outEl.innerHTML = `<div class="card err-card" style="margin-top:0.8rem;margin-bottom:0;"><strong>Benchmark Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+      }
+    }
   });
 
   document.getElementById('copyFileCli').addEventListener('click', (e) => {
@@ -1247,39 +1336,51 @@ async function runSync(oldBuf, newBuf, baseName = 'sample', newName = 'new.bin')
       parsed = { ok: false, error: 'InvalidSignatureProfileOrOptions' };
     } else {
       delta = await mod.create_delta_bytes(sig, newBuf);
-      deltaGz = delta.length ? await mod.compress_gzip_bytes(delta, 6) : new Uint8Array(0);
-      restored = delta.length ? await mod.apply_patch_bytes(oldBuf, delta) : new Uint8Array(0);
-      rollbackDelta = await mod.create_reverse_delta_bytes(oldBuf, newBuf, blockLen, sumLen);
-      const sigIns = JSON.parse(await mod.inspect_artifact_json(sig));
-      detail = JSON.parse(await mod.inspect_delta_detailed_json(delta, 512));
-      const [oldSha, newSha, recSha] = await Promise.all([
-        mod.sha256_hex_bytes(oldBuf),
-        mod.sha256_hex_bytes(newBuf),
-        mod.sha256_hex_bytes(restored),
-      ]);
-      const sum = detail.summary || {};
-      const sigSum = sigIns.summary || {};
-      parsed = {
-        ok: true,
-        sig_magic: sigSum.magic || '0x72730137',
-        sig_profile: 'rollsum-blake2',
-        block_len: sigSum.block_len || String(blockLen),
-        strong_sum_len: sigSum.strong_sum_len || String(sumLen),
-        old_bytes: String(oldBuf.length),
-        new_bytes: String(newBuf.length),
-        signature_bytes: String(sig.length),
-        delta_bytes: String(delta.length),
-        gzip_delta_bytes: String(deltaGz.length),
-        copy_bytes: sum.copy_bytes || '0',
-        literal_bytes: sum.literal_bytes || '0',
-        instruction_count: sum.instruction_count || '0',
-        copy_commands: sum.copy_commands || '0',
-        literal_commands: sum.literal_commands || '0',
-        old_sha256: oldSha,
-        new_sha256: newSha,
-        restored_sha256: recSha,
-        verified: recSha === newSha && restored.length === newBuf.length,
-      };
+      if (!delta.length) {
+        parsed = { ok: false, error: 'DeltaGenerationFailed' };
+      } else {
+        deltaGz = await mod.compress_gzip_bytes(delta, 6);
+        if (!deltaGz.length) {
+          parsed = { ok: false, error: 'GzipCompressionFailed' };
+        } else {
+          restored = await mod.apply_patch_bytes(oldBuf, delta);
+          rollbackDelta = await mod.create_reverse_delta_bytes(oldBuf, newBuf, blockLen, sumLen);
+          const sigIns = JSON.parse(await mod.inspect_artifact_json(sig));
+          detail = JSON.parse(await mod.inspect_delta_detailed_json(delta, 512));
+          if (!detail.ok) {
+            parsed = { ok: false, error: detail.error || 'InvalidDelta' };
+          } else {
+            const [oldSha, newSha, recSha] = await Promise.all([
+              mod.sha256_hex_bytes(oldBuf),
+              mod.sha256_hex_bytes(newBuf),
+              mod.sha256_hex_bytes(restored),
+            ]);
+            const sum = detail.summary || {};
+            const sigSum = sigIns.summary || {};
+            parsed = {
+              ok: true,
+              sig_magic: sigSum.magic || '0x72730137',
+              sig_profile: 'rollsum-blake2',
+              block_len: sigSum.block_len || String(blockLen),
+              strong_sum_len: sigSum.strong_sum_len || String(sumLen),
+              old_bytes: String(oldBuf.length),
+              new_bytes: String(newBuf.length),
+              signature_bytes: String(sig.length),
+              delta_bytes: String(delta.length),
+              gzip_delta_bytes: String(deltaGz.length),
+              copy_bytes: sum.copy_bytes || '0',
+              literal_bytes: sum.literal_bytes || '0',
+              instruction_count: sum.instruction_count || '0',
+              copy_commands: sum.copy_commands || '0',
+              literal_commands: sum.literal_commands || '0',
+              old_sha256: oldSha,
+              new_sha256: newSha,
+              restored_sha256: recSha,
+              verified: recSha === newSha && restored.length === newBuf.length,
+            };
+          }
+        }
+      }
     }
   }
 
@@ -1314,26 +1415,34 @@ function makeBuiltInBinaryPair() {
 }
 
 async function runBuiltInBinarySample() {
-  const { oldBuf, newBuf } = makeBuiltInBinaryPair();
-  await runSync(oldBuf, newBuf, 'sample-128k', 'sample-new.bin');
+  try {
+    const { oldBuf, newBuf } = makeBuiltInBinaryPair();
+    await runSync(oldBuf, newBuf, 'sample-128k', 'sample-new.bin');
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="card err-card"><strong>Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 }
 
 sampleBtn.addEventListener('click', runBuiltInBinarySample);
 
 logSampleBtn.addEventListener('click', async () => {
-  const enc = new TextEncoder();
-  const lines = [];
-  for (let i = 0; i < 800; i++) {
-    lines.push(`2026-11-22T08:${String(i % 60).padStart(2, '0')}:00Z INFO moonlibsync-worker block=${i} status=ok latency_ms=1.2\n`);
+  try {
+    const enc = new TextEncoder();
+    const lines = [];
+    for (let i = 0; i < 800; i++) {
+      lines.push(`2026-11-22T08:${String(i % 60).padStart(2, '0')}:00Z INFO moonlibsync-worker block=${i} status=ok latency_ms=1.2\n`);
+    }
+    const oldText = lines.join('');
+    lines.splice(400, 0,
+      ...Array.from({ length: 40 }, (_, k) =>
+        `2026-11-22T09:15:${String(k).padStart(2, '0')}Z WARN moonlibsync-worker retry=1 node=edge-${k % 4} action=delta-sync\n`,
+      ),
+    );
+    const newText = lines.join('');
+    await runSync(enc.encode(oldText), enc.encode(newText), 'service-log', 'service-log-v2.log');
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="card err-card"><strong>Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
-  const oldText = lines.join('');
-  lines.splice(400, 0,
-    ...Array.from({ length: 40 }, (_, k) =>
-      `2026-11-22T09:15:${String(k).padStart(2, '0')}Z WARN moonlibsync-worker retry=1 node=edge-${k % 4} action=delta-sync\n`,
-    ),
-  );
-  const newText = lines.join('');
-  await runSync(enc.encode(oldText), enc.encode(newText), 'service-log', 'service-log-v2.log');
 });
 
 runFilesBtn.addEventListener('click', async () => {
@@ -1343,8 +1452,12 @@ runFilesBtn.addEventListener('click', async () => {
     resultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('pickBothWarn'))}</div>`;
     return;
   }
-  const [oldArr, newArr] = await Promise.all([oldFile.arrayBuffer(), newFile.arrayBuffer()]);
-  await runSync(new Uint8Array(oldArr), new Uint8Array(newArr), oldFile.name, newFile.name);
+  try {
+    const [oldArr, newArr] = await Promise.all([oldFile.arrayBuffer(), newFile.arrayBuffer()]);
+    await runSync(new Uint8Array(oldArr), new Uint8Array(newArr), oldFile.name, newFile.name);
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="card err-card"><strong>Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 // =========================================================================
@@ -1410,41 +1523,45 @@ rdiffGenSigBtn.addEventListener('click', async () => {
     rdiffSigOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('rdiffPickOld'))}</div>`;
     return;
   }
-  const mod = await loadEngine();
-  const oldBytes = new Uint8Array(await file.arrayBuffer());
-  const profile = rdiffSigProfile.value || 'rk-blake2';
-  const blockLen = Number(rdiffSigBlock.value);
-  const sumLen = Number(rdiffSigSum.value);
-  const t0 = performance.now();
-  const sigBytes = await mod.create_signature_with_profile_bytes(oldBytes, blockLen, sumLen, profile);
-  const elapsed = performance.now() - t0;
-  if (!sigBytes.length) {
-    rdiffSigOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate signature (check size limits)</div>`;
-    return;
+  try {
+    const mod = await loadEngine();
+    const oldBytes = new Uint8Array(await file.arrayBuffer());
+    const profile = rdiffSigProfile.value || 'rk-blake2';
+    const blockLen = Number(rdiffSigBlock.value);
+    const sumLen = Number(rdiffSigSum.value);
+    const t0 = performance.now();
+    const sigBytes = await mod.create_signature_with_profile_bytes(oldBytes, blockLen, sumLen, profile);
+    const elapsed = performance.now() - t0;
+    if (!sigBytes.length) {
+      rdiffSigOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate signature (check size limits)</div>`;
+      return;
+    }
+    const [inspectedRaw, sigSha, oldSha] = await Promise.all([
+      mod.inspect_artifact_json(sigBytes),
+      mod.sha256_hex_bytes(sigBytes),
+      mod.sha256_hex_bytes(oldBytes),
+    ]);
+    const inspected = JSON.parse(inspectedRaw);
+    const s = inspected.summary || {};
+    rdiffSigOut.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">.sig Size</div><div class="stat-value">${fmtBytes(sigBytes.length)}</div><div class="stat-sub">${sigBytes.length.toLocaleString()} B · ${elapsed.toFixed(1)} ms</div></div>
+        <div class="stat-card"><div class="stat-label">Block Size</div><div class="stat-value">${escapeHtml(s.block_len || String(blockLen))} B</div><div class="stat-sub">sum=${escapeHtml(s.strong_sum_len || String(sumLen))} B</div></div>
+        <div class="stat-card"><div class="stat-label">Records</div><div class="stat-value">${Number(s.record_count || 0).toLocaleString()}</div><div class="stat-sub">magic ${escapeHtml(s.magic || '0x72730147')}</div></div>
+      </div>
+      <div class="hash-list" style="margin-bottom:0.75rem;">
+        <div class="hash-row"><span class="hash-key">.sig SHA-256</span><span class="hash-val">${escapeHtml(sigSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(sigSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+        <div class="hash-row"><span class="hash-key">OLD SHA-256</span><span class="hash-val">${escapeHtml(oldSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(oldSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+      </div>
+      <button id="rdiffDlSig" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlSig'))} (${escapeHtml(file.name)}.sig)</button>
+    `;
+    bindCopyButtons(rdiffSigOut);
+    document.getElementById('rdiffDlSig').addEventListener('click', () => {
+      downloadBlob(sigBytes, file.name + '.sig');
+    });
+  } catch (err) {
+    rdiffSigOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
-  const [inspectedRaw, sigSha, oldSha] = await Promise.all([
-    mod.inspect_artifact_json(sigBytes),
-    mod.sha256_hex_bytes(sigBytes),
-    mod.sha256_hex_bytes(oldBytes),
-  ]);
-  const inspected = JSON.parse(inspectedRaw);
-  const s = inspected.summary || {};
-  rdiffSigOut.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">.sig Size</div><div class="stat-value">${fmtBytes(sigBytes.length)}</div><div class="stat-sub">${sigBytes.length.toLocaleString()} B · ${elapsed.toFixed(1)} ms</div></div>
-      <div class="stat-card"><div class="stat-label">Block Size</div><div class="stat-value">${escapeHtml(s.block_len || String(blockLen))} B</div><div class="stat-sub">sum=${escapeHtml(s.strong_sum_len || String(sumLen))} B</div></div>
-      <div class="stat-card"><div class="stat-label">Records</div><div class="stat-value">${Number(s.record_count || 0).toLocaleString()}</div><div class="stat-sub">magic ${escapeHtml(s.magic || '0x72730147')}</div></div>
-    </div>
-    <div class="hash-list" style="margin-bottom:0.75rem;">
-      <div class="hash-row"><span class="hash-key">.sig SHA-256</span><span class="hash-val">${escapeHtml(sigSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(sigSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
-      <div class="hash-row"><span class="hash-key">OLD SHA-256</span><span class="hash-val">${escapeHtml(oldSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(oldSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
-    </div>
-    <button id="rdiffDlSig" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlSig'))} (${escapeHtml(file.name)}.sig)</button>
-  `;
-  bindCopyButtons(rdiffSigOut);
-  document.getElementById('rdiffDlSig').addEventListener('click', () => {
-    downloadBlob(sigBytes, file.name + '.sig');
-  });
 });
 
 rdiffGenDeltaBtn.addEventListener('click', async () => {
@@ -1454,51 +1571,55 @@ rdiffGenDeltaBtn.addEventListener('click', async () => {
     rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('rdiffPickSigNew'))}</div>`;
     return;
   }
-  const mod = await loadEngine();
-  const [sigArr, newArr] = await Promise.all([sigFile.arrayBuffer(), newFile.arrayBuffer()]);
-  const sigBytes = new Uint8Array(sigArr);
-  const newBytes = new Uint8Array(newArr);
-  const sigCheck = JSON.parse(await mod.inspect_artifact_json(sigBytes));
-  if (!sigCheck.ok || sigCheck.artifact_kind !== 'signature') {
-    rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Invalid .sig:</strong> <code>${escapeHtml(sigCheck.error || sigCheck.artifact_kind || 'InvalidSignature')}</code></div>`;
-    return;
+  try {
+    const mod = await loadEngine();
+    const [sigArr, newArr] = await Promise.all([sigFile.arrayBuffer(), newFile.arrayBuffer()]);
+    const sigBytes = new Uint8Array(sigArr);
+    const newBytes = new Uint8Array(newArr);
+    const sigCheck = JSON.parse(await mod.inspect_artifact_json(sigBytes));
+    if (!sigCheck.ok || sigCheck.artifact_kind !== 'signature') {
+      rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Invalid .sig:</strong> <code>${escapeHtml(sigCheck.error || sigCheck.artifact_kind || 'InvalidSignature')}</code></div>`;
+      return;
+    }
+    const t0 = performance.now();
+    const deltaBytes = await mod.create_delta_bytes(sigBytes, newBytes);
+    const gzBytes = deltaBytes.length ? await mod.compress_gzip_bytes(deltaBytes, 6) : new Uint8Array(0);
+    const elapsed = performance.now() - t0;
+    if (!deltaBytes.length) {
+      rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate delta</div>`;
+      return;
+    }
+    const [detailRaw, deltaSha] = await Promise.all([
+      mod.inspect_delta_detailed_json(deltaBytes, 64),
+      mod.sha256_hex_bytes(deltaBytes),
+    ]);
+    const detail = JSON.parse(detailRaw);
+    const sum = detail.summary || {};
+    const copyPct = newBytes.length > 0 ? ((Number(sum.copy_bytes || 0) / newBytes.length) * 100).toFixed(1) : '100.0';
+    rdiffDeltaOut.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">.delta Size</div><div class="stat-value">${fmtBytes(deltaBytes.length)}</div><div class="stat-sub">${deltaBytes.length.toLocaleString()} B · ${elapsed.toFixed(1)} ms</div></div>
+        <div class="stat-card"><div class="stat-label">.delta.gz Size</div><div class="stat-value">${fmtBytes(gzBytes.length)}</div><div class="stat-sub">${gzBytes.length.toLocaleString()} B</div></div>
+        <div class="stat-card"><div class="stat-label">COPY Reuse</div><div class="stat-value">${copyPct}%</div><div class="stat-sub">${escapeHtml(sum.instruction_count || '0')} instructions</div></div>
+      </div>
+      <div class="hash-list" style="margin-bottom:0.75rem;">
+        <div class="hash-row"><span class="hash-key">.delta SHA-256</span><span class="hash-val">${escapeHtml(deltaSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(deltaSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+      </div>
+      <div class="controls-row">
+        <button id="rdiffDlDelta" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlDelta'))}</button>
+        <button id="rdiffDlDeltaGz" class="btn btn-primary btn-sm" type="button">${escapeHtml(t('dlDeltaGz'))}</button>
+      </div>
+    `;
+    bindCopyButtons(rdiffDeltaOut);
+    document.getElementById('rdiffDlDelta').addEventListener('click', () => {
+      downloadBlob(deltaBytes, newFile.name + '.delta');
+    });
+    document.getElementById('rdiffDlDeltaGz').addEventListener('click', () => {
+      downloadBlob(gzBytes, newFile.name + '.delta.gz', 'application/gzip');
+    });
+  } catch (err) {
+    rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
-  const t0 = performance.now();
-  const deltaBytes = await mod.create_delta_bytes(sigBytes, newBytes);
-  const gzBytes = deltaBytes.length ? await mod.compress_gzip_bytes(deltaBytes, 6) : new Uint8Array(0);
-  const elapsed = performance.now() - t0;
-  if (!deltaBytes.length) {
-    rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate delta</div>`;
-    return;
-  }
-  const [detailRaw, deltaSha] = await Promise.all([
-    mod.inspect_delta_detailed_json(deltaBytes, 64),
-    mod.sha256_hex_bytes(deltaBytes),
-  ]);
-  const detail = JSON.parse(detailRaw);
-  const sum = detail.summary || {};
-  const copyPct = newBytes.length > 0 ? ((Number(sum.copy_bytes || 0) / newBytes.length) * 100).toFixed(1) : '100.0';
-  rdiffDeltaOut.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">.delta Size</div><div class="stat-value">${fmtBytes(deltaBytes.length)}</div><div class="stat-sub">${deltaBytes.length.toLocaleString()} B · ${elapsed.toFixed(1)} ms</div></div>
-      <div class="stat-card"><div class="stat-label">.delta.gz Size</div><div class="stat-value">${fmtBytes(gzBytes.length)}</div><div class="stat-sub">${gzBytes.length.toLocaleString()} B</div></div>
-      <div class="stat-card"><div class="stat-label">COPY Reuse</div><div class="stat-value">${copyPct}%</div><div class="stat-sub">${escapeHtml(sum.instruction_count || '0')} instructions</div></div>
-    </div>
-    <div class="hash-list" style="margin-bottom:0.75rem;">
-      <div class="hash-row"><span class="hash-key">.delta SHA-256</span><span class="hash-val">${escapeHtml(deltaSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(deltaSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
-    </div>
-    <div class="controls-row">
-      <button id="rdiffDlDelta" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlDelta'))}</button>
-      <button id="rdiffDlDeltaGz" class="btn btn-primary btn-sm" type="button">${escapeHtml(t('dlDeltaGz'))}</button>
-    </div>
-  `;
-  bindCopyButtons(rdiffDeltaOut);
-  document.getElementById('rdiffDlDelta').addEventListener('click', () => {
-    downloadBlob(deltaBytes, newFile.name + '.delta');
-  });
-  document.getElementById('rdiffDlDeltaGz').addEventListener('click', () => {
-    downloadBlob(gzBytes, newFile.name + '.delta.gz', 'application/gzip');
-  });
 });
 
 rdiffApplyPatchBtn.addEventListener('click', async () => {
@@ -1509,56 +1630,60 @@ rdiffApplyPatchBtn.addEventListener('click', async () => {
     rdiffPatchOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('rdiffPickOldDelta'))}</div>`;
     return;
   }
-  const mod = await loadEngine();
-  const [oldArr, deltaArr, manifestText] = await Promise.all([
-    oldFile.arrayBuffer(),
-    deltaFile.arrayBuffer(),
-    manifestFile ? manifestFile.text() : Promise.resolve(''),
-  ]);
-  const oldBytes = new Uint8Array(oldArr);
-  const deltaOrGz = new Uint8Array(deltaArr);
-  const t0 = performance.now();
-  const res = JSON.parse(await mod.apply_verified_patch_json(oldBytes, deltaOrGz, manifestText));
-  const elapsed = performance.now() - t0;
-  if (!res.ok) {
-    rdiffPatchOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Patch / Verify Failed:</strong> <code>${escapeHtml(res.error)}</code></div>`;
-    return;
-  }
+  try {
+    const mod = await loadEngine();
+    const [oldArr, deltaArr, manifestText] = await Promise.all([
+      oldFile.arrayBuffer(),
+      deltaFile.arrayBuffer(),
+      manifestFile ? manifestFile.text() : Promise.resolve(''),
+    ]);
+    const oldBytes = new Uint8Array(oldArr);
+    const deltaOrGz = new Uint8Array(deltaArr);
+    const t0 = performance.now();
+    const res = JSON.parse(await mod.apply_verified_patch_json(oldBytes, deltaOrGz, manifestText));
+    const elapsed = performance.now() - t0;
+    if (!res.ok) {
+      rdiffPatchOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Patch / Verify Failed:</strong> <code>${escapeHtml(res.error)}</code></div>`;
+      return;
+    }
 
-  let isFullManifest = false;
-  if (res.verified_manifest && manifestText.trim()) {
-    try {
-      const mObj = JSON.parse(manifestText);
-      if (mObj && mObj.kind === 'full-file') isFullManifest = true;
-    } catch (_) {}
-  }
-  const restoredBytes = isFullManifest
-    ? (res.decompressed_gzip ? await mod.decompress_gzip_bytes(deltaOrGz, 67108864) : deltaOrGz)
-    : await mod.apply_patch_or_gzip_bytes(oldBytes, deltaOrGz);
+    let isFullManifest = false;
+    if (res.verified_manifest && manifestText.trim()) {
+      try {
+        const mObj = JSON.parse(manifestText);
+        if (mObj && mObj.kind === 'full-file') isFullManifest = true;
+      } catch (_) {}
+    }
+    const restoredBytes = isFullManifest
+      ? (res.decompressed_gzip ? await mod.decompress_gzip_bytes(deltaOrGz, 67108864) : deltaOrGz)
+      : await mod.apply_patch_or_gzip_bytes(oldBytes, deltaOrGz);
 
-  const badgeText = res.verified_manifest
-    ? '✓ Manifest SHA-256 Verified'
-    : '✓ Patch Applied (No Manifest)';
-  rdiffPatchOut.innerHTML = `
-    <div class="result-hero" style="margin-bottom:0.8rem;">
-      <div class="hero-metric">
-        <span class="hero-pct" style="font-size:1.35rem;">${fmtBytes(res.output_bytes)}</span>
-        <span class="hero-desc">${Number(res.output_bytes).toLocaleString()} B · ${elapsed.toFixed(1)} ms</span>
+    const badgeText = res.verified_manifest
+      ? '✓ Manifest SHA-256 Verified'
+      : '✓ Patch Applied (No Manifest)';
+    rdiffPatchOut.innerHTML = `
+      <div class="result-hero" style="margin-bottom:0.8rem;">
+        <div class="hero-metric">
+          <span class="hero-pct" style="font-size:1.35rem;">${fmtBytes(res.output_bytes)}</span>
+          <span class="hero-desc">${Number(res.output_bytes).toLocaleString()} B · ${elapsed.toFixed(1)} ms</span>
+        </div>
+        <div class="controls-row">
+          ${res.decompressed_gzip ? '<span class="verified-pill info">Gzip Auto-Decompressed</span>' : ''}
+          <span class="verified-pill">${escapeHtml(badgeText)}</span>
+        </div>
       </div>
-      <div class="controls-row">
-        ${res.decompressed_gzip ? '<span class="verified-pill info">Gzip Auto-Decompressed</span>' : ''}
-        <span class="verified-pill">${escapeHtml(badgeText)}</span>
+      <div class="hash-list" style="margin-bottom:0.75rem;">
+        <div class="hash-row"><span class="hash-key">Restored SHA-256</span><span class="hash-val">${escapeHtml(res.sha256)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(res.sha256)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
       </div>
-    </div>
-    <div class="hash-list" style="margin-bottom:0.75rem;">
-      <div class="hash-row"><span class="hash-key">Restored SHA-256</span><span class="hash-val">${escapeHtml(res.sha256)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(res.sha256)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
-    </div>
-    <button id="rdiffDlRestored" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlRestored'))}</button>
-  `;
-  bindCopyButtons(rdiffPatchOut);
-  document.getElementById('rdiffDlRestored').addEventListener('click', () => {
-    downloadBlob(restoredBytes, 'restored-' + oldFile.name);
-  });
+      <button id="rdiffDlRestored" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlRestored'))}</button>
+    `;
+    bindCopyButtons(rdiffPatchOut);
+    document.getElementById('rdiffDlRestored').addEventListener('click', () => {
+      downloadBlob(restoredBytes, 'restored-' + oldFile.name);
+    });
+  } catch (err) {
+    rdiffPatchOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Patch / Verify Failed:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 // =========================================================================
@@ -1722,58 +1847,84 @@ async function inspectArtifactBytes(bytes, name) {
 }
 
 wireDropzone(inspectDrop, inspectFile, inspectMeta, async (file) => {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  await inspectArtifactBytes(bytes, file.name);
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await inspectArtifactBytes(bytes, file.name);
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 inspectSampleDeltaBtn.addEventListener('click', async () => {
-  const mod = await loadEngine();
-  const { oldBuf, newBuf } = makeBuiltInBinaryPair();
-  const sig = await mod.create_signature_bytes(oldBuf, 2048, 16);
-  const delta = await mod.create_delta_bytes(sig, newBuf);
-  inspectMeta.textContent = `sample-128k.delta (${fmtBytes(delta.length)})`;
-  inspectMeta.classList.add('selected');
-  await inspectArtifactBytes(delta, 'sample-128k.delta');
+  try {
+    const mod = await loadEngine();
+    const { oldBuf, newBuf } = makeBuiltInBinaryPair();
+    const sig = await mod.create_signature_bytes(oldBuf, 2048, 16);
+    const delta = await mod.create_delta_bytes(sig, newBuf);
+    inspectMeta.textContent = `sample-128k.delta (${fmtBytes(delta.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(delta, 'sample-128k.delta');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 inspectSampleSigBtn.addEventListener('click', async () => {
-  const mod = await loadEngine();
-  const { oldBuf } = makeBuiltInBinaryPair();
-  const sig = await mod.create_signature_with_profile_bytes(oldBuf, 0, 16, 'rollsum-blake2');
-  inspectMeta.textContent = `sample-rollsum-128k.sig (${fmtBytes(sig.length)})`;
-  inspectMeta.classList.add('selected');
-  await inspectArtifactBytes(sig, 'sample-rollsum-128k.sig');
+  try {
+    const mod = await loadEngine();
+    const { oldBuf } = makeBuiltInBinaryPair();
+    const sig = await mod.create_signature_with_profile_bytes(oldBuf, 0, 16, 'rollsum-blake2');
+    inspectMeta.textContent = `sample-rollsum-128k.sig (${fmtBytes(sig.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(sig, 'sample-rollsum-128k.sig');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 inspectSampleSealBtn.addEventListener('click', async () => {
-  const mod = await loadEngine();
-  const enc = new TextEncoder();
-  const plain = enc.encode('MoonLibSync 0.6.0 sample MLSENC01 authenticated stream container');
-  const salt = new Uint8Array(16);
-  crypto.getRandomValues(salt);
-  const nonce = new Uint8Array(12);
-  crypto.getRandomValues(nonce.subarray(0, 8));
-  const sealed = JSON.parse(
-    await mod.seal_bytes_json(plain, enc.encode('demo-passphrase'), true, salt, nonce, 65536, 1024, 1),
-  );
-  if (!sealed.ok) return;
-  const mencBytes = hexToBytes(sealed.cipher_hex);
-  inspectMeta.textContent = `sample-release.menc (${fmtBytes(mencBytes.length)})`;
-  inspectMeta.classList.add('selected');
-  await inspectArtifactBytes(mencBytes, 'sample-release.menc');
+  try {
+    const mod = await loadEngine();
+    const enc = new TextEncoder();
+    const plain = enc.encode('MoonLibSync 0.6.0 sample MLSENC01 authenticated stream container');
+    const salt = new Uint8Array(16);
+    crypto.getRandomValues(salt);
+    const nonce = new Uint8Array(12);
+    crypto.getRandomValues(nonce.subarray(0, 8));
+    const sealed = JSON.parse(
+      await mod.seal_bytes_json(plain, enc.encode('demo-passphrase'), true, salt, nonce, 65536, 1024, 1),
+    );
+    if (!sealed.ok) {
+      inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Seal Error:</strong> <code>${escapeHtml(sealed.error || 'SealFailed')}</code></div>`;
+      return;
+    }
+    const mencBytes = hexToBytes(sealed.cipher_hex);
+    inspectMeta.textContent = `sample-release.menc (${fmtBytes(mencBytes.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(mencBytes, 'sample-release.menc');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 inspectSamplePubSigBtn.addEventListener('click', async () => {
-  const mod = await loadEngine();
-  const seed = new Uint8Array(32);
-  crypto.getRandomValues(seed);
-  const payload = new TextEncoder().encode('MoonLibSync 0.6.0 sample release payload');
-  const signed = JSON.parse(await mod.ed25519_sign_bytes_json(seed, payload));
-  if (!signed.ok) return;
-  const sigBytes = new TextEncoder().encode(signed.signature_json);
-  inspectMeta.textContent = `release.msig.json (${fmtBytes(sigBytes.length)})`;
-  inspectMeta.classList.add('selected');
-  await inspectArtifactBytes(sigBytes, 'release.msig.json');
+  try {
+    const mod = await loadEngine();
+    const seed = new Uint8Array(32);
+    crypto.getRandomValues(seed);
+    const payload = new TextEncoder().encode('MoonLibSync 0.6.0 sample release payload');
+    const signed = JSON.parse(await mod.ed25519_sign_bytes_json(seed, payload));
+    if (!signed.ok) {
+      inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Sign Error:</strong> <code>${escapeHtml(signed.error || 'SignFailed')}</code></div>`;
+      return;
+    }
+    const sigBytes = new TextEncoder().encode(signed.signature_json);
+    inspectMeta.textContent = `release.msig.json (${fmtBytes(sigBytes.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(sigBytes, 'release.msig.json');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 // =========================================================================
@@ -2200,7 +2351,11 @@ function renderBundlePackResult(state) {
 
   document.getElementById('bundleRoundtripUnpackBtn').addEventListener('click', async () => {
     if (!lastPackedBundle) return;
-    await runBundleUnpackBytes(lastPackedBundle.basisFilesJson, lastPackedBundle.archiveBytes, 'roundtrip' + ext);
+    try {
+      await runBundleUnpackBytes(lastPackedBundle.basisFilesJson, lastPackedBundle.archiveBytes, 'roundtrip' + ext);
+    } catch (err) {
+      dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle unpack error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+    }
   });
 }
 
@@ -2400,12 +2555,12 @@ async function executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, 
 }
 
 async function runBundlePackRaw(basisRaw, targetRaw) {
-  const mod = await loadEngine();
   const patterns = parseExcludePatterns();
   const detectMoves = !!dirDetectMovesCheckbox.checked;
   const gzipCompress = !!bundleGzipToggle.checked;
   const t0 = performance.now();
   try {
+    const mod = await loadEngine();
     const [basisKept, targetKept] = await Promise.all([
       filterRawFilesByExcludes(mod, basisRaw, patterns),
       filterRawFilesByExcludes(mod, targetRaw, patterns),
@@ -2423,62 +2578,78 @@ async function runBundlePackRaw(basisRaw, targetRaw) {
     lastDirState = { mode: 'bundle-pack', packRes, archiveBytes, elapsedMs };
     renderBundlePackResult(lastDirState);
   } catch (err) {
-    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle pack error:</strong> <code>${escapeHtml(err instanceof Error ? err.message : String(err))}</code></div>`;
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle pack error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
 }
 
 async function runBundleUnpackBytes(basisFilesJson, archiveBytes, archiveName) {
-  const mod = await loadEngine();
-  const t0 = performance.now();
-  const unpackRes = JSON.parse(await mod.unpack_dir_bundle_archive_json(basisFilesJson, archiveBytes));
-  const elapsedMs = performance.now() - t0;
-  lastDirState = { mode: 'bundle-unpack', unpackRes, archiveName, elapsedMs };
-  renderBundleUnpackResult(lastDirState);
+  try {
+    const mod = await loadEngine();
+    const t0 = performance.now();
+    const unpackRes = JSON.parse(await mod.unpack_dir_bundle_archive_json(basisFilesJson, archiveBytes));
+    const elapsedMs = performance.now() - t0;
+    lastDirState = { mode: 'bundle-unpack', unpackRes, archiveName, elapsedMs };
+    renderBundleUnpackResult(lastDirState);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle unpack error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 }
 
 runDirSampleBtn.addEventListener('click', async () => {
-  if (dirMode === 'bundle') {
-    const { basisFiles, targetFiles } = makeSampleRawFiles();
-    await runBundlePackRaw(basisFiles, targetFiles);
-    return;
+  try {
+    if (dirMode === 'bundle') {
+      const { basisFiles, targetFiles } = makeSampleRawFiles();
+      await runBundlePackRaw(basisFiles, targetFiles);
+      return;
+    }
+    const mod = await loadEngine();
+    const patterns = parseExcludePatterns();
+    const detectMoves = !!dirDetectMovesCheckbox.checked;
+    const t0 = performance.now();
+    const { basisEntries, targetEntries } = await makeSampleDirEntries(mod);
+    const [basisSnap, targetSnap] = await Promise.all([
+      buildSnapshotWithExcludes(mod, basisEntries, patterns),
+      buildSnapshotWithExcludes(mod, targetEntries, patterns),
+    ]);
+    await executeDirComparison(mod, basisSnap, targetSnap, dirMode, patterns, detectMoves, t0);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Directory operation error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
-  const mod = await loadEngine();
-  const patterns = parseExcludePatterns();
-  const detectMoves = !!dirDetectMovesCheckbox.checked;
-  const t0 = performance.now();
-  const { basisEntries, targetEntries } = await makeSampleDirEntries(mod);
-  const [basisSnap, targetSnap] = await Promise.all([
-    buildSnapshotWithExcludes(mod, basisEntries, patterns),
-    buildSnapshotWithExcludes(mod, targetEntries, patterns),
-  ]);
-  await executeDirComparison(mod, basisSnap, targetSnap, dirMode, patterns, detectMoves, t0);
 });
 
 runDirVerifyCleanSampleBtn.addEventListener('click', async () => {
-  const mod = await loadEngine();
-  setDirMode('verify');
-  const patterns = parseExcludePatterns();
-  const t0 = performance.now();
-  const { basisEntries } = await makeSampleDirEntries(mod);
-  const snap = await buildSnapshotWithExcludes(mod, basisEntries, patterns);
-  await executeDirComparison(mod, snap, snap, 'verify', patterns, false, t0);
+  try {
+    const mod = await loadEngine();
+    setDirMode('verify');
+    const patterns = parseExcludePatterns();
+    const t0 = performance.now();
+    const { basisEntries } = await makeSampleDirEntries(mod);
+    const snap = await buildSnapshotWithExcludes(mod, basisEntries, patterns);
+    await executeDirComparison(mod, snap, snap, 'verify', patterns, false, t0);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Directory verify error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 async function runDirFoldersWithMode(mode) {
-  const mod = await loadEngine();
   setDirMode(mode);
   if (!basisDirInput.files?.length && !targetDirInput.files?.length) {
     dirResultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('pickDirWarn'))}</div>`;
     return;
   }
-  const patterns = parseExcludePatterns();
-  const detectMoves = !!dirDetectMovesCheckbox.checked;
-  const t0 = performance.now();
-  const [basisSnap, targetSnap] = await Promise.all([
-    buildSnapshotFromFiles(mod, basisDirInput.files, patterns),
-    buildSnapshotFromFiles(mod, targetDirInput.files, patterns),
-  ]);
-  await executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, detectMoves, t0);
+  try {
+    const mod = await loadEngine();
+    const patterns = parseExcludePatterns();
+    const detectMoves = !!dirDetectMovesCheckbox.checked;
+    const t0 = performance.now();
+    const [basisSnap, targetSnap] = await Promise.all([
+      buildSnapshotFromFiles(mod, basisDirInput.files, patterns),
+      buildSnapshotFromFiles(mod, targetDirInput.files, patterns),
+    ]);
+    await executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, detectMoves, t0);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Directory operation error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 }
 
 runDirDiffBtn.addEventListener('click', () => runDirFoldersWithMode('plan'));
@@ -2496,11 +2667,15 @@ runBundleFolderPackBtn.addEventListener('click', async () => {
     dirResultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('pickDirWarn'))}</div>`;
     return;
   }
-  const [basisRaw, targetRaw] = await Promise.all([
-    readFolderToRawFiles(basisDirInput.files),
-    readFolderToRawFiles(targetDirInput.files),
-  ]);
-  await runBundlePackRaw(basisRaw, targetRaw);
+  try {
+    const [basisRaw, targetRaw] = await Promise.all([
+      readFolderToRawFiles(basisDirInput.files),
+      readFolderToRawFiles(targetDirInput.files),
+    ]);
+    await runBundlePackRaw(basisRaw, targetRaw);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle pack error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
 });
 
 runBundleUnpackBtn.addEventListener('click', async () => {
@@ -2509,19 +2684,23 @@ runBundleUnpackBtn.addEventListener('click', async () => {
     dirResultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('bundlePickArchiveWarn'))}</div>`;
     return;
   }
-  const mod = await loadEngine();
-  const patterns = parseExcludePatterns();
-  const archiveBytes = new Uint8Array(await archiveFile.arrayBuffer());
-  let basisFilesJson;
-  if (basisDirInput.files?.length) {
-    const basisRaw = await filterRawFilesByExcludes(mod, await readFolderToRawFiles(basisDirInput.files), patterns);
-    basisFilesJson = serializeHexFiles(basisRaw);
-  } else {
-    const { basisFiles } = makeSampleRawFiles();
-    const basisKept = await filterRawFilesByExcludes(mod, basisFiles, patterns);
-    basisFilesJson = serializeHexFiles(basisKept);
+  try {
+    const mod = await loadEngine();
+    const patterns = parseExcludePatterns();
+    const archiveBytes = new Uint8Array(await archiveFile.arrayBuffer());
+    let basisFilesJson;
+    if (basisDirInput.files?.length) {
+      const basisRaw = await filterRawFilesByExcludes(mod, await readFolderToRawFiles(basisDirInput.files), patterns);
+      basisFilesJson = serializeHexFiles(basisRaw);
+    } else {
+      const { basisFiles } = makeSampleRawFiles();
+      const basisKept = await filterRawFilesByExcludes(mod, basisFiles, patterns);
+      basisFilesJson = serializeHexFiles(basisKept);
+    }
+    await runBundleUnpackBytes(basisFilesJson, archiveBytes, archiveFile.name);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle unpack error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
   }
-  await runBundleUnpackBytes(basisFilesJson, archiveBytes, archiveFile.name);
 });
 
 // =========================================================================
@@ -2541,59 +2720,79 @@ const runCustomGzipBtn = document.getElementById('runCustomGzip');
 const labCustomOut = document.getElementById('labCustomOut');
 
 async function runBombDrill() {
-  const mod = await loadEngine();
-  const raw = new Uint8Array(262144);
-  const gz = await mod.compress_gzip_bytes(raw, 6);
-  const res = JSON.parse(await mod.decompress_gzip_check_json(gz, 4096));
-  const ratio = (raw.length / gz.length).toFixed(0);
-  labBombOut.className = 'lab-out ' + (!res.ok && res.error === 'LimitExceeded' ? 'blocked' : 'err');
-  labBombOut.textContent = !res.ok
-    ? `✓ BLOCKED (${res.error}) — 256 KiB → ${gz.length} B bomb (${ratio}×) stopped at 4,096 B cap`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const mod = await loadEngine();
+    const raw = new Uint8Array(262144);
+    const gz = await mod.compress_gzip_bytes(raw, 6);
+    const res = JSON.parse(await mod.decompress_gzip_check_json(gz, 4096));
+    const ratio = (raw.length / gz.length).toFixed(0);
+    labBombOut.className = 'lab-out ' + (!res.ok && res.error === 'LimitExceeded' ? 'blocked' : 'err');
+    labBombOut.textContent = !res.ok
+      ? `✓ BLOCKED (${res.error}) — 256 KiB → ${gz.length} B bomb (${ratio}×) stopped at 4,096 B cap`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    labBombOut.className = 'lab-out err';
+    labBombOut.textContent = `✕ Error: ${errMessage(err)}`;
+  }
 }
 
 async function runTrailingDrill() {
-  const mod = await loadEngine();
-  const sample = new TextEncoder().encode('moonlibsync-strict-framing-check');
-  const gz = await mod.compress_gzip_bytes(sample, 6);
-  const forged = new Uint8Array(gz.length + 1);
-  forged.set(gz, 0);
-  forged[gz.length] = 0x42;
-  const res = JSON.parse(await mod.decompress_gzip_check_json(forged, 65536));
-  labTrailOut.className = 'lab-out ' + (!res.ok && res.error === 'TrailingData' ? 'blocked' : 'err');
-  labTrailOut.textContent = !res.ok
-    ? `✓ BLOCKED (${res.error}) — ${gz.length} B valid frame + 1 rogue byte rejected`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const mod = await loadEngine();
+    const sample = new TextEncoder().encode('moonlibsync-strict-framing-check');
+    const gz = await mod.compress_gzip_bytes(sample, 6);
+    const forged = new Uint8Array(gz.length + 1);
+    forged.set(gz, 0);
+    forged[gz.length] = 0x42;
+    const res = JSON.parse(await mod.decompress_gzip_check_json(forged, 65536));
+    labTrailOut.className = 'lab-out ' + (!res.ok && res.error === 'TrailingData' ? 'blocked' : 'err');
+    labTrailOut.textContent = !res.ok
+      ? `✓ BLOCKED (${res.error}) — ${gz.length} B valid frame + 1 rogue byte rejected`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    labTrailOut.className = 'lab-out err';
+    labTrailOut.textContent = `✕ Error: ${errMessage(err)}`;
+  }
 }
 
 async function runTruncatedDrill() {
-  const mod = await loadEngine();
-  const sample = new TextEncoder().encode('moonlibsync-strict-trailer-check');
-  const gz = await mod.compress_gzip_bytes(sample, 6);
-  const trunc = gz.subarray(0, gz.length - 1);
-  const res = JSON.parse(await mod.decompress_gzip_check_json(trunc, 65536));
-  labTruncOut.className = 'lab-out ' + (!res.ok && res.error === 'TruncatedInput' ? 'blocked' : 'err');
-  labTruncOut.textContent = !res.ok
-    ? `✓ BLOCKED (${res.error}) — ${trunc.length}/${gz.length} B truncated trailer rejected`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const mod = await loadEngine();
+    const sample = new TextEncoder().encode('moonlibsync-strict-trailer-check');
+    const gz = await mod.compress_gzip_bytes(sample, 6);
+    const trunc = gz.subarray(0, gz.length - 1);
+    const res = JSON.parse(await mod.decompress_gzip_check_json(trunc, 65536));
+    labTruncOut.className = 'lab-out ' + (!res.ok && res.error === 'TruncatedInput' ? 'blocked' : 'err');
+    labTruncOut.textContent = !res.ok
+      ? `✓ BLOCKED (${res.error}) — ${trunc.length}/${gz.length} B truncated trailer rejected`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    labTruncOut.className = 'lab-out err';
+    labTruncOut.textContent = `✕ Error: ${errMessage(err)}`;
+  }
 }
 
 async function runCustomGzipDrill() {
-  const mod = await loadEngine();
-  const raw = new TextEncoder().encode(labInputEl.value || '');
-  const level = Number(labLevelEl.value);
-  const cap = Math.max(0, Number(labMaxOutEl.value) || 0);
-  const gz = await mod.compress_gzip_bytes(raw, level);
-  const check = JSON.parse(await mod.decompress_gzip_check_json(gz, cap));
-  if (check.ok) {
-    const pct = raw.length > 0 ? ((gz.length / raw.length) * 100).toFixed(1) : '100.0';
-    labCustomOut.className = 'lab-out blocked';
-    labCustomOut.textContent =
-      `✓ OK — raw=${raw.length} B → gzip=${gz.length} B (${pct}%, level=${level}) · decompressed=${check.byte_length} B · sha256=${check.sha256.slice(0, 16)}... · hex=${toHexPreview(gz, 14)}`;
-  } else {
-    labCustomOut.className = 'lab-out blocked';
-    labCustomOut.textContent =
-      `✓ GUARD TRIGGERED (${check.error}) — raw=${raw.length} B, gzip=${gz.length} B, max_output cap=${cap} B`;
+  try {
+    const mod = await loadEngine();
+    const raw = new TextEncoder().encode(labInputEl.value || '');
+    const level = Number(labLevelEl.value);
+    const cap = Math.max(0, Number(labMaxOutEl.value) || 0);
+    const gz = await mod.compress_gzip_bytes(raw, level);
+    const check = JSON.parse(await mod.decompress_gzip_check_json(gz, cap));
+    if (check.ok) {
+      const pct = raw.length > 0 ? ((gz.length / raw.length) * 100).toFixed(1) : '100.0';
+      labCustomOut.className = 'lab-out blocked';
+      labCustomOut.textContent =
+        `✓ OK — raw=${raw.length} B → gzip=${gz.length} B (${pct}%, level=${level}) · decompressed=${check.byte_length} B · sha256=${check.sha256.slice(0, 16)}... · hex=${toHexPreview(gz, 14)}`;
+    } else {
+      labCustomOut.className = 'lab-out blocked';
+      labCustomOut.textContent =
+        `✓ GUARD TRIGGERED (${check.error}) — raw=${raw.length} B, gzip=${gz.length} B, max_output cap=${cap} B`;
+    }
+  } catch (err) {
+    labCustomOut.className = 'lab-out err';
+    labCustomOut.textContent = `✕ Error: ${errMessage(err)}`;
   }
 }
 
@@ -2645,31 +2844,42 @@ async function ensureEdKeypair(forceNew = false) {
 }
 
 async function runEdSign() {
-  const state = await ensureEdKeypair(false);
-  const mod = await loadEngine();
-  const payloadBytes = new TextEncoder().encode(edPayloadInput.value || '');
-  const t0 = performance.now();
-  const signed = JSON.parse(await mod.ed25519_sign_bytes_json(state.seed, payloadBytes));
-  const elapsed = performance.now() - t0;
-  if (!signed.ok) {
+  try {
+    const state = await ensureEdKeypair(false);
+    const mod = await loadEngine();
+    const payloadBytes = new TextEncoder().encode(edPayloadInput.value || '');
+    const t0 = performance.now();
+    const signed = JSON.parse(await mod.ed25519_sign_bytes_json(state.seed, payloadBytes));
+    const elapsed = performance.now() - t0;
+    if (!signed.ok) {
+      edVerifyOut.className = 'lab-out err';
+      edVerifyOut.textContent = `✕ Sign failed: ${signed.error}`;
+      return null;
+    }
+    state.lastSigJson = signed.signature_json;
+    state.lastPayloadBytes = payloadBytes;
+    edSigPreview.textContent = JSON.stringify(signed.signature, null, 2);
+    edSigPreview.hidden = false;
+    edDlSigBtn.disabled = false;
+    edVerifyOut.className = 'lab-out blocked';
+    edVerifyOut.textContent = `✓ Signed ${payloadBytes.length} B with key_id=${state.keyId} (${elapsed.toFixed(1)} ms) — ready to verify or download .msig.json`;
+    return state;
+  } catch (err) {
     edVerifyOut.className = 'lab-out err';
-    edVerifyOut.textContent = `✕ Sign failed: ${signed.error}`;
+    edVerifyOut.textContent = `✕ Sign error: ${errMessage(err)}`;
     return null;
   }
-  state.lastSigJson = signed.signature_json;
-  state.lastPayloadBytes = payloadBytes;
-  edSigPreview.textContent = JSON.stringify(signed.signature, null, 2);
-  edSigPreview.hidden = false;
-  edDlSigBtn.disabled = false;
-  edVerifyOut.className = 'lab-out blocked';
-  edVerifyOut.textContent = `✓ Signed ${payloadBytes.length} B with key_id=${state.keyId} (${elapsed.toFixed(1)} ms) — ready to verify or download .msig.json`;
-  return state;
 }
 
 edGenKeyBtn.addEventListener('click', async () => {
-  const st = await ensureEdKeypair(true);
-  edVerifyOut.className = 'lab-out blocked';
-  edVerifyOut.textContent = `✓ Generated new RFC 8032 Ed25519 keypair · key_id=${st.keyId}`;
+  try {
+    const st = await ensureEdKeypair(true);
+    edVerifyOut.className = 'lab-out blocked';
+    edVerifyOut.textContent = `✓ Generated new RFC 8032 Ed25519 keypair · key_id=${st.keyId}`;
+  } catch (err) {
+    edVerifyOut.className = 'lab-out err';
+    edVerifyOut.textContent = `✕ Keygen error: ${errMessage(err)}`;
+  }
 });
 
 edCopyKeyIdBtn.addEventListener('click', () => {
@@ -2697,62 +2907,77 @@ edDlSigBtn.addEventListener('click', () => {
 });
 
 edVerifyValidBtn.addEventListener('click', async () => {
-  const state = edState?.lastSigJson ? edState : await runEdSign();
-  if (!state) return;
-  const mod = await loadEngine();
-  const t0 = performance.now();
-  const res = JSON.parse(
-    await mod.ed25519_verify_bytes_json(
-      state.lastSigJson,
-      JSON.stringify([state.publicKeyHex]),
-      state.lastPayloadBytes,
-    ),
-  );
-  const elapsed = performance.now() - t0;
-  edVerifyOut.className = 'lab-out ' + (res.ok && res.verified ? 'blocked' : 'err');
-  edVerifyOut.textContent = res.ok
-    ? `✓ Verified (Ed25519 OK · ${elapsed.toFixed(1)} ms) — key_id=${res.key_id} · payload=${res.payload_length} B · sha256=${res.payload_sha256.slice(0, 16)}...`
-    : `✕ Verification failed: ${res.error}`;
+  try {
+    const state = edState?.lastSigJson ? edState : await runEdSign();
+    if (!state) return;
+    const mod = await loadEngine();
+    const t0 = performance.now();
+    const res = JSON.parse(
+      await mod.ed25519_verify_bytes_json(
+        state.lastSigJson,
+        JSON.stringify([state.publicKeyHex]),
+        state.lastPayloadBytes,
+      ),
+    );
+    const elapsed = performance.now() - t0;
+    edVerifyOut.className = 'lab-out ' + (res.ok && res.verified ? 'blocked' : 'err');
+    edVerifyOut.textContent = res.ok
+      ? `✓ Verified (Ed25519 OK · ${elapsed.toFixed(1)} ms) — key_id=${res.key_id} · payload=${res.payload_length} B · sha256=${res.payload_sha256.slice(0, 16)}...`
+      : `✕ Verification failed: ${res.error}`;
+  } catch (err) {
+    edVerifyOut.className = 'lab-out err';
+    edVerifyOut.textContent = `✕ Verify error: ${errMessage(err)}`;
+  }
 });
 
 edVerifyTamperBtn.addEventListener('click', async () => {
-  const state = edState?.lastSigJson ? edState : await runEdSign();
-  if (!state) return;
-  const mod = await loadEngine();
-  const tampered = new Uint8Array(state.lastPayloadBytes.length || 1);
-  tampered.set(state.lastPayloadBytes);
-  tampered[0] = (tampered[0] ^ 0x01) & 0xff;
-  const res = JSON.parse(
-    await mod.ed25519_verify_bytes_json(
-      state.lastSigJson,
-      JSON.stringify([state.publicKeyHex]),
-      tampered,
-    ),
-  );
-  edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('DigestMismatch') ? 'blocked' : 'err');
-  edVerifyOut.textContent = !res.verified
-    ? `✕ ${res.error} — 1-byte payload tamper rejected as expected!`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const state = edState?.lastSigJson ? edState : await runEdSign();
+    if (!state) return;
+    const mod = await loadEngine();
+    const tampered = new Uint8Array(state.lastPayloadBytes.length || 1);
+    tampered.set(state.lastPayloadBytes);
+    tampered[0] = (tampered[0] ^ 0x01) & 0xff;
+    const res = JSON.parse(
+      await mod.ed25519_verify_bytes_json(
+        state.lastSigJson,
+        JSON.stringify([state.publicKeyHex]),
+        tampered,
+      ),
+    );
+    edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('DigestMismatch') ? 'blocked' : 'err');
+    edVerifyOut.textContent = !res.verified
+      ? `✕ ${res.error} — 1-byte payload tamper rejected as expected!`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    edVerifyOut.className = 'lab-out err';
+    edVerifyOut.textContent = `✕ Verify error: ${errMessage(err)}`;
+  }
 });
 
 edVerifyUntrustedBtn.addEventListener('click', async () => {
-  const state = edState?.lastSigJson ? edState : await runEdSign();
-  if (!state) return;
-  const mod = await loadEngine();
-  const otherSeed = new Uint8Array(32);
-  crypto.getRandomValues(otherSeed);
-  const otherKp = JSON.parse(await mod.ed25519_keypair_from_seed_json(otherSeed));
-  const res = JSON.parse(
-    await mod.ed25519_verify_bytes_json(
-      state.lastSigJson,
-      JSON.stringify([otherKp.public_key_hex]),
-      state.lastPayloadBytes,
-    ),
-  );
-  edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('UntrustedKey') ? 'blocked' : 'err');
-  edVerifyOut.textContent = !res.verified
-    ? `✕ ${res.error} — signer key not in trusted set rejected as expected!`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const state = edState?.lastSigJson ? edState : await runEdSign();
+    if (!state) return;
+    const mod = await loadEngine();
+    const otherSeed = new Uint8Array(32);
+    crypto.getRandomValues(otherSeed);
+    const otherKp = JSON.parse(await mod.ed25519_keypair_from_seed_json(otherSeed));
+    const res = JSON.parse(
+      await mod.ed25519_verify_bytes_json(
+        state.lastSigJson,
+        JSON.stringify([otherKp.public_key_hex]),
+        state.lastPayloadBytes,
+      ),
+    );
+    edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('UntrustedKey') ? 'blocked' : 'err');
+    edVerifyOut.textContent = !res.verified
+      ? `✕ ${res.error} — signer key not in trusted set rejected as expected!`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    edVerifyOut.className = 'lab-out err';
+    edVerifyOut.textContent = `✕ Verify error: ${errMessage(err)}`;
+  }
 });
 
 // --- Card 3: AEAD Streaming Encryption Lab (MLSENC01) ---
@@ -2800,31 +3025,37 @@ function getCurrentAeadSecret() {
 }
 
 async function runAeadSeal() {
-  const mod = await loadEngine();
-  const plainBytes = new TextEncoder().encode(aeadPlainInput.value || '');
-  const { usePassphrase, secretBytes } = getCurrentAeadSecret();
-  const salt16 = new Uint8Array(16);
-  crypto.getRandomValues(salt16);
-  const noncePrefix12 = new Uint8Array(12);
-  crypto.getRandomValues(noncePrefix12.subarray(0, 8)); // bytes 8..11 stay 0x00
-  const memKib = Number(aeadArgonMem.value) || 1024;
-  const passes = Number(aeadArgonPasses.value) || 1;
-  const t0 = performance.now();
-  const res = JSON.parse(
-    await mod.seal_bytes_json(plainBytes, secretBytes, usePassphrase, salt16, noncePrefix12, 65536, memKib, passes),
-  );
-  const elapsed = performance.now() - t0;
-  if (!res.ok) {
+  try {
+    const mod = await loadEngine();
+    const plainBytes = new TextEncoder().encode(aeadPlainInput.value || '');
+    const { usePassphrase, secretBytes } = getCurrentAeadSecret();
+    const salt16 = new Uint8Array(16);
+    crypto.getRandomValues(salt16);
+    const noncePrefix12 = new Uint8Array(12);
+    crypto.getRandomValues(noncePrefix12.subarray(0, 8)); // bytes 8..11 stay 0x00
+    const memKib = Number(aeadArgonMem.value) || 1024;
+    const passes = Number(aeadArgonPasses.value) || 1;
+    const t0 = performance.now();
+    const res = JSON.parse(
+      await mod.seal_bytes_json(plainBytes, secretBytes, usePassphrase, salt16, noncePrefix12, 65536, memKib, passes),
+    );
+    const elapsed = performance.now() - t0;
+    if (!res.ok) {
+      aeadOut.className = 'lab-out err';
+      aeadOut.textContent = `✕ Seal failed: ${res.error}`;
+      return null;
+    }
+    const cipherBytes = hexToBytes(res.cipher_hex);
+    aeadState = { cipherBytes, usePassphrase, secretBytes };
+    aeadDlMencBtn.disabled = false;
+    aeadOut.className = 'lab-out blocked';
+    aeadOut.textContent = `✓ Sealed MLSENC01 (${res.kdf_mode}) — plain=${res.plain_bytes} B → cipher=${res.cipher_bytes} B (56 B header + AEAD tag · ${elapsed.toFixed(1)} ms) · header=${toHexPreview(cipherBytes, 16)}`;
+    return aeadState;
+  } catch (err) {
     aeadOut.className = 'lab-out err';
-    aeadOut.textContent = `✕ Seal failed: ${res.error}`;
+    aeadOut.textContent = `✕ Seal error: ${errMessage(err)}`;
     return null;
   }
-  const cipherBytes = hexToBytes(res.cipher_hex);
-  aeadState = { cipherBytes, usePassphrase, secretBytes };
-  aeadDlMencBtn.disabled = false;
-  aeadOut.className = 'lab-out blocked';
-  aeadOut.textContent = `✓ Sealed MLSENC01 (${res.kdf_mode}) — plain=${res.plain_bytes} B → cipher=${res.cipher_bytes} B (56 B header + AEAD tag · ${elapsed.toFixed(1)} ms) · header=${toHexPreview(cipherBytes, 16)}`;
-  return aeadState;
 }
 
 aeadSealBtn.addEventListener('click', runAeadSeal);
@@ -2836,36 +3067,46 @@ aeadDlMencBtn.addEventListener('click', () => {
 });
 
 aeadUnsealBtn.addEventListener('click', async () => {
-  const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
-  if (!state) return;
-  const mod = await loadEngine();
-  const { usePassphrase, secretBytes } = getCurrentAeadSecret();
-  const t0 = performance.now();
-  const res = JSON.parse(await mod.unseal_bytes_json(state.cipherBytes, secretBytes, usePassphrase));
-  const elapsed = performance.now() - t0;
-  if (res.ok) {
-    const plainText = new TextDecoder().decode(hexToBytes(res.plain_hex));
-    const snippet = plainText.length > 72 ? plainText.slice(0, 72) + '…' : plainText;
-    aeadOut.className = 'lab-out blocked';
-    aeadOut.textContent = `✓ Authenticated (${res.kdf_mode} · ${elapsed.toFixed(1)} ms) — plain=${res.plain_bytes} B · sha256=${res.plain_sha256.slice(0, 16)}... · "${snippet}"`;
-  } else {
+  try {
+    const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
+    if (!state) return;
+    const mod = await loadEngine();
+    const { usePassphrase, secretBytes } = getCurrentAeadSecret();
+    const t0 = performance.now();
+    const res = JSON.parse(await mod.unseal_bytes_json(state.cipherBytes, secretBytes, usePassphrase));
+    const elapsed = performance.now() - t0;
+    if (res.ok) {
+      const plainText = new TextDecoder().decode(hexToBytes(res.plain_hex));
+      const snippet = plainText.length > 72 ? plainText.slice(0, 72) + '…' : plainText;
+      aeadOut.className = 'lab-out blocked';
+      aeadOut.textContent = `✓ Authenticated (${res.kdf_mode} · ${elapsed.toFixed(1)} ms) — plain=${res.plain_bytes} B · sha256=${res.plain_sha256.slice(0, 16)}... · "${snippet}"`;
+    } else {
+      aeadOut.className = 'lab-out err';
+      aeadOut.textContent = `✕ Unseal failed (${res.error})`;
+    }
+  } catch (err) {
     aeadOut.className = 'lab-out err';
-    aeadOut.textContent = `✕ Unseal failed (${res.error})`;
+    aeadOut.textContent = `✕ Unseal error: ${errMessage(err)}`;
   }
 });
 
 aeadTamperBtn.addEventListener('click', async () => {
-  const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
-  if (!state) return;
-  const mod = await loadEngine();
-  const tampered = new Uint8Array(state.cipherBytes.length);
-  tampered.set(state.cipherBytes);
-  tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff;
-  const res = JSON.parse(await mod.unseal_bytes_json(tampered, state.secretBytes, state.usePassphrase));
-  aeadOut.className = 'lab-out ' + (!res.ok && res.error === 'AuthenticationFailed' ? 'blocked' : 'err');
-  aeadOut.textContent = !res.ok
-    ? `✕ ${res.error} — 1-byte ciphertext / Poly1305 tag tamper rejected as expected!`
-    : `Unexpected pass: ${JSON.stringify(res)}`;
+  try {
+    const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
+    if (!state) return;
+    const mod = await loadEngine();
+    const tampered = new Uint8Array(state.cipherBytes.length);
+    tampered.set(state.cipherBytes);
+    tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff;
+    const res = JSON.parse(await mod.unseal_bytes_json(tampered, state.secretBytes, state.usePassphrase));
+    aeadOut.className = 'lab-out ' + (!res.ok && res.error === 'AuthenticationFailed' ? 'blocked' : 'err');
+    aeadOut.textContent = !res.ok
+      ? `✕ ${res.error} — 1-byte ciphertext / Poly1305 tag tamper rejected as expected!`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    aeadOut.className = 'lab-out err';
+    aeadOut.textContent = `✕ Tamper test error: ${errMessage(err)}`;
+  }
 });
 
 applyTheme();

@@ -722,4 +722,129 @@ assertSyncError(
   'seal rejects simultaneous key and passphrase',
 );
 
+// 15. [Red-Team Audit #3] Adversarial hardening regression tests.
+// 15a. client.seal rejects explicit 0 or negative chunkSize / argon2MemoryKib / argon2Passes.
+assertSyncError(
+  () => client.seal(secretPlain, { key: rawKey, chunkSize: 0 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects chunkSize: 0',
+);
+assertSyncError(
+  () => client.seal(secretPlain, { key: rawKey, chunkSize: -1 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects chunkSize: -1',
+);
+assertSyncError(
+  () => client.seal(secretPlain, { passphrase: 'pw', argon2MemoryKib: 0 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects argon2MemoryKib: 0',
+);
+assertSyncError(
+  () => client.seal(secretPlain, { passphrase: 'pw', argon2MemoryKib: -1 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects argon2MemoryKib: -1',
+);
+assertSyncError(
+  () => client.seal(secretPlain, { passphrase: 'pw', argon2Passes: 0 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects argon2Passes: 0',
+);
+assertSyncError(
+  () => client.seal(secretPlain, { passphrase: 'pw', argon2Passes: -1 }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects argon2Passes: -1',
+);
+
+// 15b. Explicit modulePath must NOT silently fall back to _build when missing.
+await assert.rejects(
+  () => loadMoonLibSync({ modulePath: './definitely-missing-module.js' }),
+  (err) => {
+    assert.ok(err instanceof MoonLibSyncError, 'expected MoonLibSyncError');
+    assert.equal(err.code, 'LoadFailed');
+    assert.match(err.message, /definitely-missing-module\.js/);
+    return true;
+  },
+);
+
+// 15c. createDirSnapshot rejects file-vs-dir prefix, intermediate dir case collision, and Windows reserved names.
+assertSyncError(
+  () =>
+    client.createDirSnapshot([
+      makeEntry('dir', 'file-content'),
+      makeEntry('dir/child.txt', 'child-content'),
+    ]),
+  /path_collision/,
+  'createDirSnapshot rejects file-vs-dir ancestor collision',
+);
+assertSyncError(
+  () =>
+    client.createDirSnapshot([
+      makeEntry('DIR/b.txt', 'b'),
+      makeEntry('dir/a.txt', 'a'),
+    ]),
+  /path_collision/,
+  'createDirSnapshot rejects intermediate dir case-folding collision',
+);
+assertSyncError(
+  () => client.createDirSnapshot([makeEntry('NUL', 'reserved')]),
+  /InvalidField:path/,
+  'createDirSnapshot rejects Windows reserved device name NUL',
+);
+
+// 15d. applyPatchOrGzip succeeds on a Schema 2 full-file TransferManifest whose target IS a .gz file.
+const gzTargetPayload = client.compressGzip(
+  enc.encode('schema2-full-file-target-is-itself-gzip-'.repeat(24)),
+  { level: 6 },
+);
+const gzTargetDigest = {
+  byte_length: String(gzTargetPayload.length),
+  sha256: client.sha256Hex(gzTargetPayload),
+};
+const schema2FullGzTargetManifest = {
+  schema_version: 2,
+  kind: 'full-file',
+  payload: gzTargetDigest,
+  result: gzTargetDigest,
+};
+const patchedFullGzTarget = client.applyPatchOrGzip(
+  oldBytes,
+  gzTargetPayload,
+  schema2FullGzTargetManifest,
+);
+assert.deepEqual(patchedFullGzTarget.bytes, gzTargetPayload);
+assert.equal(patchedFullGzTarget.sha256, gzTargetDigest.sha256);
+assert.equal(patchedFullGzTarget.decompressedGzip, false);
+assert.equal(patchedFullGzTarget.verifiedManifest, true);
+
+// 15e. inspectDeltaDetailed decodes true UTF-8 multi-byte text ("你好") in preview_utf8.
+const utf8Basis = enc.encode('Z'.repeat(2048));
+const utf8Literal = enc.encode('你好世界-utf8');
+const utf8Target = new Uint8Array(utf8Basis.length + utf8Literal.length);
+utf8Target.set(utf8Basis, 0);
+utf8Target.set(utf8Literal, utf8Basis.length);
+const utf8Sig = client.createSignature(utf8Basis, { blockLen: 512, strongSumLen: 16 });
+const utf8Delta = client.createDelta(utf8Sig, utf8Target);
+const utf8Detailed = client.inspectDeltaDetailed(utf8Delta, { maxItems: 64 });
+const utf8LitItem = utf8Detailed.items.find((it) => it.kind === 'literal');
+assert.ok(utf8LitItem, 'expected literal item in UTF-8 delta');
+assert.ok(
+  typeof utf8LitItem.preview_utf8 === 'string' && utf8LitItem.preview_utf8.includes('你好'),
+  `expected preview_utf8 to contain "你好", got ${JSON.stringify(utf8LitItem.preview_utf8)}`,
+);
+assert.equal(utf8LitItem.preview_utf8, '你好世界-utf8');
+
+// 15f. Circular objects / BigInt passed into SDK JSON serializers throw MoonLibSyncError('InvalidOptions:...').
+const circularObj = /** @type {Record<string, unknown>} */ ({});
+circularObj.self = circularObj;
+assertSyncError(
+  () => client.planDirSnapshots(circularObj, snapTarget),
+  /^InvalidOptions(:|$)/,
+  'planDirSnapshots wraps circular JSON.stringify TypeError',
+);
+assertSyncError(
+  () => client.applyPatchOrGzip(oldBytes, deltaBytes, /** @type {never} */ ({ big: 1n })),
+  /^InvalidOptions(:|$)/,
+  'applyPatchOrGzip wraps BigInt JSON.stringify TypeError',
+);
+
 console.log('JS_SDK_OK');

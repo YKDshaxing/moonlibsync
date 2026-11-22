@@ -911,6 +911,120 @@ if (wrongPassUnseal.ok !== false || wrongPassUnseal.error !== 'AuthenticationFai
   throw new Error('Expected AuthenticationFailed on wrong passphrase: ' + JSON.stringify(wrongPassUnseal));
 }
 
+// =========================================================================
+// 18. Red-Team Audit #3 Adversarial Hardening Regression Tests
+// =========================================================================
+
+// 18a. create_signature_with_profile_bytes rejects unknown profiles and negative options.
+if (
+  wasmSync.create_signature_with_profile_bytes(oldBytes, 0, 16, 'md4').length !== 0 ||
+  wasmSync.create_signature_with_profile_bytes(oldBytes, 0, 16, '').length !== 0 ||
+  wasmSync.create_signature_with_profile_bytes(oldBytes, -1, 16, 'rk-blake2').length !== 0 ||
+  wasmSync.create_signature_with_profile_bytes(oldBytes, -512, 16, 'rollsum-blake2').length !== 0 ||
+  wasmSync.create_signature_with_profile_bytes(oldBytes, 0, -1, 'rk-blake2').length !== 0
+) {
+  throw new Error('create_signature_with_profile_bytes failed to reject invalid profile or negative options');
+}
+
+// 18b. create_reverse_delta_bytes rejects negative block_len / strong_sum_len.
+if (
+  wasmSync.create_reverse_delta_bytes(oldBytes, newBytes, -1, 16).length !== 0 ||
+  wasmSync.create_reverse_delta_bytes(oldBytes, newBytes, 0, -1).length !== 0 ||
+  wasmSync.create_reverse_delta_bytes(oldBytes, newBytes, -64, -8).length !== 0
+) {
+  throw new Error('create_reverse_delta_bytes failed to reject negative block_len or strong_sum_len');
+}
+
+// 18c. decompress_gzip_bytes rejects negative max_output.
+const emptyGzForNeg = wasmSync.compress_gzip_bytes(new Uint8Array(0), 6);
+if (
+  wasmSync.decompress_gzip_bytes(gzDelta, -1).length !== 0 ||
+  wasmSync.decompress_gzip_bytes(emptyGzForNeg, -1).length !== 0
+) {
+  throw new Error('decompress_gzip_bytes failed to reject max_output = -1');
+}
+const negGzCheck = JSON.parse(wasmSync.decompress_gzip_check_json(gzDelta, -1));
+if (negGzCheck.ok !== false || !String(negGzCheck.error).includes('InvalidOptions')) {
+  throw new Error('Expected InvalidOptions for decompress_gzip_check_json(max_output=-1): ' + JSON.stringify(negGzCheck));
+}
+
+// 18d. seal_bytes_json rejects negative chunk_size / argon2_memory_kib / argon2_passes.
+const negChunkSeal = JSON.parse(
+  wasmSync.seal_bytes_json(aeadPlain, aeadKey, false, aeadSalt, aeadNonce, -1, 0, 0),
+);
+const negMemSeal = JSON.parse(
+  wasmSync.seal_bytes_json(aeadPlain, passphraseBytes, true, aeadSalt, aeadNonce, 0, -1, 0),
+);
+const negPassSeal = JSON.parse(
+  wasmSync.seal_bytes_json(aeadPlain, passphraseBytes, true, aeadSalt, aeadNonce, 0, 0, -1),
+);
+if (
+  negChunkSeal.ok !== false ||
+  !String(negChunkSeal.error).includes('InvalidOptions') ||
+  negMemSeal.ok !== false ||
+  !String(negMemSeal.error).includes('InvalidOptions') ||
+  negPassSeal.ok !== false ||
+  !String(negPassSeal.error).includes('InvalidOptions')
+) {
+  throw new Error(
+    'seal_bytes_json failed to reject negative options: ' +
+      JSON.stringify({ negChunkSeal, negMemSeal, negPassSeal }),
+  );
+}
+
+// 18e. apply_verified_patch_json applies Schema 2 full-file TransferManifest whose target IS a .gz file.
+const targetGzFile = wasmSync.compress_gzip_bytes(
+  enc.encode('archived-release-tarball-payload-0123456789'.repeat(20)),
+  6,
+);
+const targetGzDigest = {
+  byte_length: String(targetGzFile.length),
+  sha256: wasmSync.sha256_hex_bytes(targetGzFile),
+};
+const fullGzManifestJson = JSON.stringify({
+  schema_version: 2,
+  kind: 'full-file',
+  payload: targetGzDigest,
+  result: targetGzDigest,
+});
+const patchFullGzTarget = JSON.parse(
+  wasmSync.apply_verified_patch_json(oldBytes, targetGzFile, fullGzManifestJson),
+);
+if (
+  !patchFullGzTarget.ok ||
+  patchFullGzTarget.decompressed_gzip !== false ||
+  patchFullGzTarget.verified_manifest !== true ||
+  patchFullGzTarget.output_bytes !== targetGzDigest.byte_length ||
+  patchFullGzTarget.sha256 !== targetGzDigest.sha256
+) {
+  throw new Error(
+    'apply_verified_patch_json failed on Schema 2 full-file .gz target: ' +
+      JSON.stringify(patchFullGzTarget),
+  );
+}
+
+// 18f. inspect_delta_detailed_json preserves real UTF-8 text (e.g. Chinese "你好世界") in preview_utf8.
+const utf8Basis = enc.encode('B'.repeat(2048));
+const utf8PatchBytes = enc.encode('prefix-你好世界-ok');
+const utf8New = new Uint8Array(utf8Basis.length + utf8PatchBytes.length);
+utf8New.set(utf8Basis, 0);
+utf8New.set(utf8PatchBytes, utf8Basis.length);
+const utf8Delta = wasmSync.create_delta_bytes(
+  wasmSync.create_signature_bytes(utf8Basis, 512, 16),
+  utf8New,
+);
+const utf8Detail = JSON.parse(wasmSync.inspect_delta_detailed_json(utf8Delta, 64));
+const utf8Lit = utf8Detail.items.find((it) => it.kind === 'literal');
+if (
+  !utf8Detail.ok ||
+  !utf8Lit ||
+  utf8Lit.preview_hex !== bytesToHex(utf8PatchBytes) ||
+  utf8Lit.preview_utf8 !== 'prefix-你好世界-ok' ||
+  utf8Lit.preview_truncated !== false
+) {
+  throw new Error('inspect_delta_detailed_json UTF-8 preview mismatch: ' + JSON.stringify(utf8Lit));
+}
+
 console.log(
   `WEB_DEMO_OK sig=${res.signature_bytes} delta=${res.delta_bytes} delta_gz=${res.gzip_delta_bytes} copy=${res.copy_bytes} exports=27 verified=true`,
 );

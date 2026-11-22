@@ -99,8 +99,10 @@ pub fn GzipEncoder::new(
 }
 
 ///|
-/// Advance compression over `chunk` into `out`. Pass `finish=true` at EOF
-/// and keep calling with empty input while `status` is `NeedMoreOutput`.
+/// Advance compression over `chunk` into `out`. Pass `finish=true` at EOF;
+/// if `consumed < chunk.length()`, keep calling with `chunk[consumed:]` and
+/// `finish=true` until all input is consumed, then keep calling with empty
+/// input while `status` is `NeedMoreOutput`.
 pub fn GzipEncoder::step(
   self : GzipEncoder,
   chunk : BytesView,
@@ -127,9 +129,6 @@ pub fn GzipEncoder::step(
   guard chunk.length().to_int64() <= self.max_input - self.input_bytes else {
     raise @lib.SyncError::LimitExceeded
   }
-  if finish {
-    self.finishing = true
-  }
   let allowed = self.max_output - self.output_bytes
   let cap_i64 = if allowed < out.length().to_int64() {
     allowed + 1L
@@ -140,6 +139,60 @@ pub fn GzipEncoder::step(
     out.length()
   } else {
     cap_i64.to_int()
+  }
+  if chunk.length() > 0 {
+    let res = self.inner.step(
+      chunk,
+      out.mut_view(start=0, end=cap),
+      action=@flate.DeflateAction::Continue,
+    )
+    self.input_bytes = self.input_bytes + res.consumed.to_int64()
+    guard res.produced.to_int64() <= allowed else {
+      raise @lib.SyncError::LimitExceeded
+    }
+    self.output_bytes = self.output_bytes + res.produced.to_int64()
+    let mut produced = res.produced
+    if finish && res.consumed == chunk.length() {
+      self.finishing = true
+      let rem_allowed = self.max_output - self.output_bytes
+      let rem_cap_i64 = if rem_allowed < (out.length() - produced).to_int64() {
+        rem_allowed + 1L
+      } else {
+        (out.length() - produced).to_int64()
+      }
+      let rem_cap = if rem_cap_i64 > (out.length() - produced).to_int64() {
+        out.length() - produced
+      } else {
+        rem_cap_i64.to_int()
+      }
+      if rem_cap > 0 {
+        let fin = self.inner.step(
+          b""[:],
+          out.mut_view(start=produced, end=produced + rem_cap),
+          action=@flate.DeflateAction::Finish,
+        )
+        guard fin.produced.to_int64() <= rem_allowed else {
+          raise @lib.SyncError::LimitExceeded
+        }
+        self.output_bytes = self.output_bytes + fin.produced.to_int64()
+        produced = produced + fin.produced
+        let fin_status = map_flate_status(fin.status)
+        if fin_status is Done {
+          self.done = true
+        }
+        return { consumed: res.consumed, produced, status: fin_status, }
+      }
+      return { consumed: res.consumed, produced, status: NeedMoreOutput, }
+    }
+    let status = if res.consumed < chunk.length() {
+      GzipStatus::NeedMoreOutput
+    } else {
+      map_flate_status(res.status)
+    }
+    return { consumed: res.consumed, produced, status, }
+  }
+  if finish {
+    self.finishing = true
   }
   let action = if finish {
     @flate.DeflateAction::Finish

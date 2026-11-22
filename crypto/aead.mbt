@@ -486,6 +486,9 @@ pub fn SealEncoder::new_with_passphrase(
   guard options.chunk_size <= limits.max_chunk_size else {
     raise LimitExceeded("chunk_size")
   }
+  guard seal_header_size.to_int64() <= limits.max_output_bytes else {
+    raise LimitExceeded("max_output_bytes")
+  }
   let key32 = derive_argon2_key(
     passphrase,
     salt16,

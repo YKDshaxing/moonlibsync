@@ -47,6 +47,7 @@ priv struct Plan {
   key_file : String?
   passphrase_file : String?
   seal_options : @crypto.SealOptions
+  explicit_max_output : Bool
   options : @lib.SignatureOptions
   limits : @lib.Limits
   dir_limits : @lib.DirLimits
@@ -722,6 +723,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     key_file,
     passphrase_file,
     seal_options,
+    explicit_max_output: seen_limits.contains("--max-output-bytes"),
     // Keep legacy numeric options valid; Auto is represented only by its enum.
     // The execution path resolves it from the actual bounded file size.
     options: {

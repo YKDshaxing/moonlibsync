@@ -70,8 +70,6 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
   let output = prepare_output(output_path)
   let first_limit = if plan.operation == "delta" {
     limits.max_signature_bytes
-  } else if plan.operation == "reverse-delta" {
-    limits.max_new_bytes
   } else {
     limits.max_old_bytes
   }
@@ -81,10 +79,8 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
   } else {
     bounded_read(
       plan.inputs[1],
-      if plan.operation == "delta" {
+      if plan.operation == "delta" || plan.operation == "reverse-delta" {
         limits.max_new_bytes
-      } else if plan.operation == "reverse-delta" {
-        limits.max_old_bytes
       } else {
         limits.max_delta_bytes
       },
@@ -100,13 +96,19 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
           limits,
         )
       "delta" => @lib.delta(first, second, limits)
-      "reverse-delta" =>
+      "reverse-delta" => {
+        let rev_limits : @lib.Limits = {
+          ..limits,
+          max_old_bytes: limits.max_new_bytes,
+          max_new_bytes: limits.max_old_bytes,
+        }
         @lib.create_reverse_delta(
           first,
           second,
-          signature_options(plan, second, limits),
+          signature_options(plan, second, rev_limits),
           limits,
         )
+      }
       _ => @lib.patch(first, second, limits)
     }
   } catch {

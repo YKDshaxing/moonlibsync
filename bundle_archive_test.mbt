@@ -201,3 +201,54 @@ test "bundle archive decoder rejects bad magic trailing bytes truncation and for
   }
   assert_true(l_err)
 }
+
+///|
+test "bundle archive encode and parse reject same-length payload SHA-256 tampering" {
+  let dl = @moonlibsync.DirLimits::default()
+  let fl = @moonlibsync.Limits::default()
+  let sha = (data : Bytes) => {
+    let h = @moonlibsync.Sha256Hasher::new(fl.max_old_bytes)
+    h.update(data[:])
+    h.finish()
+  }
+  let good = b"content-a"
+  let bad = b"TAMPERED!"
+  let bundle = @moonlibsync.create_dir_bundle_manifest(
+    [{ path: "a.txt", action: AddFull("payloads/000000.full", sha(good)), }],
+    dl,
+    fl,
+  )
+  // encode_bundle_archive must reject mismatched SHA-256
+  let enc_rej = try {
+    let _ = @moonlibsync.encode_bundle_archive(
+      bundle,
+      Map([("payloads/000000.full", bad)]),
+      dl,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::BindingMismatch("payload_sha256") => true
+    _ => false
+  }
+  assert_true(enc_rej)
+
+  // Tamper 1 payload byte inside a valid archive -> parse_bundle_archive must reject
+  let archive = @moonlibsync.encode_bundle_archive(
+    bundle,
+    Map([("payloads/000000.full", good)]),
+    dl,
+    fl,
+  )
+  let raw = archive.to_array()
+  raw[raw.length() - 1] = (raw[raw.length() - 1].to_int() ^ 0x01).to_byte()
+  let tampered = Bytes::from_array(raw[:])
+  let dec_rej = try {
+    let _ = @moonlibsync.parse_bundle_archive(tampered, dl, fl)
+    false
+  } catch {
+    @moonlibsync.ManifestError::BindingMismatch("payload_sha256") => true
+    _ => false
+  }
+  assert_true(dec_rej)
+}
