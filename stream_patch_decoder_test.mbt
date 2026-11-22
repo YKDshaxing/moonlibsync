@@ -248,3 +248,73 @@ test "streaming Sha256Hasher matches known vectors incremental splits and enforc
     assert_true(bad)
   }
 }
+
+///|
+test "PatchDecoder format_only and feed_inspect match inspect_delta and check_patch across splits" {
+  let d = @moonlibsync.Limits::default()
+  // Format-valid delta with high UInt64 COPY offset (0xffffffff00000000, len 12) + literal.
+  let high_delta = b"\x72\x73\x02\x36" +
+    b"\x51\xff\xff\xff\xff\x00\x00\x00\x00\x0c" +
+    b"\x03abc\x00"
+  let expected = @moonlibsync.inspect_delta(high_delta, d)
+  let dec_fmt = @moonlibsync.PatchDecoder::new_format_only(d)
+  for i in 0..<high_delta.length() {
+    dec_fmt.feed_inspect(high_delta[i:i + 1])
+  }
+  let got = dec_fmt.finish()
+  assert_eq(got.delta_bytes, expected.delta_bytes)
+  assert_eq(got.instruction_count, expected.instruction_count)
+  assert_eq(got.literal_commands, expected.literal_commands)
+  assert_eq(got.copy_commands, expected.copy_commands)
+  assert_eq(got.literal_bytes, expected.literal_bytes)
+  assert_eq(got.copy_bytes, expected.copy_bytes)
+  assert_eq(got.output_bytes, expected.output_bytes)
+
+  // Calling step() on format_only decoder is rejected.
+  let dec_step = @moonlibsync.PatchDecoder::new_format_only(d)
+  let step_rejected = try {
+    let _ = dec_step.step(high_delta[:])
+    false
+  } catch {
+    @moonlibsync.SyncError::InvalidOptions("format_only_decoder") => true
+    _ => false
+  }
+  assert_true(step_rejected)
+
+  // Basis-bound feed_inspect rejects high COPY offset as CopyOutOfBounds,
+  // and matches check_patch on valid multi-command deltas.
+  let dec_oob = @moonlibsync.PatchDecoder::new(100L, d)
+  let oob = try {
+    dec_oob.feed_inspect(high_delta[:])
+    false
+  } catch {
+    @moonlibsync.SyncError::CopyOutOfBounds => true
+    _ => false
+  }
+  assert_true(oob)
+
+  let basis = Bytes::makei(4096, i => ((i * 29 + 7) % 256).to_byte())
+  let new_bytes = basis[0:2048].to_owned() +
+    b"INSPECT" +
+    basis[2055:].to_owned()
+  let sig = @moonlibsync.signature(
+    basis,
+    { block_len: 512L, strong_sum_len: 16L, },
+    d,
+  )
+  let delta_bytes = @moonlibsync.delta(sig, new_bytes, d)
+  let checked = @moonlibsync.check_patch(
+    basis.length().to_int64(),
+    delta_bytes,
+    d,
+  )
+  let dec_check = @moonlibsync.PatchDecoder::new(basis.length().to_int64(), d)
+  for i in 0..<delta_bytes.length() {
+    dec_check.feed_inspect(delta_bytes[i:i + 1])
+  }
+  let got_check = dec_check.finish()
+  assert_eq(got_check.delta_bytes, checked.summary.delta_bytes)
+  assert_eq(got_check.output_bytes, checked.summary.output_bytes)
+  assert_eq(got_check.copy_bytes, checked.summary.copy_bytes)
+  assert_eq(got_check.literal_bytes, checked.summary.literal_bytes)
+}

@@ -233,3 +233,184 @@ test "dir strict JSON parser and DirLimits boundaries reject malformed or oversi
   }
   assert_true(bad_lim)
 }
+
+///|
+test "schema 3 DirSignatureIndex and DirBundleManifest roundtrip and strict validation" {
+  let dl = @moonlibsync.DirLimits::default()
+  let fl = @moonlibsync.Limits::default()
+  let old_a = b"unchanged-bytes"
+  let old_b = Bytes::makei(4096, i => ((i * 41 + 3) % 256).to_byte())
+  let new_b = old_b[0:2048].to_owned() + b"DIFF!" + old_b[2053:].to_owned()
+  let sig_b = @moonlibsync.signature(
+    old_b,
+    { block_len: 512L, strong_sum_len: 32L, },
+    fl,
+  )
+  let info_b = @moonlibsync.create_basis_info(old_b, sig_b, fl)
+  let delta_b = @moonlibsync.delta(sig_b, new_b, fl)
+  let um_b = @moonlibsync.create_update_manifest(
+    info_b, sig_b, new_b, delta_b, fl,
+  )
+
+  let sha = (data : Bytes) => {
+    let h = @moonlibsync.Sha256Hasher::new(fl.max_old_bytes)
+    h.update(data[:])
+    h.finish()
+  }
+  let d_old_a = sha(old_a)
+  let d_add = sha(b"brand-new")
+  let d_uf_old = sha(b"tiny1")
+  let d_uf_new = sha(b"tiny22")
+  let d_del = sha(b"deleted")
+
+  // DirSignatureIndex unsorted -> sorted canonical encode/parse roundtrip
+  let sig_idx = @moonlibsync.create_dir_signature_index(
+    [
+      {
+        path: "sub/b.bin",
+        basis: info_b.basis,
+        signature_path: "sigs/000001.sig",
+        signature: info_b.signature,
+      },
+      {
+        path: "a.bin",
+        basis: d_old_a,
+        signature_path: "sigs/000000.sig",
+        signature: info_b.signature,
+      },
+    ],
+    dl,
+    fl,
+  )
+  assert_eq(sig_idx.entries[0].path, "a.bin")
+  assert_eq(sig_idx.entries[1].path, "sub/b.bin")
+  let sig_json = @moonlibsync.encode_dir_signature_index(sig_idx, dl, fl)
+  let sig_parsed = @moonlibsync.parse_dir_signature_index(sig_json, dl, fl)
+  assert_eq(
+    @moonlibsync.encode_dir_signature_index(sig_parsed, dl, fl),
+    sig_json,
+  )
+
+  // Reject signature_path escaping sigs/ or case-folding collision
+  let bad_sig_prefix = try {
+    let _ = @moonlibsync.create_dir_signature_index(
+      [
+        {
+          path: "a.bin",
+          basis: d_old_a,
+          signature_path: "other/0.sig",
+          signature: info_b.signature,
+        },
+      ],
+      dl,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("signature_path") => true
+    _ => false
+  }
+  assert_true(bad_sig_prefix)
+
+  let bad_sig_coll = try {
+    let _ = @moonlibsync.create_dir_signature_index(
+      [
+        {
+          path: "a.bin",
+          basis: d_old_a,
+          signature_path: "sigs/A.sig",
+          signature: info_b.signature,
+        },
+        {
+          path: "b.bin",
+          basis: d_old_a,
+          signature_path: "sigs/a.sig",
+          signature: info_b.signature,
+        },
+      ],
+      dl,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("signature_path_collision") => true
+    _ => false
+  }
+  assert_true(bad_sig_coll)
+
+  // DirBundleManifest all 5 action kinds + exact payload byte sum
+  let bundle = @moonlibsync.create_dir_bundle_manifest(
+    [
+      { path: "z/del.bin", action: Delete(d_del), },
+      { path: "sub/b.bin", action: UpdateDelta("payloads/000001.delta", um_b), },
+      { path: "a.bin", action: Unchanged(d_old_a), },
+      {
+        path: "c.bin",
+        action: UpdateFull("payloads/000002.full", d_uf_old, d_uf_new),
+      },
+      { path: "add.bin", action: AddFull("payloads/000000.full", d_add), },
+    ],
+    dl,
+    fl,
+  )
+  assert_eq(bundle.unchanged_count, 1L)
+  assert_eq(bundle.add_full_count, 1L)
+  assert_eq(bundle.update_delta_count, 1L)
+  assert_eq(bundle.update_full_count, 1L)
+  assert_eq(bundle.delete_count, 1L)
+  assert_eq(
+    bundle.total_payload_bytes,
+    d_add.byte_length + um_b.delta.byte_length + d_uf_new.byte_length,
+  )
+  assert_eq(bundle.entries[0].path, "a.bin")
+  assert_eq(bundle.entries[4].path, "z/del.bin")
+
+  let bundle_json = @moonlibsync.encode_dir_bundle_manifest(bundle, dl, fl)
+  let parsed = @moonlibsync.parse_dir_bundle_manifest(bundle_json, dl, fl)
+  assert_eq(
+    @moonlibsync.encode_dir_bundle_manifest(parsed, dl, fl),
+    bundle_json,
+  )
+
+  // Reject payload_path outside payloads/, payload collision, and forged summary
+  let bad_pp = try {
+    let _ = @moonlibsync.create_dir_bundle_manifest(
+      [{ path: "x", action: AddFull("evil.bin", d_add), }],
+      dl,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("payload_path") => true
+    _ => false
+  }
+  assert_true(bad_pp)
+
+  let bad_pcoll = try {
+    let _ = @moonlibsync.create_dir_bundle_manifest(
+      [
+        { path: "x", action: AddFull("payloads/P.bin", d_add), },
+        { path: "y", action: AddFull("payloads/p.bin", d_add), },
+      ],
+      dl,
+      fl,
+    )
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("payload_path_collision") => true
+    _ => false
+  }
+  assert_true(bad_pcoll)
+
+  let forged = @utf8.encode(
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-bundle\",\"summary\":{\"unchanged\":\"1\",\"add_full\":\"0\",\"update_delta\":\"0\",\"update_full\":\"0\",\"delete\":\"0\",\"total_payload_bytes\":\"0\"},\"entries\":[]}\n",
+  )
+  let bad_sum = try {
+    let _ = @moonlibsync.parse_dir_bundle_manifest(forged, dl, fl)
+    false
+  } catch {
+    @moonlibsync.ManifestError::BindingMismatch("bundle_summary") => true
+    _ => false
+  }
+  assert_true(bad_sum)
+}

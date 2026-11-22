@@ -707,3 +707,523 @@ pub fn parse_dir_plan(
   validate_sync_plan(plan, limits)
   plan
 }
+
+///|
+/// Single file entry inside a Schema 3 `moonlibsync-dir-signatures` index.
+/// Binds a normalized relative path to both its basis digest and remote `.sig` file digest.
+pub(all) struct DirSignatureEntry {
+  path : String
+  basis : FileDigest
+  signature_path : String
+  signature : FileDigest
+}
+
+///|
+/// Canonically sorted Schema 3 index of remote file signatures for a directory snapshot.
+pub(all) struct DirSignatureIndex {
+  entries : Array[DirSignatureEntry]
+}
+
+///|
+/// Per-file action inside a self-contained Schema 3 `moonlibsync-dir-bundle`.
+pub(all) enum DirBundleAction {
+  Unchanged(FileDigest)
+  AddFull(String, FileDigest)
+  UpdateDelta(String, UpdateManifest)
+  UpdateFull(String, FileDigest, FileDigest)
+  Delete(FileDigest)
+}
+
+///|
+pub(all) struct DirBundleEntry {
+  path : String
+  action : DirBundleAction
+}
+
+///|
+/// Deterministic Schema 3 directory incremental sync bundle manifest.
+pub(all) struct DirBundleManifest {
+  entries : Array[DirBundleEntry]
+  unchanged_count : Int64
+  add_full_count : Int64
+  update_delta_count : Int64
+  update_full_count : Int64
+  delete_count : Int64
+  total_payload_bytes : Int64
+}
+
+///|
+fn bundle_json_budget(limits : DirLimits) -> Int64 {
+  let scaled = limits.max_snapshot_bytes * 8L
+  if scaled > 67108864L {
+    67108864L
+  } else {
+    scaled
+  }
+}
+
+///|
+fn validate_scoped_rel_path(
+  rel_path : String,
+  prefix : String,
+  field : String,
+  limits : DirLimits,
+  seen_lower : Map[String, String],
+  collision_field : String,
+) -> Unit raise ManifestError {
+  validate_dir_path(rel_path, limits)
+  guard rel_path.has_prefix(prefix) else {
+    raise ManifestError::InvalidField(field)
+  }
+  let lower = ascii_lower(rel_path)
+  guard !seen_lower.contains(lower) else {
+    raise ManifestError::InvalidField(collision_field)
+  }
+  seen_lower[lower] = rel_path
+}
+
+///|
+fn validate_dir_signature_entries(
+  entries : Array[DirSignatureEntry],
+  dir_limits : DirLimits,
+  limits : Limits,
+  require_sorted~ : Bool,
+) -> Unit raise ManifestError {
+  dir_limits.validate()
+  manifest_limits(limits)
+  guard entries.length().to_int64() <= dir_limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let seen_path : Map[String, String] = Map([])
+  let seen_sig : Map[String, String] = Map([])
+  for i in 0..<entries.length() {
+    let entry = entries[i]
+    validate_dir_path(entry.path, dir_limits)
+    let lower = ascii_lower(entry.path)
+    guard !seen_path.contains(lower) else {
+      raise ManifestError::InvalidField("path_collision")
+    }
+    seen_path[lower] = entry.path
+    if require_sorted && i > 0 {
+      guard lexical_path_compare(entries[i - 1].path, entry.path) < 0 else {
+        raise ManifestError::InvalidField("path_order")
+      }
+    }
+    validate_scoped_rel_path(
+      entry.signature_path,
+      "sigs/",
+      "signature_path",
+      dir_limits,
+      seen_sig,
+      "signature_path_collision",
+    )
+    validate_file_digest(entry.basis, 0L, dir_limits.max_file_bytes, "basis")
+    validate_file_digest(entry.basis, 0L, limits.max_old_bytes, "basis")
+    validate_file_digest(
+      entry.signature,
+      12L,
+      limits.max_signature_bytes,
+      "signature",
+    )
+  }
+}
+
+///|
+/// Validate and canonically sort a Schema 3 `DirSignatureIndex`.
+pub fn create_dir_signature_index(
+  entries : Array[DirSignatureEntry],
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> DirSignatureIndex raise ManifestError {
+  validate_dir_signature_entries(
+    entries,
+    dir_limits,
+    limits,
+    require_sorted=false,
+  )
+  let sorted = entries.copy()
+  sorted.sort_by((a, b) => lexical_path_compare(a.path, b.path))
+  { entries: sorted, }
+}
+
+///|
+/// Revalidate and encode a deterministic Schema 3 `moonlibsync-dir-signatures` JSON document.
+pub fn encode_dir_signature_index(
+  index : DirSignatureIndex,
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> Bytes raise ManifestError {
+  validate_dir_signature_entries(
+    index.entries,
+    dir_limits,
+    limits,
+    require_sorted=true,
+  )
+  let out = StringBuilder()
+  out.write_string(
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-signatures\",\"entries\":[",
+  )
+  for i in 0..<index.entries.length() {
+    if i > 0 {
+      out.write_char(',')
+    }
+    let e = index.entries[i]
+    out.write_string(
+      "{\"path\":\"\{json_escape_string(e.path)}\",\"basis\":\{file_digest_json(e.basis)},\"signature_path\":\"\{json_escape_string(e.signature_path)}\",\"signature\":\{file_digest_json(e.signature)}}",
+    )
+  }
+  out.write_string("]}\n")
+  let encoded = @utf8.encode(out.to_string())
+  guard encoded.length().to_int64() <= plan_json_budget(dir_limits) else {
+    raise ManifestError::ResourceLimit("signatures_bytes")
+  }
+  encoded
+}
+
+///|
+/// Parse and strictly validate a Schema 3 `moonlibsync-dir-signatures` JSON document.
+pub fn parse_dir_signature_index(
+  input : Bytes,
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> DirSignatureIndex raise ManifestError {
+  dir_limits.validate()
+  manifest_limits(limits)
+  let tree = dir_json_tree(
+    input,
+    plan_json_budget(dir_limits),
+    "signatures_bytes",
+    5,
+  )
+  let fields = manifest_object(tree, ["schema_version", "kind", "entries"])
+  dir_schema3_header(fields, "moonlibsync-dir-signatures")
+  guard manifest_get(fields, "entries") is @json.Json::Array(raw_entries) else {
+    raise ManifestError::InvalidSchema
+  }
+  guard raw_entries.length().to_int64() <= dir_limits.max_entries else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let entries : Array[DirSignatureEntry] = Array(capacity=raw_entries.length())
+  for item in raw_entries {
+    let f = manifest_object(item, [
+      "path", "basis", "signature_path", "signature",
+    ])
+    entries.push({
+      path: manifest_string(manifest_get(f, "path"), "path"),
+      basis: parse_file_digest(manifest_get(f, "basis")),
+      signature_path: manifest_string(
+        manifest_get(f, "signature_path"),
+        "signature_path",
+      ),
+      signature: parse_file_digest(manifest_get(f, "signature")),
+    })
+  }
+  validate_dir_signature_entries(
+    entries,
+    dir_limits,
+    limits,
+    require_sorted=true,
+  )
+  { entries, }
+}
+
+///|
+fn validate_dir_bundle_entries(
+  entries : Array[DirBundleEntry],
+  dir_limits : DirLimits,
+  limits : Limits,
+  require_sorted~ : Bool,
+) -> (Int64, Int64, Int64, Int64, Int64, Int64) raise ManifestError {
+  dir_limits.validate()
+  manifest_limits(limits)
+  guard entries.length().to_int64() <= dir_limits.max_entries * 2L else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let seen_path : Map[String, String] = Map([])
+  let seen_payload : Map[String, String] = Map([])
+  let mut unchanged = 0L
+  let mut add_full = 0L
+  let mut update_delta = 0L
+  let mut update_full = 0L
+  let mut del = 0L
+  let mut total_payload = 0L
+  for i in 0..<entries.length() {
+    let entry = entries[i]
+    validate_dir_path(entry.path, dir_limits)
+    let lower = ascii_lower(entry.path)
+    guard !seen_path.contains(lower) else {
+      raise ManifestError::InvalidField("path_collision")
+    }
+    seen_path[lower] = entry.path
+    if require_sorted && i > 0 {
+      guard lexical_path_compare(entries[i - 1].path, entry.path) < 0 else {
+        raise ManifestError::InvalidField("path_order")
+      }
+    }
+    match entry.action {
+      Unchanged(d) => {
+        validate_file_digest(d, 0L, dir_limits.max_file_bytes, "basis")
+        validate_file_digest(d, 0L, limits.max_old_bytes, "basis")
+        validate_file_digest(d, 0L, limits.max_output_bytes, "result")
+        unchanged = unchanged + 1L
+      }
+      AddFull(payload_path, target) => {
+        validate_scoped_rel_path(
+          payload_path, "payloads/", "payload_path", dir_limits, seen_payload, "payload_path_collision",
+        )
+        validate_file_digest(target, 0L, dir_limits.max_file_bytes, "target")
+        validate_file_digest(target, 0L, limits.max_new_bytes, "target")
+        validate_file_digest(target, 0L, limits.max_output_bytes, "result")
+        add_full = add_full + 1L
+        total_payload = checked_add_i64(total_payload, target.byte_length)
+      }
+      UpdateDelta(payload_path, m) => {
+        validate_scoped_rel_path(
+          payload_path, "payloads/", "payload_path", dir_limits, seen_payload, "payload_path_collision",
+        )
+        validate_update_manifest(m, limits)
+        validate_file_digest(m.basis, 0L, dir_limits.max_file_bytes, "basis")
+        validate_file_digest(m.result, 0L, dir_limits.max_file_bytes, "result")
+        guard !same_digest(m.basis, m.result) else {
+          raise ManifestError::BindingMismatch("update_digest")
+        }
+        update_delta = update_delta + 1L
+        total_payload = checked_add_i64(total_payload, m.delta.byte_length)
+      }
+      UpdateFull(payload_path, basis, target) => {
+        validate_scoped_rel_path(
+          payload_path, "payloads/", "payload_path", dir_limits, seen_payload, "payload_path_collision",
+        )
+        validate_file_digest(basis, 0L, dir_limits.max_file_bytes, "basis")
+        validate_file_digest(basis, 0L, limits.max_old_bytes, "basis")
+        validate_file_digest(target, 0L, dir_limits.max_file_bytes, "target")
+        validate_file_digest(target, 0L, limits.max_new_bytes, "target")
+        validate_file_digest(target, 0L, limits.max_output_bytes, "result")
+        guard !same_digest(basis, target) else {
+          raise ManifestError::BindingMismatch("update_digest")
+        }
+        update_full = update_full + 1L
+        total_payload = checked_add_i64(total_payload, target.byte_length)
+      }
+      Delete(basis) => {
+        validate_file_digest(basis, 0L, dir_limits.max_file_bytes, "basis")
+        validate_file_digest(basis, 0L, limits.max_old_bytes, "basis")
+        del = del + 1L
+      }
+    }
+  }
+  (unchanged, add_full, update_delta, update_full, del, total_payload)
+}
+
+///|
+/// Validate entries, compute exact summary counts and payload bytes, and sort
+/// entries canonically into a Schema 3 `DirBundleManifest`.
+pub fn create_dir_bundle_manifest(
+  entries : Array[DirBundleEntry],
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> DirBundleManifest raise ManifestError {
+  let (
+    unchanged_count,
+    add_full_count,
+    update_delta_count,
+    update_full_count,
+    delete_count,
+    total_payload_bytes,
+  ) = validate_dir_bundle_entries(
+    entries,
+    dir_limits,
+    limits,
+    require_sorted=false,
+  )
+  let sorted = entries.copy()
+  sorted.sort_by((a, b) => lexical_path_compare(a.path, b.path))
+  {
+    entries: sorted,
+    unchanged_count,
+    add_full_count,
+    update_delta_count,
+    update_full_count,
+    delete_count,
+    total_payload_bytes,
+  }
+}
+
+///|
+fn validate_dir_bundle_manifest(
+  bundle : DirBundleManifest,
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> Unit raise ManifestError {
+  let (unchanged, add_full, update_delta, update_full, del, total_payload) = validate_dir_bundle_entries(
+    bundle.entries,
+    dir_limits,
+    limits,
+    require_sorted=true,
+  )
+  guard bundle.unchanged_count == unchanged &&
+    bundle.add_full_count == add_full &&
+    bundle.update_delta_count == update_delta &&
+    bundle.update_full_count == update_full &&
+    bundle.delete_count == del &&
+    bundle.total_payload_bytes == total_payload else {
+    raise ManifestError::BindingMismatch("bundle_summary")
+  }
+}
+
+///|
+/// Revalidate and deterministically encode a Schema 3 `moonlibsync-dir-bundle` JSON document.
+pub fn encode_dir_bundle_manifest(
+  bundle : DirBundleManifest,
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> Bytes raise ManifestError {
+  validate_dir_bundle_manifest(bundle, dir_limits, limits)
+  let out = StringBuilder()
+  out.write_string(
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-bundle\",\"summary\":{\"unchanged\":\"\{bundle.unchanged_count}\",\"add_full\":\"\{bundle.add_full_count}\",\"update_delta\":\"\{bundle.update_delta_count}\",\"update_full\":\"\{bundle.update_full_count}\",\"delete\":\"\{bundle.delete_count}\",\"total_payload_bytes\":\"\{bundle.total_payload_bytes}\"},\"entries\":[",
+  )
+  for i in 0..<bundle.entries.length() {
+    if i > 0 {
+      out.write_char(',')
+    }
+    let e = bundle.entries[i]
+    let p = json_escape_string(e.path)
+    match e.action {
+      Unchanged(d) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"unchanged\",\"basis\":\{file_digest_json(d)}}",
+        )
+      AddFull(payload_path, target) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"add-full\",\"payload_path\":\"\{json_escape_string(payload_path)}\",\"target\":\{file_digest_json(target)}}",
+        )
+      UpdateDelta(payload_path, m) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"update-delta\",\"payload_path\":\"\{json_escape_string(payload_path)}\",\"basis\":\{file_digest_json(m.basis)},\"signature\":\{file_digest_json(m.signature)},\"delta\":\{file_digest_json(m.delta)},\"result\":\{file_digest_json(m.result)}}",
+        )
+      UpdateFull(payload_path, basis, target) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"update-full\",\"payload_path\":\"\{json_escape_string(payload_path)}\",\"basis\":\{file_digest_json(basis)},\"target\":\{file_digest_json(target)}}",
+        )
+      Delete(basis) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"delete\",\"basis\":\{file_digest_json(basis)}}",
+        )
+    }
+  }
+  out.write_string("]}\n")
+  let encoded = @utf8.encode(out.to_string())
+  guard encoded.length().to_int64() <= bundle_json_budget(dir_limits) else {
+    raise ManifestError::ResourceLimit("bundle_bytes")
+  }
+  encoded
+}
+
+///|
+/// Parse and strictly validate a Schema 3 `moonlibsync-dir-bundle` JSON document.
+pub fn parse_dir_bundle_manifest(
+  input : Bytes,
+  dir_limits : DirLimits,
+  limits : Limits,
+) -> DirBundleManifest raise ManifestError {
+  dir_limits.validate()
+  manifest_limits(limits)
+  let tree = dir_json_tree(
+    input,
+    bundle_json_budget(dir_limits),
+    "bundle_bytes",
+    5,
+  )
+  let fields = manifest_object(tree, [
+    "schema_version", "kind", "summary", "entries",
+  ])
+  dir_schema3_header(fields, "moonlibsync-dir-bundle")
+  let sum_fields = manifest_object(manifest_get(fields, "summary"), [
+    "unchanged", "add_full", "update_delta", "update_full", "delete", "total_payload_bytes",
+  ])
+  let unchanged_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "unchanged"), "unchanged"),
+  )
+  let add_full_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "add_full"), "add_full"),
+  )
+  let update_delta_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "update_delta"), "update_delta"),
+  )
+  let update_full_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "update_full"), "update_full"),
+  )
+  let delete_count = manifest_decimal(
+    manifest_string(manifest_get(sum_fields, "delete"), "delete"),
+  )
+  let total_payload_bytes = manifest_decimal(
+    manifest_string(
+      manifest_get(sum_fields, "total_payload_bytes"),
+      "total_payload_bytes",
+    ),
+  )
+  guard manifest_get(fields, "entries") is @json.Json::Array(raw_entries) else {
+    raise ManifestError::InvalidSchema
+  }
+  guard raw_entries.length().to_int64() <= dir_limits.max_entries * 2L else {
+    raise ManifestError::ResourceLimit("dir_entries")
+  }
+  let entries : Array[DirBundleEntry] = Array(capacity=raw_entries.length())
+  for item in raw_entries {
+    guard item is @json.Json::Object(ef) else {
+      raise ManifestError::InvalidSchema
+    }
+    let kind_str = manifest_string(manifest_get(ef, "kind"), "kind")
+    let path = manifest_string(manifest_get(ef, "path"), "path")
+    let action : DirBundleAction = if kind_str == "unchanged" {
+      let f = manifest_object(item, ["path", "kind", "basis"])
+      Unchanged(parse_file_digest(manifest_get(f, "basis")))
+    } else if kind_str == "add-full" {
+      let f = manifest_object(item, ["path", "kind", "payload_path", "target"])
+      AddFull(
+        manifest_string(manifest_get(f, "payload_path"), "payload_path"),
+        parse_file_digest(manifest_get(f, "target")),
+      )
+    } else if kind_str == "update-delta" {
+      let f = manifest_object(item, [
+        "path", "kind", "payload_path", "basis", "signature", "delta", "result",
+      ])
+      UpdateDelta(
+        manifest_string(manifest_get(f, "payload_path"), "payload_path"),
+        {
+          basis: parse_file_digest(manifest_get(f, "basis")),
+          signature: parse_file_digest(manifest_get(f, "signature")),
+          delta: parse_file_digest(manifest_get(f, "delta")),
+          result: parse_file_digest(manifest_get(f, "result")),
+        },
+      )
+    } else if kind_str == "update-full" {
+      let f = manifest_object(item, [
+        "path", "kind", "payload_path", "basis", "target",
+      ])
+      UpdateFull(
+        manifest_string(manifest_get(f, "payload_path"), "payload_path"),
+        parse_file_digest(manifest_get(f, "basis")),
+        parse_file_digest(manifest_get(f, "target")),
+      )
+    } else if kind_str == "delete" {
+      let f = manifest_object(item, ["path", "kind", "basis"])
+      Delete(parse_file_digest(manifest_get(f, "basis")))
+    } else {
+      raise ManifestError::InvalidSchema
+    }
+    entries.push({ path, action, })
+  }
+  let bundle : DirBundleManifest = {
+    entries,
+    unchanged_count,
+    add_full_count,
+    update_delta_count,
+    update_full_count,
+    delete_count,
+    total_payload_bytes,
+  }
+  validate_dir_bundle_manifest(bundle, dir_limits, limits)
+  bundle
+}

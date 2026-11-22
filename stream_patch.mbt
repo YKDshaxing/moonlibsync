@@ -52,6 +52,7 @@ pub(all) enum PatchStep {
 /// Enforces all Limits and UInt64 basis range checks before emitting COPY steps.
 pub struct PatchDecoder {
   priv basis_len : UInt64
+  priv check_basis : Bool
   priv limits : Limits
   priv mut state : PatchStreamState
   priv param_buf : FixedArray[Byte]
@@ -97,6 +98,35 @@ pub fn PatchDecoder::new(
   guard basis_len <= limits.max_old_bytes else { raise LimitExceeded }
   {
     basis_len: basis_len.reinterpret_as_uint64(),
+    check_basis: true,
+    limits,
+    state: NeedMagic(0),
+    param_buf: FixedArray::make(8, b'\x00'),
+    delta_bytes: 0UL,
+    instruction_count: 0L,
+    literal_commands: 0L,
+    copy_commands: 0L,
+    literal_bytes: 0UL,
+    copy_bytes: 0UL,
+    output_bytes: 0UL,
+    closed: false,
+    failed: false,
+  }
+}
+
+///|
+/// Initialize a format-only Sans-IO delta decoder for O(1)-memory streaming
+/// inspection (`inspect_delta` semantics). Validates magic, opcodes, zero
+/// lengths, strict END/trailing data, and delta/instruction/output limits,
+/// while allowing format-valid high UInt64 COPY offsets without a basis.
+/// Drive with `feed_inspect` and `finish`.
+pub fn PatchDecoder::new_format_only(
+  limits : Limits,
+) -> PatchDecoder raise SyncError {
+  limits.validate()
+  {
+    basis_len: 0UL,
+    check_basis: false,
     limits,
     state: NeedMagic(0),
     param_buf: FixedArray::make(8, b'\x00'),
@@ -151,11 +181,11 @@ fn PatchDecoder::begin_literal(
 }
 
 ///|
-fn PatchDecoder::begin_copy(
+fn PatchDecoder::validate_and_count_copy(
   self : PatchDecoder,
   offset : UInt64,
   length : UInt64,
-) -> (UInt64, Int32) raise SyncError {
+) -> Unit raise SyncError {
   guard length > 0UL else { raise InvalidDelta }
   guard self.instruction_count < self.limits.max_instructions else {
     raise LimitExceeded
@@ -163,13 +193,24 @@ fn PatchDecoder::begin_copy(
   let max_out = self.limits.max_output_bytes.reinterpret_as_uint64()
   let next_total = delta_add_output(self.output_bytes, length, max_out)
   let next_copy = delta_add_output(self.copy_bytes, length, max_out)
-  guard offset <= self.basis_len && length <= self.basis_len - offset else {
-    raise CopyOutOfBounds
+  if self.check_basis {
+    guard offset <= self.basis_len && length <= self.basis_len - offset else {
+      raise CopyOutOfBounds
+    }
   }
   self.instruction_count = self.instruction_count + 1L
   self.copy_commands = self.copy_commands + 1L
   self.copy_bytes = next_copy
   self.output_bytes = next_total
+}
+
+///|
+fn PatchDecoder::begin_copy(
+  self : PatchDecoder,
+  offset : UInt64,
+  length : UInt64,
+) -> (UInt64, Int32) raise SyncError {
+  self.validate_and_count_copy(offset, length)
   let first_u64 = if length < 65536UL { length } else { 65536UL }
   let rem = length - first_u64
   self.state = if rem == 0UL {
@@ -181,31 +222,35 @@ fn PatchDecoder::begin_copy(
 }
 
 ///|
-/// Advance the decoder over `delta_chunk`, returning `(consumed, step)`.
-/// Callers should loop while `pos < chunk.length() || decoder.has_pending_copy()`,
-/// advancing `pos = pos + consumed` after handling each `PatchStep`.
-pub fn PatchDecoder::step(
+fn PatchDecoder::advance(
   self : PatchDecoder,
   delta_chunk : BytesView,
+  emit~ : Bool,
 ) -> (Int32, PatchStep) raise SyncError {
   guard !self.closed else { raise InvalidOptions("stream_finished") }
   guard !self.failed else { raise InvalidOptions("stream_failed") }
   errdefer {
     self.failed = true
   }
-  match self.state {
-    InCopy(cur, rem) => {
-      let take_u64 = if rem < 65536UL { rem } else { 65536UL }
-      let take = take_u64.to_int()
-      let left = rem - take_u64
-      self.state = if left == 0UL {
-        NeedOpcode
-      } else {
-        InCopy(cur + take_u64, left)
+  if emit {
+    match self.state {
+      InCopy(cur, rem) => {
+        let take_u64 = if rem < 65536UL { rem } else { 65536UL }
+        let take = take_u64.to_int()
+        let left = rem - take_u64
+        self.state = if left == 0UL {
+          NeedOpcode
+        } else {
+          InCopy(cur + take_u64, left)
+        }
+        return (0, CopyBasis(cur, take))
       }
-      return (0, CopyBasis(cur, take))
+      _ => ()
     }
-    _ => ()
+  } else {
+    guard !(self.state is InCopy(_, _)) else {
+      raise InvalidOptions("pending_copy")
+    }
   }
   let mut pos = 0
   while pos < delta_chunk.length() {
@@ -270,7 +315,15 @@ pub fn PatchDecoder::step(
       }
       InLiteral(remaining) => {
         let avail = (delta_chunk.length() - pos).to_uint64()
-        let max_step = if remaining < 65536UL { remaining } else { 65536UL }
+        let max_step = if emit {
+          if remaining < 65536UL {
+            remaining
+          } else {
+            65536UL
+          }
+        } else {
+          remaining
+        }
         let take_u64 = if avail < max_step { avail } else { max_step }
         let take = take_u64.to_int()
         self.consume_delta(take)
@@ -278,7 +331,9 @@ pub fn PatchDecoder::step(
         pos = pos + take
         let left = remaining - take_u64
         self.state = if left == 0UL { NeedOpcode } else { InLiteral(left) }
-        return (pos, EmitLiteral(view))
+        if emit {
+          return (pos, EmitLiteral(view))
+        }
       }
       NeedCopyOffset(ow, lw, have) => {
         let need = ow - have
@@ -309,8 +364,13 @@ pub fn PatchDecoder::step(
         let next_have = have + take
         if next_have == lw {
           let length = decode_param_be(self.param_buf, lw)
-          let (off, chunk_len) = self.begin_copy(offset, length)
-          return (pos, CopyBasis(off, chunk_len))
+          if emit {
+            let (off, chunk_len) = self.begin_copy(offset, length)
+            return (pos, CopyBasis(off, chunk_len))
+          } else {
+            self.validate_and_count_copy(offset, length)
+            self.state = NeedOpcode
+          }
         } else {
           self.state = NeedCopyLen(offset, lw, next_have)
         }
@@ -319,6 +379,30 @@ pub fn PatchDecoder::step(
     }
   }
   (pos, NeedInput)
+}
+
+///|
+/// Advance the decoder over `delta_chunk`, returning `(consumed, step)`.
+/// Callers should loop while `pos < chunk.length() || decoder.has_pending_copy()`,
+/// advancing `pos = pos + consumed` after handling each `PatchStep`.
+pub fn PatchDecoder::step(
+  self : PatchDecoder,
+  delta_chunk : BytesView,
+) -> (Int32, PatchStep) raise SyncError {
+  guard self.check_basis else { raise InvalidOptions("format_only_decoder") }
+  self.advance(delta_chunk, emit=true)
+}
+
+///|
+/// Consume an arbitrary delta chunk strictly for validation and statistics
+/// without yielding literal views or splitting COPY commands. Works for both
+/// `PatchDecoder::new` (enforcing basis COPY bounds) and
+/// `PatchDecoder::new_format_only` (format and budget checks only).
+pub fn PatchDecoder::feed_inspect(
+  self : PatchDecoder,
+  delta_chunk : BytesView,
+) -> Unit raise SyncError {
+  let _ = self.advance(delta_chunk, emit=false)
 }
 
 ///|

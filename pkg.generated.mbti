@@ -8,6 +8,10 @@ pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
 pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
 
+pub fn create_dir_bundle_manifest(Array[DirBundleEntry], DirLimits, Limits) -> DirBundleManifest raise ManifestError
+
+pub fn create_dir_signature_index(Array[DirSignatureEntry], DirLimits, Limits) -> DirSignatureIndex raise ManifestError
+
 pub fn create_dir_snapshot(Array[DirEntry], DirLimits) -> DirSnapshot raise ManifestError
 
 pub fn create_transfer_manifest(BasisInfo, Bytes, Bytes, Bytes, UpdateOptions, Limits) -> TransferManifest raise ManifestError
@@ -18,7 +22,11 @@ pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn encode_basis_info(BasisInfo, Limits) -> Bytes raise ManifestError
 
+pub fn encode_dir_bundle_manifest(DirBundleManifest, DirLimits, Limits) -> Bytes raise ManifestError
+
 pub fn encode_dir_plan(DirSyncPlan, DirLimits) -> Bytes raise ManifestError
+
+pub fn encode_dir_signature_index(DirSignatureIndex, DirLimits, Limits) -> Bytes raise ManifestError
 
 pub fn encode_dir_snapshot(DirSnapshot, DirLimits) -> Bytes raise ManifestError
 
@@ -32,7 +40,11 @@ pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
 pub fn parse_basis_info(Bytes, Limits) -> BasisInfo raise ManifestError
 
+pub fn parse_dir_bundle_manifest(Bytes, DirLimits, Limits) -> DirBundleManifest raise ManifestError
+
 pub fn parse_dir_plan(Bytes, DirLimits) -> DirSyncPlan raise ManifestError
+
+pub fn parse_dir_signature_index(Bytes, DirLimits, Limits) -> DirSignatureIndex raise ManifestError
 
 pub fn parse_dir_snapshot(Bytes, DirLimits) -> DirSnapshot raise ManifestError
 
@@ -110,6 +122,29 @@ pub(all) enum DirActionKind {
   Delete
 }
 
+pub(all) enum DirBundleAction {
+  Unchanged(FileDigest)
+  AddFull(String, FileDigest)
+  UpdateDelta(String, UpdateManifest)
+  UpdateFull(String, FileDigest, FileDigest)
+  Delete(FileDigest)
+}
+
+pub(all) struct DirBundleEntry {
+  path : String
+  action : DirBundleAction
+}
+
+pub(all) struct DirBundleManifest {
+  entries : Array[DirBundleEntry]
+  unchanged_count : Int64
+  add_full_count : Int64
+  update_delta_count : Int64
+  update_full_count : Int64
+  delete_count : Int64
+  total_payload_bytes : Int64
+}
+
 pub(all) struct DirEntry {
   path : String
   digest : FileDigest
@@ -124,6 +159,17 @@ pub(all) struct DirLimits {
 }
 pub fn DirLimits::default() -> Self
 pub fn DirLimits::validate(Self) -> Unit raise ManifestError
+
+pub(all) struct DirSignatureEntry {
+  path : String
+  basis : FileDigest
+  signature_path : String
+  signature : FileDigest
+}
+
+pub(all) struct DirSignatureIndex {
+  entries : Array[DirSignatureEntry]
+}
 
 pub(all) struct DirSnapshot {
   entries : Array[DirEntry]
@@ -179,9 +225,11 @@ pub(all) struct PatchCheck {
 pub struct PatchDecoder {
   // private fields
 }
+pub fn PatchDecoder::feed_inspect(Self, BytesView) -> Unit raise SyncError
 pub fn PatchDecoder::finish(Self) -> DeltaSummary raise SyncError
 pub fn PatchDecoder::has_pending_copy(Self) -> Bool
 pub fn PatchDecoder::new(Int64, Limits) -> Self raise SyncError
+pub fn PatchDecoder::new_format_only(Limits) -> Self raise SyncError
 pub fn PatchDecoder::step(Self, BytesView) -> (Int32, PatchStep) raise SyncError
 
 pub(all) enum PatchStep {

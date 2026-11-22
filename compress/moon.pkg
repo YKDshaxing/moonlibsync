@@ -1,0 +1,10 @@
+import {
+  "YKDshaxing/moonlibsync" @lib,
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/compress/flate",
+  "moonbitlang/core/compress/gzip",
+}
+
+options(
+  "allow-experimental-packages": true,
+)

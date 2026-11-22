@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "YKDshaxing/moonlibsync/compress"
+
+import {
+  "YKDshaxing/moonlibsync",
+}
+
+// Values
+pub fn compress_gzip(BytesView, Int64, Int64, level? : Int32) -> Bytes raise @moonlibsync.SyncError
+
+pub fn decompress_gzip(BytesView, Int64, Int64) -> Bytes raise @moonlibsync.SyncError
+
+// Errors
+
+// Types and methods
+pub struct GzipDecoder {
+  // private fields
+}
+pub fn GzipDecoder::finish(Self) -> GzipSummary raise @moonlibsync.SyncError
+pub fn GzipDecoder::new(Int64, Int64) -> Self raise @moonlibsync.SyncError
+pub fn GzipDecoder::step(Self, BytesView, FixedArray[Byte]) -> GzipStep raise @moonlibsync.SyncError
+
+pub struct GzipEncoder {
+  // private fields
+}
+pub fn GzipEncoder::new(Int64, Int64, level? : Int32) -> Self raise @moonlibsync.SyncError
+pub fn GzipEncoder::step(Self, BytesView, FixedArray[Byte], finish? : Bool) -> GzipStep raise @moonlibsync.SyncError
+pub fn GzipEncoder::summary(Self) -> GzipSummary raise @moonlibsync.SyncError
+
+pub(all) enum GzipStatus {
+  NeedMoreInput
+  NeedMoreOutput
+  Done
+}
+
+pub(all) struct GzipStep {
+  consumed : Int32
+  produced : Int32
+  status : GzipStatus
+}
+
+pub(all) struct GzipSummary {
+  input_bytes : Int64
+  output_bytes : Int64
+}
+
+// Type aliases
+
+// Traits
