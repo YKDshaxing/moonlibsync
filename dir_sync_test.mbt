@@ -227,7 +227,7 @@ test "dir strict JSON parser and DirLimits boundaries reject malformed or oversi
     false
   } catch {
     @moonlibsync.ManifestError::Core(
-      @moonlibsync.SyncError::InvalidOptions("max_snapshot_bytes")
+      @moonlibsync.SyncError::InvalidOptions("max_snapshot_bytes"),
     ) => true
     _ => false
   }
@@ -441,7 +441,7 @@ test "match_dir_exclude handles segment globs path prefixes and rejects invalid 
       false
     } catch {
       @moonlibsync.ManifestError::Core(
-        @moonlibsync.SyncError::InvalidOptions("exclude")
+        @moonlibsync.SyncError::InvalidOptions("exclude"),
       ) => true
       _ => false
     }

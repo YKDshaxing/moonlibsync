@@ -25,7 +25,7 @@ async fn cli_test_scope(body : async (String) -> Unit) -> Unit {
   guard @path.Path(absolute).basename().has_prefix("moonlibsync-cli-test-") else {
     fail("unexpected temporary root")
   }
-  defer @fs.rmdir(absolute, recursive=true)
+  defer @fs.remove(absolute, recursive=true)
   body(absolute)
 }
 

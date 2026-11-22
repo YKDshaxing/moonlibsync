@@ -93,7 +93,7 @@ async fn ensure_staged_parent_dirs(
   for i in 0..<(segs.length() - 1) {
     cur = cur.join(@path.Path(segs[i]))
     let cur_str = cur.to_string()
-    @fs.mkdir(cur_str, permission=0o700, recursive=false, allow_exist=true)
+    @fs.mkdir(cur_str, permission=0o700, recursive=false, allow_existing=true)
     guard @fs.kind(cur_str, follow_symlink=false) is @fs.FileKind::Directory else {
       raise FileFailure("staging parent is not a directory: " + cur_str)
     }
@@ -111,14 +111,14 @@ async fn publish_dir(
 ) -> Unit {
   let final_path = prepare_output(output_dir)
   let staging = unique_temp_path(final_path)
-  @fs.mkdir(staging, permission=0o700, recursive=false, allow_exist=false)
+  @fs.mkdir(staging, permission=0o700, recursive=false, allow_existing=false)
   try {
     builder(staging)
     @fs.rename(staging, final_path, replace=false)
   } catch {
     error => {
       let detail = stream_error_detail(error)
-      @fs.rmdir(staging, recursive=true, allow_missing=true) catch {
+      @fs.remove(staging, recursive=true, allow_missing=true) catch {
         cleanup_error =>
           raise FileFailure(
             operation +
@@ -302,7 +302,7 @@ async fn execute_dir_signatures(plan : Plan, sig_dir : String) -> Unit {
   let progress = make_progress(plan, total_basis)
   publish_dir("dir-signatures", sig_dir, staging => {
     let sigs_dir = @path.Path(staging).join(@path.Path("sigs")).to_string()
-    @fs.mkdir(sigs_dir, permission=0o700, recursive=false, allow_exist=false)
+    @fs.mkdir(sigs_dir, permission=0o700, recursive=false, allow_existing=false)
     let entries : Array[@lib.DirSignatureEntry] = Array(
       capacity=snapshot.entries.length(),
     )
@@ -746,7 +746,12 @@ async fn build_staged_bundle(
   let payloads_dir = @path.Path(staging)
     .join(@path.Path("payloads"))
     .to_string()
-  @fs.mkdir(payloads_dir, permission=0o700, recursive=false, allow_exist=false)
+  @fs.mkdir(
+    payloads_dir,
+    permission=0o700,
+    recursive=false,
+    allow_existing=false,
+  )
   let deleted_paths : Array[String] = []
   let deleted_by_basename : Map[String, Array[String]] = Map([])
   if plan.detect_moves {
@@ -1067,7 +1072,7 @@ async fn execute_dir_pack(plan : Plan, bundle_out : String) -> Unit {
   if plan.archive {
     let final_path = prepare_output(bundle_out)
     let staging = unique_temp_path(final_path)
-    @fs.mkdir(staging, permission=0o700, recursive=false, allow_exist=false)
+    @fs.mkdir(staging, permission=0o700, recursive=false, allow_existing=false)
     try {
       let manifest = build_staged_bundle(
         plan, staging, sig_dir, target_dir, sync_plan, sig_map, progress,
@@ -1076,7 +1081,7 @@ async fn execute_dir_pack(plan : Plan, bundle_out : String) -> Unit {
     } catch {
       error => {
         let detail = stream_error_detail(error)
-        @fs.rmdir(staging, recursive=true, allow_missing=true) catch {
+        @fs.remove(staging, recursive=true, allow_missing=true) catch {
           cleanup_error =>
             raise FileFailure(
               "dir-pack '" +
@@ -1091,7 +1096,7 @@ async fn execute_dir_pack(plan : Plan, bundle_out : String) -> Unit {
         raise FileFailure("dir-pack '" + bundle_out + "': " + detail)
       }
     }
-    @fs.rmdir(staging, recursive=true, allow_missing=true)
+    @fs.remove(staging, recursive=true, allow_missing=true)
     finish_progress(progress)
   } else {
     publish_dir("dir-pack", bundle_out, staging => {
@@ -1457,7 +1462,7 @@ async fn pack_rollback_update(
       error => raise @lib.ManifestError::Core(error)
     }
     let new_sha = @lib.Sha256Hasher::new(max_old)
-    let sig_buf = @buffer.Buffer(size_hint=256)
+    let sig_buf = @buffer.Buffer(capacity=256)
     sig_buf.write_bytes(sig_hasher.take_ready())
     stream_open_chunks(new_file, new_src, new_size, chunk => {
       new_sha.update(chunk)
@@ -1735,10 +1740,10 @@ async fn build_rollback_archive_to_temp(
   )
   let rb_staging = unique_temp_path(rb_final)
   let rb_tmp = unique_temp_path(rb_final)
-  @fs.mkdir(rb_staging, permission=0o700, recursive=false, allow_exist=false)
+  @fs.mkdir(rb_staging, permission=0o700, recursive=false, allow_existing=false)
   let mut tmp_created = false
   errdefer {
-    let _ = @fs.rmdir(rb_staging, recursive=true, allow_missing=true) catch {
+    let _ = @fs.remove(rb_staging, recursive=true, allow_missing=true) catch {
       _ => ()
     }
     if tmp_created {
@@ -1748,7 +1753,12 @@ async fn build_rollback_archive_to_temp(
   let payloads_dir = @path.Path(rb_staging)
     .join(@path.Path("payloads"))
     .to_string()
-  @fs.mkdir(payloads_dir, permission=0o700, recursive=false, allow_exist=false)
+  @fs.mkdir(
+    payloads_dir,
+    permission=0o700,
+    recursive=false,
+    allow_existing=false,
+  )
   let rb_entries : Array[@lib.DirBundleEntry] = Array(
     capacity=rev_plan.actions.length(),
   )
@@ -1822,7 +1832,7 @@ async fn build_rollback_archive_to_temp(
   sync_content(rb_file)
   rb_file.close()
   opened = false
-  @fs.rmdir(rb_staging, recursive=true, allow_missing=true)
+  @fs.remove(rb_staging, recursive=true, allow_missing=true)
   rb_tmp
 }
 
@@ -1851,7 +1861,7 @@ async fn publish_dir_apply_tx(
     None => ()
   }
   let staging = unique_temp_path(final_path)
-  @fs.mkdir(staging, permission=0o700, recursive=false, allow_exist=false)
+  @fs.mkdir(staging, permission=0o700, recursive=false, allow_existing=false)
   let mut rb_tmp_opt : String? = None
   let mut out_committed = false
   try {
@@ -1884,11 +1894,11 @@ async fn publish_dir_apply_tx(
         None => ()
       }
       if out_committed {
-        let _ = @fs.rmdir(final_path, recursive=true, allow_missing=true) catch {
+        let _ = @fs.remove(final_path, recursive=true, allow_missing=true) catch {
           _ => ()
         }
       } else {
-        @fs.rmdir(staging, recursive=true, allow_missing=true) catch {
+        @fs.remove(staging, recursive=true, allow_missing=true) catch {
           cleanup_error =>
             raise FileFailure(
               "dir-apply '" +
@@ -1939,7 +1949,7 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
         unpack_dir,
         permission=0o700,
         recursive=false,
-        allow_exist=false,
+        allow_existing=false,
       )
       try {
         let manifest = unpack_bundle_archive(
@@ -1952,12 +1962,12 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
         apply_bundle_entries(
           plan, basis_dir, unpack_dir, staging, manifest, progress,
         )
-        @fs.rmdir(unpack_dir, recursive=true, allow_missing=true)
+        @fs.remove(unpack_dir, recursive=true, allow_missing=true)
         manifest
       } catch {
         error => {
           let detail = stream_error_detail(error)
-          @fs.rmdir(unpack_dir, recursive=true, allow_missing=true) catch {
+          @fs.remove(unpack_dir, recursive=true, allow_missing=true) catch {
             cleanup_error =>
               raise FileFailure(
                 detail +

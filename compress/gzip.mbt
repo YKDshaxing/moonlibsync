@@ -247,7 +247,7 @@ pub fn GzipDecoder::new(
 ) -> GzipDecoder raise @lib.SyncError {
   validate_gzip_bounds(max_input, max_output)
   {
-    inner: @gzip.Decoder(multistream=false),
+    inner: @gzip.Decoder(),
     max_input,
     max_output,
     input_bytes: 0L,
@@ -309,7 +309,7 @@ pub fn GzipDecoder::step(
   self.output_bytes = self.output_bytes + res.produced.to_int64()
   let status = map_flate_status(res.status)
   if status is Done {
-    if res.consumed < chunk.length() || self.inner.unused_input().length() > 0 {
+    if res.consumed < chunk.length() {
       raise @lib.SyncError::TrailingData
     }
     self.done = true
@@ -338,14 +338,7 @@ pub fn GzipDecoder::finish(
     guard end_status is @flate.Status::Done && self.inner.is_finished() else {
       raise @lib.SyncError::TruncatedInput
     }
-    guard self.inner.unused_input().length() == 0 else {
-      raise @lib.SyncError::TrailingData
-    }
     self.done = true
-  } else {
-    guard self.inner.unused_input().length() == 0 else {
-      raise @lib.SyncError::TrailingData
-    }
   }
   self.closed = true
   { input_bytes: self.input_bytes, output_bytes: self.output_bytes, }
@@ -361,7 +354,7 @@ pub fn compress_gzip(
 ) -> Bytes raise @lib.SyncError {
   let enc = GzipEncoder::new(max_input, max_output, level~)
   let out_buf = FixedArray::make(65536, b'\x00')
-  let result = @buffer.Buffer(size_hint=256)
+  let result = @buffer.Buffer(capacity=256)
   let mut pos = 0
   while pos < input.length() {
     let step = enc.step(input[pos:], out_buf, finish=false)
@@ -397,7 +390,7 @@ pub fn decompress_gzip(
 ) -> Bytes raise @lib.SyncError {
   let dec = GzipDecoder::new(max_input, max_output)
   let out_buf = FixedArray::make(65536, b'\x00')
-  let result = @buffer.Buffer(size_hint=256)
+  let result = @buffer.Buffer(capacity=256)
   let mut pos = 0
   while true {
     let step = dec.step(input[pos:], out_buf)

@@ -96,7 +96,7 @@ pub fn encode_bundle_archive_preamble(
 ) -> Bytes raise ManifestError {
   let manifest_json = encode_dir_bundle_manifest(bundle, dir_limits, limits)
   let expected = bundle_expected_payloads(bundle)
-  let out = @buffer.Buffer(size_hint=16 + manifest_json.length())
+  let out = @buffer.Buffer(capacity=16 + manifest_json.length())
   out.write_bytes(archive_magic_bytes)
   out.write_bytes(encode_u32_be(manifest_json.length()))
   out.write_bytes(manifest_json)
@@ -121,7 +121,7 @@ pub fn encode_bundle_payload_header(
     raise ManifestError::InvalidField("payload_length")
   }
   let path_bytes = @utf8.encode(payload_path)
-  let out = @buffer.Buffer(size_hint=12 + path_bytes.length())
+  let out = @buffer.Buffer(capacity=12 + path_bytes.length())
   out.write_bytes(encode_u32_be(path_bytes.length()))
   out.write_bytes(path_bytes)
   out.write_bytes(encode_u64_be(data_len.reinterpret_as_uint64()))
@@ -142,7 +142,7 @@ pub fn encode_bundle_archive(
   guard payloads.length() == expected.length() else {
     raise ManifestError::BindingMismatch("archive_payload_count")
   }
-  let out = @buffer.Buffer(size_hint=preamble.length() + 256)
+  let out = @buffer.Buffer(capacity=preamble.length() + 256)
   out.write_bytes(preamble)
   for pair in expected {
     let (path, digest) = pair
@@ -220,7 +220,7 @@ pub fn BundleArchiveDecoder::new(
     limits,
     state: NeedMagic(0),
     header_buf: FixedArray::make(8, b'\x00'),
-    scratch: @buffer.Buffer(size_hint=256),
+    scratch: @buffer.Buffer(capacity=256),
     manifest: None,
     expected_payloads: [],
     payload_hasher: None,
@@ -524,7 +524,7 @@ pub fn parse_bundle_archive(
   let dec = BundleArchiveDecoder::new(dir_limits, limits)
   let payloads : Map[String, Bytes] = Map([])
   let mut active_path = ""
-  let cur_buf = @buffer.Buffer(size_hint=256)
+  let cur_buf = @buffer.Buffer(capacity=256)
   let mut pos = 0
   while pos < input.length() || dec.has_pending_event() {
     let (consumed, step) = dec.step(input[pos:])

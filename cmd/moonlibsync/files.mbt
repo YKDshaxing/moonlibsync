@@ -105,6 +105,17 @@ async fn prepare_output(path : String) -> String {
 }
 
 ///|
+async fn read_file_at(
+  file : @fs.File,
+  buf : FixedArray[Byte],
+  position~ : Int64,
+  offset~ : Int32 = 0,
+  len~ : Int32,
+) -> Int32 {
+  file.at(position).read_into(buf.mut_view(start=offset, end=offset + len))
+}
+
+///|
 /// Same handle for kind/size/read. Allocate only the checked initial size.
 /// Read at most initial_size bytes plus a one-byte EOF probe; reject changes.
 async fn read_open_file(
@@ -128,7 +139,8 @@ async fn read_open_file(
   while pos < buffer.length() {
     let remaining = buffer.length() - pos
     let take = if remaining < 65536 { remaining } else { 65536 }
-    let count = file.read_at(
+    let count = read_file_at(
+      file,
       buffer,
       position=pos.to_int64(),
       offset=pos,
@@ -140,7 +152,8 @@ async fn read_open_file(
     pos = pos + count
   }
   let sentinel = FixedArray::make(1, b'\x00')
-  guard file.read_at(sentinel, position=size, len=1) == 0 && file.size() == size else {
+  guard read_file_at(file, sentinel, position=size, len=1) == 0 &&
+    file.size() == size else {
     raise FileFailure("InputChanged: file grew or changed size: " + path)
   }
   Bytes::from_array(buffer[:])

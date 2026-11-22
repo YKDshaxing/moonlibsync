@@ -416,7 +416,7 @@ fn init_seal_encoder(
     kdf_mode, chunk_size, argon2_memory_kib, argon2_passes, argon2_lanes, salt16,
     nonce_prefix12,
   )
-  let ready = @buffer.Buffer(size_hint=seal_header_size + 64)
+  let ready = @buffer.Buffer(capacity=seal_header_size + 64)
   ready.write_bytes(raw_header)
   {
     aead,

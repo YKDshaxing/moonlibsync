@@ -185,7 +185,7 @@ test "streaming Sha256Hasher matches known vectors incremental splits and enforc
     false
   } catch {
     @moonlibsync.ManifestError::Core(
-      @moonlibsync.SyncError::InvalidOptions("stream_finished")
+      @moonlibsync.SyncError::InvalidOptions("stream_finished"),
     ) => true
     _ => false
   }
@@ -228,7 +228,7 @@ test "streaming Sha256Hasher matches known vectors incremental splits and enforc
     false
   } catch {
     @moonlibsync.ManifestError::Core(
-      @moonlibsync.SyncError::InvalidOptions("stream_failed")
+      @moonlibsync.SyncError::InvalidOptions("stream_failed"),
     ) => true
     _ => false
   }
@@ -241,7 +241,7 @@ test "streaming Sha256Hasher matches known vectors incremental splits and enforc
       false
     } catch {
       @moonlibsync.ManifestError::Core(
-        @moonlibsync.SyncError::InvalidOptions("sha256_max_bytes")
+        @moonlibsync.SyncError::InvalidOptions("sha256_max_bytes"),
       ) => true
       _ => false
     }

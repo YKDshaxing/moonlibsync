@@ -28,22 +28,13 @@ pub(all) struct PublisherSignature {
 pub extend PublisherSignature with Eq::{equal, not_equal}
 
 ///|
-let ed25519_p : BigInt = BigInt::from_string(
-  "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFED",
-  radix=16,
-)
+let ed25519_p : BigInt = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEDN
 
 ///|
-let ed25519_d : BigInt = BigInt::from_string(
-  "52036CEE2B6FFE738CC740797779E89800700A4D4141D8AB75EB4DCA135978A3",
-  radix=16,
-)
+let ed25519_d : BigInt = 0x52036CEE2B6FFE738CC740797779E89800700A4D4141D8AB75EB4DCA135978A3N
 
 ///|
-let ed25519_sqrt_m1 : BigInt = BigInt::from_string(
-  "2B8324804FC1DF0B2B4D00993DFBD7A72F431806AD2FE478C4EE1B274A0EA0B0",
-  radix=16,
-)
+let ed25519_sqrt_m1 : BigInt = 0x2B8324804FC1DF0B2B4D00993DFBD7A72F431806AD2FE478C4EE1B274A0EA0B0N
 
 ///|
 let ed25519_p_minus_2 : BigInt = ed25519_p - 2
@@ -230,7 +221,7 @@ fn build_signing_message(
   payload_length : Int64,
   payload_sha256 : String,
 ) -> Bytes {
-  let out = @buffer.Buffer(size_hint=104)
+  let out = @buffer.Buffer(capacity=104)
   out.write_bytes(b"moonlibsync-ed25519-v1\x00")
   out.write_bytes(@utf8.encode(payload_length.to_string()))
   out.write_byte(b':')

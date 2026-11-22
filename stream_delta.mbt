@@ -279,7 +279,7 @@ pub fn DeltaScanner::new(
   }
   guard limits.max_delta_bytes >= 5L else { raise LimitExceeded }
   let work = MatchWork::new(limits)
-  let ready = Buffer(size_hint=64)
+  let ready = Buffer(capacity=64)
   ready.write_uint_be(0x72730236U)
   {
     index: prepared.index,

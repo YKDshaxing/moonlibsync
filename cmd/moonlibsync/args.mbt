@@ -55,7 +55,7 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.6.0; streaming pipelines, directory sync bundles & archives, move detection, rollback, Ed25519 signing, AEAD encryption, verification, exclude filters, gzip framing, manifests and transfer workflows
+  #|MoonLibSync 0.6.1; streaming pipelines, directory sync bundles & archives, move detection, rollback, Ed25519 signing, AEAD encryption, verification, exclude filters, gzip framing, manifests and transfer workflows
   #|Usage:
   #|  moonlibsync signature OLD SIG [--profile rk-blake2|rollsum-blake2] [--streaming] [--block-size N|auto] [--sum-size N] [--progress] [LIMITS]
   #|  moonlibsync delta SIG NEW DELTA [--streaming] [--progress] [LIMITS]

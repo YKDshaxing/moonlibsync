@@ -10,7 +10,7 @@ Commit21补充：固定mooncrypt0.4.5的hash/sha2现直接用于SHA-256（显式
 | moonbitstack/moonbase | 0.4.2 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包；不代表全包测试通过 |
 | moonbitstack/moondate | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
 | moonbitstack/moonrand | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
-| moonbitlang/core | 0.10.20+65efd5b93 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库与 Native 系统接口 |
+| moonbitlang/core | 0.10.22+124d61d05 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库与 Native 系统接口 |
 | librsync | v2.3.4 / e364852674780e43d578e4239128ff7014190ed3 | 保留上游 COPYING 中 LGPL v2.1 文本 | 读取 librsync.h、readsums.c 核对签名布局与 magic；无 C 代码移植或链接 |
 
 完整 Apache-2.0 文本见 `licenses/Apache-2.0.txt`，core 的原始声明见 `licenses/MoonBit-core-LICENSE` 与 `licenses/MoonBit-core-NOTICE`。本仓库没有分发 mooncrypt 实现副本或工具链二进制，也没有修改依赖源码的版权头。所有固定包的许可证和压缩包校验值还记录在 `dependencies.lock.json` 中。

@@ -32,6 +32,7 @@ assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.1').resolve(
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.2').resolve()), 'Historical 0.3.2 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.4.0').resolve()), 'Historical 0.4.0 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.5.0').resolve()), 'Historical 0.5.0 evidence is read-only'
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.6.0').resolve()), 'Historical 0.6.0 evidence is read-only'
 
 
 def digest(data):

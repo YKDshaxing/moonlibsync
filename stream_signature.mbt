@@ -30,7 +30,7 @@ pub fn SignatureHasher::new_with_profile(
 ) -> SignatureHasher raise SyncError {
   let (block_len, strong_sum_len, _, _) = signature_plan(0UL, options, limits)
   let magic = profile.magic()
-  let ready = Buffer(size_hint=12)
+  let ready = Buffer(capacity=12)
   ready.write_uint_be(magic)
   ready.write_uint_be(block_len.reinterpret_as_uint())
   ready.write_uint_be(strong_sum_len.reinterpret_as_uint())

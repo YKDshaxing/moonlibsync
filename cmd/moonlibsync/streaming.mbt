@@ -120,7 +120,7 @@ async fn verify_stream_eof(
   expected_size : Int64,
 ) -> Unit {
   let sentinel = FixedArray::make(1, b'\x00')
-  guard file.read_at(sentinel, position=expected_size, len=1) == 0 &&
+  guard read_file_at(file, sentinel, position=expected_size, len=1) == 0 &&
     file.size() == expected_size else {
     raise FileFailure("InputChanged: file grew or changed size: " + path)
   }
@@ -141,7 +141,7 @@ async fn stream_open_chunks(
   while pos < size {
     let remaining = size - pos
     let take = if remaining < 65536L { remaining.to_int() } else { 65536 }
-    let count = file.read_at(buf, position=pos, offset=0, len=take)
+    let count = read_file_at(file, buf, position=pos, offset=0, len=take)
     guard count > 0 && count <= take else {
       raise FileFailure("InputChanged: short read: " + path)
     }
@@ -172,7 +172,8 @@ async fn stream_copy_from_basis(
   let pos = offset.reinterpret_as_int64()
   let mut got = 0
   while got < len {
-    let n = basis_file.read_at(
+    let n = read_file_at(
+      basis_file,
       copy_buf,
       position=pos + got.to_int64(),
       offset=got,
@@ -694,7 +695,7 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
           { block_len: block, strong_sum_len: plan.options.strong_sum_len, },
           rev_limits,
         )
-        let sig_buf = @buffer.Buffer(size_hint=256)
+        let sig_buf = @buffer.Buffer(capacity=256)
         sig_buf.write_bytes(sig_hasher.take_ready())
         stream_open_chunks(new_file, new_path, new_size, progress~, chunk => {
           sig_hasher.update(chunk)

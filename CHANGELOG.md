@@ -4,6 +4,16 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-22
+
+### Fixed
+- **MoonBit `0.10.22+124d61d05` / `mooncakes.io` Core Compatibility**:
+  - Updated [toolchain.lock.json](toolchain.lock.json) from `0.10.20+65efd5b93` (`2026-11-05`) to official `0.10.22+124d61d05` (`2026-11-19`, `moon 0.1.20261119`), matching the live Mooncakes documentation builder and current upstream `moonbitlang/core`.
+  - Adapted [compress/gzip.mbt](compress/gzip.mbt) to the breaking `@moonbitlang/core/compress/gzip.Decoder` API change (`@gzip.Decoder()` is now single-member by default and never consumes past the member trailer, replacing removed `multistream=false` and `unused_input()` while preserving strict `TrailingData` and zip-bomb `LimitExceeded` enforcement).
+  - Adapted Native CLI filesystem calls in [cmd/moonlibsync/dir_bundle.mbt](cmd/moonlibsync/dir_bundle.mbt), [cmd/moonlibsync/files.mbt](cmd/moonlibsync/files.mbt), [cmd/moonlibsync/streaming.mbt](cmd/moonlibsync/streaming.mbt), and [cmd/moonlibsync/files_wbtest.mbt](cmd/moonlibsync/files_wbtest.mbt) to `0.10.22` `moonbitlang/core/async/fs` (`allow_existing=`, `@fs.remove`, and positioned `file.at(pos).read_into(...)`).
+  - Cleared all `0.10.22` compiler warnings across all 4 targets (`native`, `wasm-gc`, `wasm`, `js`): migrated `@buffer.Buffer(size_hint=...)` to `capacity=`, replaced `BigInt::from_string` in `crypto/ed25519.mbt` with native `BigInt` hex literals (`0x...N`), and removed unused `"moonbitlang/core/async"` imports from `probes/*/moon.pkg`.
+- **Compatibility**: Zero public API (`.mbti`) changes; protected `_build/release-0.6.0` as read-only evidence in `scripts/release_check.py`. Version `0.6.0` on Mooncakes is yanked in favor of `0.6.1`.
+
 ## [0.6.0] - 2026-11-22
 
 ### Added

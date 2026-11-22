@@ -306,7 +306,7 @@ fn run_streaming_sync_impl(
   // 1. Streaming signature + basis SHA-256 in `chunk_size` slices.
   let sig_hasher = @lib.SignatureHasher::new(opts, limits)
   let old_sha_hasher = @lib.Sha256Hasher::new(limits.max_old_bytes)
-  let sig_buf = @buffer.Buffer(size_hint=512)
+  let sig_buf = @buffer.Buffer(capacity=512)
   append_view(sig_buf, sig_hasher.take_ready()[:])
   let mut pos = 0
   while pos < old_bytes.length() {
@@ -326,7 +326,7 @@ fn run_streaming_sync_impl(
   let prepared = @lib.prepare_signature(sig, limits)
   let scanner = @lib.DeltaScanner::new(prepared, limits)
   let new_sha_hasher = @lib.Sha256Hasher::new(limits.max_new_bytes)
-  let delta_buf = @buffer.Buffer(size_hint=256)
+  let delta_buf = @buffer.Buffer(capacity=256)
   append_view(delta_buf, scanner.take_ready()[:])
   let mut npos = 0
   while npos < new_bytes.length() {
@@ -352,7 +352,7 @@ fn run_streaming_sync_impl(
   // 3. Sans-IO PatchDecoder + streaming output SHA-256 verification.
   let decoder = @lib.PatchDecoder::new(old_digest.byte_length, limits)
   let rec_sha_hasher = @lib.Sha256Hasher::new(limits.max_output_bytes)
-  let rec_buf = @buffer.Buffer(size_hint=new_bytes.length())
+  let rec_buf = @buffer.Buffer(capacity=new_bytes.length())
   let mut dpos = 0
   while dpos < delta.length() {
     let rem = delta.length() - dpos

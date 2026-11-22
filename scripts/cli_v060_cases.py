@@ -71,7 +71,7 @@ def exercise(root, case, report, links):
 
     # 0. Version & help listing all 28 commands.
     ver = inspect_run('version', ['--version'])
-    assert ver.stdout.decode('utf-8') == 'MoonLibSync 0.6.0\n'
+    assert ver.stdout.decode('utf-8') == 'MoonLibSync 0.6.1\n'
     hlp = inspect_run('help', ['--help']).stdout.decode('utf-8')
     all_28 = [
         'signature', 'delta', 'patch', 'reverse-delta', 'basis-info',

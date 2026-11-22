@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="Live Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.0-0ea5e9" alt="Version 0.6.0"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.1-0ea5e9" alt="Version 0.6.1"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -165,7 +165,7 @@ moonlibsync apply-update update.delta transfer.json restored.bin --basis old.bin
 
 ## Development & Verification
 
-MoonLibSync pins its toolchain in [toolchain.lock.json](toolchain.lock.json) (`moonc v0.10.20+65efd5b93`, `moon 0.1.20261104`) and its dependency closure in [dependencies.lock.json](dependencies.lock.json) (`mooncrypt 0.4.5`). The installer writes only into `.toolchain/` inside this repository.
+MoonLibSync pins its toolchain in [toolchain.lock.json](toolchain.lock.json) (`moonc v0.10.22+124d61d05`, `moon 0.1.20261119`) and its dependency closure in [dependencies.lock.json](dependencies.lock.json) (`mooncrypt 0.4.5`). The installer writes only into `.toolchain/` inside this repository.
 
 <details>
 <summary>Windows PowerShell setup & checks</summary>
@@ -221,7 +221,7 @@ python3 scripts/file_exchange.py
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.6.1`, `0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
 - [js/README.md](js/README.md) — Zero-dependency Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design

@@ -1,5 +1,10 @@
 # 来源与固定版本
 
+## 0.6.1 增量说明
+
+- 将 `toolchain.lock.json` 升级至官方固定版本 `0.10.22+124d61d05`（`2026-11-19`、`moon 0.1.20261119`），并核对配套 `moonbitlang/core` 的 `LICENSE` / `NOTICE` 与 `licenses/MoonBit-core-LICENSE`、`licenses/MoonBit-core-NOTICE` 逐字节一致；`dependencies.lock.json`（`mooncrypt@0.4.5` 等 4 项依赖）不变。
+- `compress/gzip.mbt` 与 `cmd/moonlibsync/{dir_bundle,files,streaming,files_wbtest}.mbt` 适配 `0.10.22` 标准库 `compress/gzip` 与 `async/fs` 接口变更，零新增第三方依赖，根包与 `crypto/` 继续保持零 `allow-experimental-packages`。
+
 ## 0.6.0 增量说明
 
 - `rollsum.mbt` / `rollsum_wbtest.mbt` 参考固定提交 `librsync e364852674780e43d578e4239128ff7014190ed3` 的 `src/rollsum.h` 与 `src/rollsum.c`（原声明 Martin Pool 2000–2001 / Donovan Baarda 2003，LGPL-2.1-or-later）实现标量 `Rollsum`（`RS_BLAKE2_SIG_MAGIC` `0x72730137`），许可文本与原声明完整保留。
