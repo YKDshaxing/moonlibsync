@@ -1,4 +1,4 @@
-"""Real Native CLI tests. Separate from library218 and Python interop-tool6."""
+"""Real Native CLI tests. Separate from library220, compress3, and Python interop-tool6."""
 import ctypes
 import hashlib
 import json
@@ -18,8 +18,8 @@ os.chdir(ROOT)
 OUTPUT = ROOT / os.environ.get('MOONLIBSYNC_BUILD_DIR', '_build') / 'cli'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 report = dict(format=1, status='running', platform=platform.platform(), cases=[],
-              native_helper_tests=dict(expected=30, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, v040_added=6, passed=0, status='not_executed'),
-              baseline_core_library_tests=179, core_library_tests=218, transfer_core_library_tests_added=15, v032_core_library_tests_added=10, v040_core_library_tests_added=8, baseline_python_interop_tool_tests=6,
+              native_helper_tests=dict(expected=32, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, v040_added=8, passed=0, status='not_executed'),
+              baseline_core_library_tests=179, core_library_tests=220, compress_subpackage_tests=3, transfer_core_library_tests_added=15, v032_core_library_tests_added=10, v040_core_library_tests_added=10, baseline_python_interop_tool_tests=6,
               cleanup='not_completed', unsupported=[])
 log = (OUTPUT/'commands.log').open('w', encoding='utf-8')
 root = None
@@ -150,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(30,30,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(32,32,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -457,7 +457,7 @@ try:
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 30 Native helper tests (24 previous + 6 v040); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 32 Native helper tests (24 previous + 8 v040); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:

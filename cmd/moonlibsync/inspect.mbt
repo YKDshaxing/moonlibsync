@@ -150,6 +150,49 @@ fn inspect_error_tag(error : Error) -> String {
 }
 
 ///|
+async fn stream_inspect_delta_file(
+  delta_path : String,
+  limits : @lib.Limits,
+) -> @lib.DeltaSummary {
+  let file = open_regular_input(delta_path)
+  defer file.close()
+  let size = check_open_regular_sized(file, delta_path, limits.max_delta_bytes)
+  let dec = @lib.PatchDecoder::new_format_only(limits)
+  stream_open_chunks(file, delta_path, size, chunk => dec.feed_inspect(chunk))
+  dec.finish()
+}
+
+///|
+async fn stream_check_patch_file(
+  old_path : String,
+  delta_path : String,
+  limits : @lib.Limits,
+) -> @lib.PatchCheck {
+  let basis = open_regular_input(old_path)
+  defer basis.close()
+  guard basis.kind() is @fs.FileKind::Regular else {
+    raise FileFailure("unsupported input kind: " + old_path)
+  }
+  let basis_len = basis.size()
+  let dec = @lib.PatchDecoder::new(basis_len, limits)
+  let delta_file = open_regular_input(delta_path)
+  defer delta_file.close()
+  let delta_size = check_open_regular_sized(
+    delta_file,
+    delta_path,
+    limits.max_delta_bytes,
+  )
+  stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+    dec.feed_inspect(chunk)
+  })
+  let summary = dec.finish()
+  guard basis.size() == basis_len else {
+    raise FileFailure("InputChanged: basis size changed: " + old_path)
+  }
+  { basis_bytes: basis_len, summary, }
+}
+
+///|
 async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
   let limits = plan.limits
   // Finish validation and formatting before the first stdout write.
@@ -165,23 +208,34 @@ async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
           json,
         )
       "inspect-delta" =>
-        format_delta(
-          @lib.inspect_delta(
-            bounded_read(plan.inputs[0], limits.max_delta_bytes),
-            limits,
-          ),
-          json,
-        )
+        if plan.streaming {
+          format_delta(stream_inspect_delta_file(plan.inputs[0], limits), json)
+        } else {
+          format_delta(
+            @lib.inspect_delta(
+              bounded_read(plan.inputs[0], limits.max_delta_bytes),
+              limits,
+            ),
+            json,
+          )
+        }
       "inspect-manifest" =>
         format_manifest(
           parse_any_manifest(bounded_read(plan.inputs[0], 65536L), limits),
           json,
         )
       _ =>
-        format_patch(
-          check_patch_file(plan.inputs[0], plan.inputs[1], limits),
-          json,
-        )
+        if plan.streaming {
+          format_patch(
+            stream_check_patch_file(plan.inputs[0], plan.inputs[1], limits),
+            json,
+          )
+        } else {
+          format_patch(
+            check_patch_file(plan.inputs[0], plan.inputs[1], limits),
+            json,
+          )
+        }
     }
   } catch {
     error => {

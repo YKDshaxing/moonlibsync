@@ -326,11 +326,189 @@ async fn execute_verified_streaming_delta(
 }
 
 ///|
+async fn streaming_create_basis_info(
+  old_path : String,
+  sig_path : String,
+  limits : @lib.Limits,
+) -> @lib.BasisInfo {
+  let old_file = open_regular_input(old_path)
+  defer old_file.close()
+  let old_size = check_open_regular_sized(
+    old_file,
+    old_path,
+    limits.max_old_bytes,
+  )
+  let sig = bounded_read(sig_path, limits.max_signature_bytes)
+  let sig_summary = @lib.inspect_signature(sig, limits) catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  let sig_hasher = @lib.SignatureHasher::new(
+    {
+      block_len: sig_summary.block_len,
+      strong_sum_len: sig_summary.strong_sum_len,
+    },
+    limits,
+  ) catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  let old_sha = @lib.Sha256Hasher::new(limits.max_old_bytes)
+  let mut sig_pos = 0
+  let check_slice = (emitted : Bytes) => {
+    guard emitted.length() <= sig.length() - sig_pos else {
+      raise @lib.ManifestError::BindingMismatch("basis_signature")
+    }
+    guard sig[sig_pos:sig_pos + emitted.length()] == emitted[:] else {
+      raise @lib.ManifestError::BindingMismatch("basis_signature")
+    }
+    sig_pos = sig_pos + emitted.length()
+  }
+  check_slice(sig_hasher.take_ready())
+  stream_open_chunks(old_file, old_path, old_size, chunk => {
+    old_sha.update(chunk)
+    sig_hasher.update(chunk) catch {
+      error => raise @lib.ManifestError::Core(error)
+    }
+    check_slice(sig_hasher.take_ready())
+  })
+  let tail = sig_hasher.finish() catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  check_slice(tail)
+  guard sig_pos == sig.length() else {
+    raise @lib.ManifestError::BindingMismatch("basis_signature")
+  }
+  let basis_digest = old_sha.finish()
+  let sig_sha = @lib.Sha256Hasher::new(limits.max_signature_bytes)
+  sig_sha.update(sig[:])
+  let sig_digest = sig_sha.finish()
+  { basis: basis_digest, signature: sig_digest, }
+}
+
+///|
+async fn streaming_create_update_manifest(
+  info_path : String,
+  sig_path : String,
+  new_path : String,
+  delta_path : String,
+  limits : @lib.Limits,
+) -> @lib.UpdateManifest {
+  let info = @lib.parse_basis_info(bounded_read(info_path, 65536L), limits)
+  let sig = bounded_read(sig_path, limits.max_signature_bytes)
+  guard sig.length().to_int64() >= 12L else {
+    raise @lib.ManifestError::InvalidField("signature.byte_length")
+  }
+  guard sig.length().to_int64() == info.signature.byte_length else {
+    raise @lib.ManifestError::BindingMismatch("signature_length")
+  }
+  let _ = @lib.inspect_signature(sig, limits) catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  let sig_sha = @lib.Sha256Hasher::new(limits.max_signature_bytes)
+  sig_sha.update(sig[:])
+  let sig_digest = sig_sha.finish()
+  guard sig_digest.sha256 == info.signature.sha256 else {
+    raise @lib.ManifestError::BindingMismatch("signature_sha256")
+  }
+  let new_file = open_regular_input(new_path)
+  defer new_file.close()
+  let new_size = check_open_regular_sized(
+    new_file,
+    new_path,
+    limits.max_new_bytes,
+  )
+  guard new_size <= limits.max_output_bytes else {
+    raise @lib.ManifestError::ResourceLimit("result")
+  }
+  let new_sha = @lib.Sha256Hasher::new(limits.max_new_bytes)
+  stream_open_chunks(new_file, new_path, new_size, chunk => {
+    new_sha.update(chunk)
+  })
+  let result_digest = new_sha.finish()
+
+  let delta_file = open_regular_input(delta_path)
+  defer delta_file.close()
+  let delta_size = check_open_regular_sized(
+    delta_file,
+    delta_path,
+    limits.max_delta_bytes,
+  )
+  guard delta_size >= 5L else {
+    raise @lib.ManifestError::InvalidField("delta.byte_length")
+  }
+  let delta_sha = @lib.Sha256Hasher::new(limits.max_delta_bytes)
+  let dec = @lib.PatchDecoder::new(info.basis.byte_length, limits) catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  stream_open_chunks(delta_file, delta_path, delta_size, chunk => {
+    delta_sha.update(chunk)
+    dec.feed_inspect(chunk) catch {
+      error => raise @lib.ManifestError::Core(error)
+    }
+  })
+  let summary = dec.finish() catch {
+    error => raise @lib.ManifestError::Core(error)
+  }
+  guard summary.output_bytes == result_digest.byte_length else {
+    raise @lib.ManifestError::BindingMismatch("result_length")
+  }
+  let delta_digest = delta_sha.finish()
+  {
+    basis: info.basis,
+    signature: sig_digest,
+    delta: delta_digest,
+    result: result_digest,
+  }
+}
+
+///|
 async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
   let limits = plan.limits
   try {
     limits.validate()
     match plan.operation {
+      "basis-info" => {
+        let output = prepare_output(output_path)
+        let info = streaming_create_basis_info(
+          plan.inputs[0],
+          plan.inputs[1],
+          limits,
+        )
+        publish_output(output, @lib.encode_basis_info(info, limits))
+      }
+      "make-manifest" => {
+        let output = prepare_output(output_path)
+        let um = streaming_create_update_manifest(
+          plan.inputs[0],
+          plan.inputs[1],
+          plan.inputs[2],
+          plan.inputs[3],
+          limits,
+        )
+        publish_output(output, @lib.encode_update_manifest(um, limits))
+      }
+      "make-transfer-manifest" => {
+        let output = prepare_output(output_path)
+        let um = streaming_create_update_manifest(
+          plan.inputs[0],
+          plan.inputs[1],
+          plan.inputs[2],
+          plan.inputs[3],
+          limits,
+        )
+        let smaller = um.delta.byte_length < um.result.byte_length
+        let savings = if smaller {
+          um.result.byte_length - um.delta.byte_length
+        } else {
+          0L
+        }
+        let tm : @lib.TransferManifest = if smaller &&
+          savings >= plan.min_savings {
+          Delta(um)
+        } else {
+          Full(um.result, um.result)
+        }
+        publish_output(output, @lib.encode_transfer_manifest(tm, limits))
+      }
       "signature" => {
         let old_path = plan.inputs[0]
         let old_file = open_regular_input(old_path)

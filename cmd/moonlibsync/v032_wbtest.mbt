@@ -13,7 +13,7 @@ test "cli inspect-manifest plan parsing separator and usage errors" {
     assert_eq(p.inputs, ["m.json"])
     match p.mode {
       Inspect(json) => assert_eq(json, args.length() == 3)
-      WriteFile(_) => abort("expected inspect mode")
+      WriteFile(_) | WriteDir(_) => abort("expected inspect mode")
     }
   }
   let sep = parse_plan(["inspect-manifest", "--json", "--", "--json"])

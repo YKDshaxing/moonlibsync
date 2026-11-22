@@ -9,6 +9,7 @@ priv suberror CliError {
 ///|
 priv enum RunMode {
   WriteFile(String)
+  WriteDir(String)
   Inspect(Bool)
 }
 
@@ -34,40 +35,46 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.4.0; streaming pipelines, directory sync planning, manifests and transfer workflows
+  #|MoonLibSync 0.4.0; streaming pipelines, directory sync bundles, gzip framing, manifests and transfer workflows
   #|Usage:
   #|  moonlibsync signature OLD SIG [--streaming] [--block-size N|auto] [--sum-size N] [LIMITS]
   #|  moonlibsync delta SIG NEW DELTA [--streaming] [LIMITS]
   #|  moonlibsync patch OLD DELTA OUT [--streaming] [LIMITS]
-  #|  moonlibsync basis-info OLD SIG INFO [LIMITS]
-  #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [LIMITS]
+  #|  moonlibsync basis-info OLD SIG INFO [--streaming] [LIMITS]
+  #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [--streaming] [LIMITS]
   #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [--streaming] [LIMITS]
   #|  moonlibsync inspect-signature SIG [--json] [LIMITS]
-  #|  moonlibsync inspect-delta DELTA [--json] [LIMITS]
-  #|  moonlibsync check-patch OLD DELTA [--json] [LIMITS]
+  #|  moonlibsync inspect-delta DELTA [--json] [--streaming] [LIMITS]
+  #|  moonlibsync check-patch OLD DELTA [--json] [--streaming] [LIMITS]
   #|  moonlibsync inspect-manifest MANIFEST [--json] [LIMITS]
-  #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [LIMITS]
+  #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [--streaming] [LIMITS]
   #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [--streaming] [LIMITS]
+  #|  moonlibsync compress IN OUT [--streaming] [LIMITS]
+  #|  moonlibsync decompress IN OUT [--streaming] [LIMITS]
   #|  moonlibsync dir-snapshot DIR OUT [DIR_LIMITS]
   #|  moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]
+  #|  moonlibsync dir-signatures DIR SNAPSHOT SIG_DIR [--block-size N|auto] [--sum-size N] [--streaming] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR BUNDLE_DIR [--streaming] [--min-savings N] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync dir-apply BASIS_DIR BUNDLE_DIR OUT_DIR [--streaming] [LIMITS] [DIR_LIMITS]
   #|  moonlibsync --help
   #|  moonlibsync --version
   #|Options may appear anywhere after the command before --; -- ends option parsing.
-  #|--streaming uses bounded 64 KiB chunks (valid on signature, delta, patch, patch-verified, apply-update).
+  #|--streaming uses bounded 64 KiB chunks (all file/bundle commands except inspect-signature, inspect-manifest, dir-snapshot, dir-plan).
   #|Optional [LIMITS] overrides (default Limits::default()):
   #|  --max-old-bytes N  --max-new-bytes N  --max-signature-bytes N
   #|  --max-signature-records N  --max-block-bytes N  --max-delta-bytes N
   #|  --max-output-bytes N  --max-instructions N  --max-match-work N
-  #|Optional [DIR_LIMITS] overrides for dir-snapshot/dir-plan (default DirLimits::default()):
+  #|Optional [DIR_LIMITS] overrides for dir-* commands (default DirLimits::default()):
   #|  --max-entries N  --max-path-bytes N  --max-depth N
   #|  --max-snapshot-bytes N  --max-file-bytes N
   #|--json is inspection-only (inspect-* and dir-plan). Int64 fields are decimal strings.
   #|inspect-manifest validates schema1/schema2 JSON structure without reading payload files.
-  #|dir-snapshot rejects all symlinks and unsafe/colliding relative paths; dir-plan is read-only.
+  #|compress/decompress use bounded single-member RFC 1952 gzip (zip-bomb and trailing-data safe).
+  #|dir-* commands reject all symlinks and unsafe/colliding paths; dir-apply never modifies BASIS_DIR.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
   #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..max-block-bytes, sum 1..32.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
-  #|Existing output entries (including links) are refused; no overwrite option.
+  #|Existing output entries (including links and directories) are refused; no overwrite option.
   #|Exit codes: 0 success/help/version; 2 usage; 1 file or core error.
 
 ///|
@@ -188,22 +195,37 @@ fn supports_streaming(operation : String) -> Bool {
   operation == "signature" ||
   operation == "delta" ||
   operation == "patch" ||
+  operation == "basis-info" ||
+  operation == "make-manifest" ||
   operation == "patch-verified" ||
-  operation == "apply-update"
+  operation == "inspect-delta" ||
+  operation == "check-patch" ||
+  operation == "make-transfer-manifest" ||
+  operation == "apply-update" ||
+  operation == "compress" ||
+  operation == "decompress" ||
+  operation == "dir-signatures" ||
+  operation == "dir-pack" ||
+  operation == "dir-apply"
 }
 
 ///|
 fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard args.length() > 0 else { raise Usage("missing command") }
   let operation = args[0]
-  let dir_op = operation == "dir-snapshot" || operation == "dir-plan"
+  let dir_only_op = operation == "dir-snapshot" || operation == "dir-plan"
+  let dir_bundle_op = operation == "dir-signatures" ||
+    operation == "dir-pack" ||
+    operation == "dir-apply"
+  let accepts_dir_limits = dir_only_op || dir_bundle_op
+  let accepts_file_limits = !dir_only_op
   let inspection = operation == "inspect-signature" ||
     operation == "inspect-delta" ||
     operation == "check-patch" ||
     operation == "inspect-manifest" ||
     operation == "dir-plan"
   guard inspection ||
-    dir_op ||
+    accepts_dir_limits ||
     operation == "signature" ||
     operation == "delta" ||
     operation == "patch" ||
@@ -211,7 +233,9 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     operation == "make-manifest" ||
     operation == "patch-verified" ||
     operation == "make-transfer-manifest" ||
-    operation == "apply-update" else {
+    operation == "apply-update" ||
+    operation == "compress" ||
+    operation == "decompress" else {
     raise Usage("unknown command: " + operation)
   }
   let mut limits = @lib.Limits::default()
@@ -224,9 +248,12 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   } else if operation == "make-manifest" ||
     operation == "make-transfer-manifest" {
     5
-  } else if operation == "patch-verified" {
+  } else if operation == "patch-verified" || operation == "dir-pack" {
     4
-  } else if operation == "signature" || operation == "dir-snapshot" {
+  } else if operation == "signature" ||
+    operation == "dir-snapshot" ||
+    operation == "compress" ||
+    operation == "decompress" {
     2
   } else {
     3
@@ -254,7 +281,9 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       guard !streaming else { raise Usage("duplicate option: --streaming") }
       streaming = true
     } else if options && is_limit_flag(arg) {
-      guard !dir_op else { raise Usage("file-only limit option: " + arg) }
+      guard accepts_file_limits else {
+        raise Usage("file-only limit option: " + arg)
+      }
       guard !seen_limits.contains(arg) && i + 1 < args.length() else {
         raise Usage("duplicate or missing value for " + arg)
       }
@@ -263,7 +292,9 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       seen_limits[arg] = true
       i = i + 1
     } else if options && is_dir_limit_flag(arg) {
-      guard dir_op else { raise Usage("directory-only limit option: " + arg) }
+      guard accepts_dir_limits else {
+        raise Usage("directory-only limit option: " + arg)
+      }
       guard !seen_limits.contains(arg) && i + 1 < args.length() else {
         raise Usage("duplicate or missing value for " + arg)
       }
@@ -272,8 +303,8 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       seen_limits[arg] = true
       i = i + 1
     } else if options && arg == "--min-savings" {
-      guard operation == "make-transfer-manifest" else {
-        raise Usage("transfer-manifest-only option: " + arg)
+      guard operation == "make-transfer-manifest" || operation == "dir-pack" else {
+        raise Usage("transfer-manifest/dir-pack-only option: " + arg)
       }
       guard !saw_savings && i + 1 < args.length() else {
         raise Usage("duplicate or missing --min-savings")
@@ -297,7 +328,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       guard !json else { raise Usage("duplicate option: --json") }
       json = true
     } else if options && (arg == "--block-size" || arg == "--sum-size") {
-      guard operation == "signature" else {
+      guard operation == "signature" || operation == "dir-signatures" else {
         raise Usage("options are signature-only: " + arg)
       }
       guard i + 1 < args.length() else {
@@ -348,6 +379,8 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     },
     mode: if inspection {
       Inspect(json)
+    } else if dir_bundle_op {
+      WriteDir(paths[needed - 1])
     } else {
       WriteFile(paths[needed - 1])
     },

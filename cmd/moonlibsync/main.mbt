@@ -23,6 +23,8 @@ async fn execute(plan : Plan) -> Unit {
     WriteFile(output) =>
       if plan.operation == "dir-snapshot" {
         execute_dir_snapshot(plan, output)
+      } else if plan.operation == "compress" || plan.operation == "decompress" {
+        execute_compress_op(plan, output)
       } else if plan.streaming {
         execute_streaming_write(plan, output)
       } else if plan.operation == "make-transfer-manifest" ||
@@ -35,6 +37,7 @@ async fn execute(plan : Plan) -> Unit {
       } else {
         execute_write(plan, output)
       }
+    WriteDir(output_dir) => execute_dir_bundle_op(plan, output_dir)
     Inspect(json) =>
       if plan.operation == "dir-plan" {
         execute_dir_plan(plan, json)
