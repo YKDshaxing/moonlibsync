@@ -1,9 +1,9 @@
 {
   "name": "@ykdshaxing/moonlibsync",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "license": "LGPL-2.1-or-later",
-  "description": "Pure MoonBit librsync-compatible binary delta, bounded Gzip, and Schema 3 directory sync SDK for Node.js and browsers (zero C FFI, zero npm runtime dependencies).",
+  "description": "Pure MoonBit librsync-compatible binary delta (Rabin-Karp & Rollsum), reverse delta, bounded Gzip, Schema 3 directory sync & .mbundle archives, Ed25519 publisher signing, and ChaCha20-Poly1305/Argon2id AEAD sealing SDK for Node.js and browsers (zero C FFI, zero npm runtime dependencies).",
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
@@ -33,8 +33,15 @@
     "rdiff",
     "binary-delta",
     "delta-sync",
+    "reverse-delta",
+    "rollsum",
     "gzip",
     "directory-sync",
+    "mbundle",
+    "ed25519",
+    "chacha20-poly1305",
+    "argon2id",
+    "aead",
     "moonbit",
     "esm"
   ],

@@ -16,13 +16,14 @@ const MODULE_PATHS = IS_REPO_LOCAL
 
 const I18N = {
   zh: {
-    subtitle: '纯 MoonBit 编译的浏览器零后端二进制差分、块复用热力图、独立 rdiff、通用产物剖析与 Schema 3 目录同步巡检工作台',
+    subtitle: '纯 MoonBit 编译的浏览器零后端二进制差分、Web Worker 后台执行、块复用 Hexdump 热力图、单文件目录打包与 Ed25519 / AEAD 密码学工作台',
     tabFile: '文件差分 & Gzip',
     tabRdiff: '独立角色在线工具',
     tabInspect: '通用产物剖析器',
     tabDir: '目录同步规划 & 巡检',
-    tabLab: 'Gzip 安全防线实验室',
-    fileCardTitle: '流式签名 · 差分 · Gzip 二次压缩 · 块复用热力图 · 多块长对比',
+    tabLab: '安全防线与密码学实验室',
+    fileCardTitle: '流式签名 · 差分 · 反向回滚 · Gzip 二次压缩 · 块复用 Hexdump 热力图',
+    sigProfile: '签名格式',
     blockSize: '块长',
     chunkSize: '流式分块',
     sumSize: '强校验',
@@ -31,12 +32,14 @@ const I18N = {
     oldLabel: 'OLD 基准文件（旧版本）',
     newLabel: 'NEW 目标文件（新版本）',
     dropHint: '点击选择或拖拽任意本地文件至此',
-    localPrivacy: '100% 本地浏览器内计算，绝不上传任何文件数据；导出的 .sig / .delta 与 librsync rdiff 及 CLI 完全兼容。',
+    localPrivacy: '100% 本地浏览器 Web Worker 后台计算，绝不上传任何文件数据；导出的 .sig / .delta / rollback.delta 与 librsync rdiff 及 CLI 完全兼容。',
     runFiles: '对比所选文件并验证还原',
     heatmapTitle: 'Delta 块复用热力图（Interactive Block Reuse Heatmap）',
-    heatmapHint: '悬停或点击上方任意色块，查看对应 COPY / Literal 指令的基线偏移、长度与输出位置',
+    heatmapHint: '悬停或点击上方任意色块查看指令详情；点击琥珀色 Literal 色块可展开 Hexdump + UTF-8 明文预览',
     heatmapTruncated: (shown, total) => `已展示前 ${shown} / ${total} 条指令`,
     heatmapTableToggle: (n) => `展开指令明细表（前 ${n} 条）`,
+    litPreviewTitle: (shown, total, trunc) =>
+      `Literal 载荷 Hexdump 预览（前 ${shown} B / 共 ${total} B${trunc ? ' · 已截断' : ''}）`,
     benchTitle: '多块长策略对比（auto / 256 / 512 / 2048 / 4096）',
     benchBtn: '运行多块长对比 (auto / 256 / 512 / 2048 / 4096)',
     benchHint: '在纯 MoonBit 引擎内一次性对比 5 种块长的 .sig、.delta 与 .delta.gz 线缆体积，自动标出最小传输开销。',
@@ -61,16 +64,20 @@ const I18N = {
     rdiffPickOld: '请先选择 OLD 旧文件。',
     rdiffPickSigNew: '请先同时选择 .sig 签名文件与 NEW 目标文件。',
     rdiffPickOldDelta: '请先同时选择 OLD 旧文件与 .delta / .delta.gz 补丁文件。',
-    inspectCardTitle: '通用产物剖析器（.sig · .delta · .delta.gz · .mbundle · Schema 1/2/3 JSON）',
+    inspectCardTitle: '通用产物剖析器（.sig · .delta · .delta.gz · .mbundle · .menc · Schema 1/2/3/4 JSON）',
     inspectSampleDelta: '剖析示例 .delta（含热力图）',
-    inspectSampleSig: '剖析示例 .sig',
+    inspectSampleSig: '剖析示例 .sig (0x72730137)',
+    inspectSampleSeal: '剖析示例 .menc',
+    inspectSamplePubSig: '剖析示例 .msig.json',
     inspectDropLabel: '拖入任意 MoonLibSync 二进制或 JSON 产物自动剖析',
-    inspectDropHint: '支持 .sig / .delta / .delta.gz / .mbundle / manifest.json / snapshot / plan / bundle / verify-report',
+    inspectDropHint: '支持 .sig (0x72730147/0x72730137) / .delta / .delta.gz / .mbundle / .menc / .msig.json / Schema 1/2/3 JSON',
     inspectRawJson: '展开原始剖析 JSON 响应',
-    inspectInnerDelta: '检测到 Gzip 内层为标准 0x72730236 Delta，已自动展开块复用热力图',
-    dirCardTitle: '浏览器端 Schema 3 目录快照、同步规划与完整性巡检',
+    inspectInnerDelta: '检测到 Gzip 内层为标准 0x72730236 Delta，已自动展开块复用热力图与 Literal Hexdump 预览',
+    inspectInnerBundle: '检测到 Gzip 内层为 MLSBDL01 单文件目录归档（.mbundle.gz）',
+    dirCardTitle: '浏览器端 Schema 3 目录快照、移动检测、巡检与 .mbundle.gz 单文件打包',
     dirModePlan: '同步规划 (dir-plan)',
     dirModeVerify: '完整性巡检 (dir-verify)',
+    dirModeBundle: '单文件打包/解包 (.mbundle.gz)',
     runDirSample: '运行内置目录变更示例',
     runDirVerifyCleanSample: '巡检一致示例 (OK)',
     basisDirLabel: 'BASIS 基准目录（旧目录 / Expected 预期基线）',
@@ -78,7 +85,21 @@ const I18N = {
     pickDirHint: '点击选择本地文件夹',
     dirExcludeLabel: '--exclude 排除规则（逗号分隔）',
     fillExcludePreset: '填入常用忽略',
-    dirHint: '自动执行 --exclude 匹配、POSIX 路径安全校验、UTF-8 字典序排序与跨平台 ASCII 大小写冲突检测。',
+    dirDetectMoves: '--detect-moves (重命名/移动 0 字节复用)',
+    bundlePanelTitle: '单文件归档打包 & 浏览器端解包验证（MLSBDL01 / .mbundle.gz）',
+    bundleGzipLabel: '启用 RFC 1952 Gzip 压缩 (.mbundle.gz)',
+    bundlePackSampleBtn: '打包内置示例为 .mbundle.gz',
+    bundlePackFoldersBtn: '打包所选 BASIS + TARGET 目录',
+    bundleUnpackDropLabel: '拖入 .mbundle 或 .mbundle.gz 归档文件执行解包与全量 SHA-256 校验',
+    bundleUnpackHint: '将结合上方 BASIS 目录（未选目录时自动使用内置示例 BASIS）逐文件还原并校验 SHA-256',
+    bundleFooterHint: '支持 CopyFromBasis 0 字节复用、UpdateDeltaFrom 跨路径差分，解包时自动解压 Gzip 并逐文件验证 SHA-256。',
+    bundleUnpackBtn: '解包所选归档并校验还原',
+    bundlePickArchiveWarn: '请先拖入 .mbundle / .mbundle.gz 归档文件，或先点击上方「打包内置示例」后使用一键往返解包。',
+    bundleDlArchive: (isGz) => (isGz ? '下载 .mbundle.gz' : '下载 .mbundle'),
+    bundleRoundtripBtn: '一键往返解包并全量校验 SHA-256',
+    bundleUnpackOkBadge: (n) => `✓ 全部 ${n} 个文件 SHA-256 校验通过`,
+    bundleDownloadFile: '下载',
+    dirHint: '自动执行 --exclude 匹配、--detect-moves 内容指纹移动检测、POSIX 路径安全校验与跨平台 ASCII 大小写冲突检测。',
     runDirDiff: '生成 Schema 3 同步计划',
     runDirVerify: '执行 dir-verify 巡检',
     verifyOkBadge: 'VERIFIED OK · 目录完全一致',
@@ -87,7 +108,9 @@ const I18N = {
     expectedCol: '预期基线 (Expected)',
     actualCol: '实测目录 (Actual)',
     issueKindCol: '漂移类型',
-    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.5.0 · 零后端 · 零 C FFI · 17 项核心导出）',
+    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.6.0 · 零后端 · 零 C FFI · 27 项核心导出）',
+    workerBadgeActive: 'Web Worker 后台线程',
+    workerBadgeFallback: '主线程回退模式',
     engineMissing: '未找到已编译模块 web-demo.js。请先在仓库根目录运行 moon build examples/web-demo --target js 并通过本地 HTTP 服务访问。',
     pickBothWarn: '请先选择 OLD 和 NEW 两个文件，或直接点击上方「运行内置示例」。',
     pickDirWarn: '请至少选择一个本地目录（BASIS 或 TARGET），或直接点击「运行内置目录变更示例」。',
@@ -103,6 +126,7 @@ const I18N = {
     dlSig: '下载 .sig',
     dlDelta: '下载 .delta',
     dlDeltaGz: '下载 .delta.gz',
+    dlRollback: '下载反向回滚补丁 (rollback.delta)',
     dlRestored: '下载还原后的 NEW',
     wireInspect: '展开查看标准线缆头部十六进制（Hex Preview）',
     copyBtn: '复制',
@@ -133,15 +157,33 @@ const I18N = {
     labLevel: '压缩级别',
     labMaxOut: '解压上限 (B)',
     labRunCustom: '压缩并有界解压测试',
+    edCardTitle: 'Ed25519 发布者数字签名 & 验签实验室（RFC 8032 · Schema 4 .msig.json）',
+    edGenKeyBtn: '生成随机 Ed25519 密钥对',
+    edSignBtn: '签名并生成 .msig.json',
+    edDlSigBtn: '下载 .msig.json',
+    edVerifyValidBtn: '验证合法签名 (Valid)',
+    edVerifyTamperBtn: '模拟 1 字节载荷篡改 (DigestMismatch)',
+    edVerifyUntrustedBtn: '模拟非信任公钥验证 (UntrustedKey)',
+    aeadCardTitle: 'AEAD 流式加密封装实验室（MLSENC01 · ChaCha20-Poly1305 + Argon2id .menc）',
+    aeadKdfLabel: '密钥模式',
+    aeadMemLabel: 'Argon2 内存',
+    aeadPassesLabel: '轮次',
+    aeadSecretLabel: '口令 / 32B 十六进制密钥',
+    aeadGenRawKeyBtn: '生成随机 32B 密钥',
+    aeadSealBtn: '加密封装为 .menc',
+    aeadDlMencBtn: '下载 .menc',
+    aeadUnsealBtn: '解密并校验 SHA-256',
+    aeadTamperBtn: '模拟 1 字节密文篡改 (AuthenticationFailed)',
   },
   en: {
-    subtitle: 'Pure-MoonBit zero-backend browser studio for librsync binary deltas, block reuse heatmaps, split-role rdiff, universal artifact inspection, and Schema 3 directory sync & verify',
+    subtitle: 'Pure-MoonBit zero-backend browser studio with Web Worker execution, literal hexdump heatmaps, .mbundle.gz move detection, and Ed25519 / AEAD crypto labs',
     tabFile: 'File Sync & Gzip',
     tabRdiff: 'Split-Role rdiff',
     tabInspect: 'Artifact Inspector',
     tabDir: 'Dir Plan & Verify',
-    tabLab: 'Gzip Security Lab',
-    fileCardTitle: 'Streaming Signature · Delta · Gzip Framing · Block Heatmap · Multi-Block Benchmark',
+    tabLab: 'Security & Crypto Lab',
+    fileCardTitle: 'Streaming Signature · Delta · Rollback · Gzip Framing · Literal Hexdump Heatmap',
+    sigProfile: 'Profile',
     blockSize: 'Block',
     chunkSize: 'Chunk',
     sumSize: 'Strong Sum',
@@ -150,12 +192,14 @@ const I18N = {
     oldLabel: 'OLD Basis File',
     newLabel: 'NEW Target File',
     dropHint: 'Click to browse or drag & drop a local file',
-    localPrivacy: '100% local in-browser execution with zero uploads. Exported .sig / .delta files are wire-compatible with librsync rdiff and CLI.',
+    localPrivacy: '100% local in-browser Web Worker execution with zero uploads. Exported .sig / .delta / rollback.delta files are wire-compatible with librsync rdiff and CLI.',
     runFiles: 'Diff & Verify Selected Files',
     heatmapTitle: 'Interactive Delta Block Reuse Heatmap',
-    heatmapHint: 'Hover or click any segment above to inspect COPY / Literal basis offset, length, and output offset',
+    heatmapHint: 'Hover or click any segment above for instruction details; click any amber Literal segment for a Hexdump + UTF-8 payload preview',
     heatmapTruncated: (shown, total) => `Showing first ${shown} of ${total} instructions`,
     heatmapTableToggle: (n) => `Show ordered instruction table (top ${n})`,
+    litPreviewTitle: (shown, total, trunc) =>
+      `Literal Payload Hexdump Preview (first ${shown} B of ${total} B${trunc ? ' · truncated' : ''})`,
     benchTitle: 'Multi-Block-Size Benchmark (auto / 256 / 512 / 2048 / 4096)',
     benchBtn: 'Run Multi-Block-Size Benchmark (auto / 256 / 512 / 2048 / 4096)',
     benchHint: 'Evaluate 5 block sizes in pure MoonBit to compare .sig, .delta, and .delta.gz wire overhead and highlight the smallest wire size.',
@@ -180,16 +224,20 @@ const I18N = {
     rdiffPickOld: 'Please select an OLD basis file first.',
     rdiffPickSigNew: 'Please select both a .sig signature file and a NEW target file.',
     rdiffPickOldDelta: 'Please select both an OLD basis file and a .delta / .delta.gz file.',
-    inspectCardTitle: 'Universal Artifact Inspector (.sig · .delta · .delta.gz · .mbundle · Schema 1/2/3 JSON)',
+    inspectCardTitle: 'Universal Artifact Inspector (.sig · .delta · .delta.gz · .mbundle · .menc · Schema 1/2/3/4 JSON)',
     inspectSampleDelta: 'Inspect Sample .delta (+ Heatmap)',
-    inspectSampleSig: 'Inspect Sample .sig',
+    inspectSampleSig: 'Inspect Sample .sig (0x72730137)',
+    inspectSampleSeal: 'Inspect Sample .menc',
+    inspectSamplePubSig: 'Inspect Sample .msig.json',
     inspectDropLabel: 'Drop any MoonLibSync binary or JSON artifact to inspect',
-    inspectDropHint: 'Supports .sig / .delta / .delta.gz / .mbundle / manifest.json / snapshot / plan / bundle / verify-report',
+    inspectDropHint: 'Supports .sig (0x72730147/0x72730137) / .delta / .delta.gz / .mbundle / .menc / .msig.json / Schema 1/2/3 JSON',
     inspectRawJson: 'Show Raw Inspector JSON',
-    inspectInnerDelta: 'Inner Gzip payload is a standard 0x72730236 delta — Block Reuse Heatmap rendered below',
-    dirCardTitle: 'In-Browser Schema 3 Directory Snapshot, Sync Planner & Integrity Audit',
+    inspectInnerDelta: 'Inner Gzip payload is a standard 0x72730236 delta — Block Reuse Heatmap & Literal Hexdump rendered below',
+    inspectInnerBundle: 'Inner Gzip payload is a single-file MLSBDL01 directory bundle archive (.mbundle.gz)',
+    dirCardTitle: 'In-Browser Schema 3 Directory Snapshot, Move Detect, Audit & .mbundle.gz Packing',
     dirModePlan: 'Sync Plan (dir-plan)',
     dirModeVerify: 'Integrity Audit (dir-verify)',
+    dirModeBundle: 'Pack & Unpack (.mbundle.gz)',
     runDirSample: 'Run Built-in Sample Folder Pair',
     runDirVerifyCleanSample: 'Run Clean Verify Sample (OK)',
     basisDirLabel: 'BASIS Folder (Old / Expected Baseline)',
@@ -197,7 +245,21 @@ const I18N = {
     pickDirHint: 'Click to select a local folder',
     dirExcludeLabel: '--exclude patterns (comma-separated)',
     fillExcludePreset: 'Fill Common Preset',
-    dirHint: 'Applies --exclude globs, POSIX path hygiene, deterministic UTF-8 byte sorting, and cross-platform ASCII case-folding collision detection.',
+    dirDetectMoves: '--detect-moves (0-Byte Move / Copy Reuse)',
+    bundlePanelTitle: 'Single-File Bundle Pack & In-Browser Unpack Verification (MLSBDL01 / .mbundle.gz)',
+    bundleGzipLabel: 'Compress with RFC 1952 Gzip (.mbundle.gz)',
+    bundlePackSampleBtn: 'Pack Built-in Sample to .mbundle.gz',
+    bundlePackFoldersBtn: 'Pack Selected BASIS + TARGET Folders',
+    bundleUnpackDropLabel: 'Drop a .mbundle or .mbundle.gz archive to unpack & verify every SHA-256',
+    bundleUnpackHint: 'Reconstructs against BASIS folder above (or built-in sample basis if none selected) and verifies every file SHA-256',
+    bundleFooterHint: 'Supports 0-byte CopyFromBasis reuse, cross-path UpdateDeltaFrom, automatic Gzip decompression, and full SHA-256 verification.',
+    bundleUnpackBtn: 'Unpack & Verify Selected Archive',
+    bundlePickArchiveWarn: 'Drop a .mbundle / .mbundle.gz file first, or click "Pack Built-in Sample" and use One-Click Roundtrip Unpack.',
+    bundleDlArchive: (isGz) => (isGz ? 'Download .mbundle.gz' : 'Download .mbundle'),
+    bundleRoundtripBtn: 'One-Click Roundtrip Unpack & Verify',
+    bundleUnpackOkBadge: (n) => `✓ All ${n} Files SHA-256 Verified`,
+    bundleDownloadFile: 'Download',
+    dirHint: 'Applies --exclude globs, --detect-moves content-digest reuse, POSIX path hygiene, and cross-platform ASCII case-folding collision detection.',
     runDirDiff: 'Generate Schema 3 Sync Plan',
     runDirVerify: 'Run dir-verify Audit',
     verifyOkBadge: 'VERIFIED OK · Exact Directory Match',
@@ -206,7 +268,9 @@ const I18N = {
     expectedCol: 'Expected Baseline',
     actualCol: 'Actual Observed',
     issueKindCol: 'Drift Kind',
-    engineReady: 'MoonBit pure-JS engine ready (v0.5.0 · zero backend · zero C FFI · 17 core exports)',
+    engineReady: 'MoonBit pure-JS engine ready (v0.6.0 · zero backend · zero C FFI · 27 core exports)',
+    workerBadgeActive: 'Web Worker Thread',
+    workerBadgeFallback: 'Main-Thread Fallback',
     engineMissing: 'Compiled web-demo.js not found. Run "moon build examples/web-demo --target js" and serve the repo root over HTTP.',
     pickBothWarn: 'Please select both OLD and NEW files, or click a built-in sample button above.',
     pickDirWarn: 'Select at least one folder (BASIS or TARGET), or click "Run Built-in Sample Folder Pair".',
@@ -222,6 +286,7 @@ const I18N = {
     dlSig: 'Download .sig',
     dlDelta: 'Download .delta',
     dlDeltaGz: 'Download .delta.gz',
+    dlRollback: 'Download Rollback Delta',
     dlRestored: 'Download Restored NEW',
     wireInspect: 'Inspect Standard Wire Headers (Hex Preview)',
     copyBtn: 'Copy',
@@ -252,12 +317,31 @@ const I18N = {
     labLevel: 'Level',
     labMaxOut: 'Max Output (B)',
     labRunCustom: 'Compress & Bounded Decompress',
+    edCardTitle: 'Ed25519 Publisher Sign & Verify Lab (RFC 8032 · Schema 4 .msig.json)',
+    edGenKeyBtn: 'Generate Random Ed25519 Keypair',
+    edSignBtn: 'Sign & Generate .msig.json',
+    edDlSigBtn: 'Download .msig.json',
+    edVerifyValidBtn: 'Verify Valid',
+    edVerifyTamperBtn: 'Simulate 1-Byte Payload Tamper (DigestMismatch)',
+    edVerifyUntrustedBtn: 'Simulate Untrusted Key (UntrustedKey)',
+    aeadCardTitle: 'AEAD Streaming Encryption Lab (MLSENC01 · ChaCha20-Poly1305 + Argon2id .menc)',
+    aeadKdfLabel: 'Key Mode',
+    aeadMemLabel: 'Argon2 Memory',
+    aeadPassesLabel: 'Passes',
+    aeadSecretLabel: 'Passphrase / 32-Byte Hex Key',
+    aeadGenRawKeyBtn: 'Generate Random 32B Key',
+    aeadSealBtn: 'Seal to .menc',
+    aeadDlMencBtn: 'Download .menc',
+    aeadUnsealBtn: 'Unseal & Verify SHA-256',
+    aeadTamperBtn: 'Simulate 1-Byte Ciphertext Tamper (AuthenticationFailed)',
   },
 };
 
 let lang = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
 let theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-let engine = null;
+let engineClient = null;
+let engineMode = null; // 'worker' | 'main'
+let engineLoadPromise = null;
 
 // Tab 1 state
 let lastResultState = null;
@@ -270,14 +354,21 @@ let lastBenchmarkState = null;
 let lastInspectState = null;
 
 // Tab 4 state
-let dirMode = 'plan'; // 'plan' | 'verify'
+let dirMode = 'plan'; // 'plan' | 'verify' | 'bundle'
 let lastDirState = null;
 let currentDirFilter = 'all';
 let currentDirSearch = '';
+let droppedBundleArchiveFile = null;
+let lastPackedBundle = null; // { archiveBytes, isGz, basisFilesJson, packRes }
+
+// Tab 5 Crypto Lab state
+let edState = null; // { seed, keyId, publicKeyHex, lastSigJson, lastPayloadBytes }
+let aeadState = null; // { cipherBytes, usePassphrase, secretBytes }
 
 const statusBar = document.getElementById('statusBar');
 const statusText = document.getElementById('statusText');
 const statusAction = document.getElementById('statusAction');
+const engineProgressFill = document.getElementById('engineProgressFill');
 const resultsEl = document.getElementById('results');
 const inspectResultsEl = document.getElementById('inspectResults');
 const dirResultsEl = document.getElementById('dirResults');
@@ -287,6 +378,7 @@ const oldMeta = document.getElementById('oldMeta');
 const newMeta = document.getElementById('newMeta');
 const oldDrop = document.getElementById('oldDrop');
 const newDrop = document.getElementById('newDrop');
+const sigProfileSelect = document.getElementById('sigProfile');
 const blockSelect = document.getElementById('blockLen');
 const chunkSelect = document.getElementById('chunkSize');
 const sumSelect = document.getElementById('sumLen');
@@ -299,8 +391,18 @@ const basisDirMeta = document.getElementById('basisDirMeta');
 const targetDirMeta = document.getElementById('targetDirMeta');
 const dirExcludeInput = document.getElementById('dirExcludeInput');
 const fillExcludePresetBtn = document.getElementById('fillExcludePreset');
+const dirDetectMovesCheckbox = document.getElementById('dirDetectMoves');
 const dirModePlanBtn = document.getElementById('dirModePlan');
 const dirModeVerifyBtn = document.getElementById('dirModeVerify');
+const dirModeBundleBtn = document.getElementById('dirModeBundle');
+const dirBundlePanel = document.getElementById('dirBundlePanel');
+const bundleGzipToggle = document.getElementById('bundleGzipToggle');
+const runBundleSamplePackBtn = document.getElementById('runBundleSamplePack');
+const runBundleFolderPackBtn = document.getElementById('runBundleFolderPack');
+const bundleUnpackDrop = document.getElementById('bundleUnpackDrop');
+const bundleUnpackFile = document.getElementById('bundleUnpackFile');
+const bundleUnpackMeta = document.getElementById('bundleUnpackMeta');
+const runBundleUnpackBtn = document.getElementById('runBundleUnpackBtn');
 const runDirSampleBtn = document.getElementById('runDirSample');
 const runDirVerifyCleanSampleBtn = document.getElementById('runDirVerifyCleanSample');
 const runDirDiffBtn = document.getElementById('runDirDiff');
@@ -310,6 +412,7 @@ const themeToggle = document.getElementById('themeToggle');
 
 let droppedOldFile = null;
 let droppedNewFile = null;
+let progressHideTimer = null;
 
 function t(key) {
   return I18N[lang][key];
@@ -330,6 +433,26 @@ function fmtBytes(n) {
   return `${(v / 1048576).toFixed(2)} MiB`;
 }
 
+function bytesToHex(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+function hexToBytes(hex) {
+  const clean = String(hex || '').trim();
+  if (clean.length % 2 !== 0) return new Uint8Array(0);
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const byte = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byte)) return new Uint8Array(0);
+    out[i] = byte;
+  }
+  return out;
+}
+
 function toHexPreview(bytes, maxLen = 28) {
   const n = Math.min(bytes.length, maxLen);
   const parts = [];
@@ -337,6 +460,28 @@ function toHexPreview(bytes, maxLen = 28) {
     parts.push(bytes[i].toString(16).padStart(2, '0'));
   }
   return parts.join(' ') + (bytes.length > maxLen ? ' ...' : '');
+}
+
+function formatHexdump(previewHex, previewUtf8, baseOffset = 0) {
+  const hex = String(previewHex || '');
+  const ascii = String(previewUtf8 || '');
+  const byteLen = Math.floor(hex.length / 2);
+  if (byteLen === 0) return '(empty literal)';
+  const lines = [];
+  for (let row = 0; row < byteLen; row += 16) {
+    const offStr = (baseOffset + row).toString(16).padStart(8, '0');
+    const left = [];
+    const right = [];
+    for (let i = 0; i < 16; i++) {
+      const idx = row + i;
+      const cell = idx < byteLen ? hex.slice(idx * 2, idx * 2 + 2) : '  ';
+      if (i < 8) left.push(cell);
+      else right.push(cell);
+    }
+    const textSlice = ascii.slice(row, Math.min(byteLen, row + 16));
+    lines.push(`${offStr}  ${left.join(' ')}  ${right.join(' ')}  |${textSlice}|`);
+  }
+  return lines.join('\n');
 }
 
 function downloadBlob(bytes, filename, mime = 'application/octet-stream') {
@@ -363,6 +508,165 @@ function bindCopyButtons(rootEl) {
   }
 }
 
+function setProgress(pct) {
+  if (!engineProgressFill) return;
+  if (progressHideTimer) {
+    clearTimeout(progressHideTimer);
+    progressHideTimer = null;
+  }
+  if (pct <= 0) {
+    engineProgressFill.classList.remove('active');
+    engineProgressFill.style.width = '0%';
+    return;
+  }
+  engineProgressFill.classList.add('active');
+  engineProgressFill.style.width = `${Math.min(100, Math.max(8, pct))}%`;
+  if (pct >= 100) {
+    progressHideTimer = setTimeout(() => {
+      engineProgressFill.classList.remove('active');
+      engineProgressFill.style.width = '0%';
+    }, 320);
+  }
+}
+
+function renderEngineStatusBadge() {
+  if (!engineMode) return;
+  statusText.textContent = t('engineReady');
+  if (engineMode === 'worker') {
+    statusAction.innerHTML = `<span class="worker-pill">⚡ ${escapeHtml(t('workerBadgeActive'))}</span>`;
+  } else {
+    statusAction.innerHTML = `<span class="worker-pill fallback">● ${escapeHtml(t('workerBadgeFallback'))}</span>`;
+  }
+}
+
+// =========================================================================
+// Zero-Dependency Web Worker EngineClient (with Main-Thread Fallback)
+// =========================================================================
+class WorkerEngineClient {
+  constructor(worker) {
+    this.worker = worker;
+    this.nextId = 1;
+    this.pending = new Map();
+    this.worker.addEventListener('message', (ev) => {
+      const msg = ev.data || {};
+      if (msg.type === 'progress') {
+        setProgress(Number(msg.pct) || 50);
+        return;
+      }
+      const entry = this.pending.get(msg.id);
+      if (!entry) return;
+      this.pending.delete(msg.id);
+      if (msg.ok) entry.resolve(msg.result);
+      else entry.reject(new Error(msg.error || 'Worker call failed'));
+    });
+    this.worker.addEventListener('error', (err) => {
+      const e = new Error(err.message || 'Web Worker error');
+      for (const entry of this.pending.values()) entry.reject(e);
+      this.pending.clear();
+    });
+  }
+
+  call(method, ...args) {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      this.pending.set(id, { resolve, reject });
+      setProgress(18);
+      this.worker.postMessage({ id, method, args });
+    });
+  }
+
+  asProxy() {
+    const client = this;
+    return new Proxy(
+      {},
+      {
+        get(_target, prop) {
+          if (prop === 'then' || typeof prop === 'symbol') return undefined;
+          return (...args) => client.call(String(prop), ...args);
+        },
+      },
+    );
+  }
+}
+
+function createMainThreadProxy(rawMod) {
+  return new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        return async (...args) => {
+          setProgress(35);
+          try {
+            const out = rawMod[String(prop)](...args);
+            setProgress(100);
+            return out;
+          } catch (err) {
+            setProgress(0);
+            throw err;
+          }
+        };
+      },
+    },
+  );
+}
+
+async function tryInitWorker() {
+  if (typeof Worker === 'undefined') {
+    throw new Error('Worker API unavailable');
+  }
+  const worker = new Worker('./worker.js', { type: 'module' });
+  const client = new WorkerEngineClient(worker);
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Worker init timeout')), 4500),
+  );
+  try {
+    await Promise.race([client.call('__init__'), timeoutPromise]);
+    return client.asProxy();
+  } catch (err) {
+    try {
+      worker.terminate();
+    } catch (_) {}
+    throw err;
+  }
+}
+
+async function loadEngine() {
+  if (engineClient) return engineClient;
+  if (engineLoadPromise) return engineLoadPromise;
+
+  engineLoadPromise = (async () => {
+    try {
+      engineClient = await tryInitWorker();
+      engineMode = 'worker';
+      statusBar.className = 'status-bar ok';
+      renderEngineStatusBadge();
+      return engineClient;
+    } catch (_workerErr) {
+      // Graceful fallback to main-thread ES module import
+      let lastErr = null;
+      for (const path of MODULE_PATHS) {
+        try {
+          const rawMod = await import(path);
+          engineClient = createMainThreadProxy(rawMod);
+          engineMode = 'main';
+          statusBar.className = 'status-bar ok';
+          renderEngineStatusBadge();
+          return engineClient;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      engineLoadPromise = null;
+      statusBar.className = 'status-bar warn';
+      statusText.textContent = t('engineMissing');
+      setProgress(0);
+      throw lastErr || new Error('Failed to load web-demo.js');
+    }
+  })();
+  return engineLoadPromise;
+}
+
 const ICON_SUN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
 const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>';
 
@@ -378,8 +682,8 @@ function applyI18n() {
     if (typeof I18N[lang][key] === 'string') el.textContent = I18N[lang][key];
   }
   langToggle.textContent = lang === 'zh' ? 'English' : '简体中文';
-  if (engine) {
-    statusText.textContent = t('engineReady');
+  if (engineClient) {
+    renderEngineStatusBadge();
   }
   if (droppedOldFile || oldInput.files?.[0]) {
     const f = droppedOldFile || oldInput.files[0];
@@ -395,6 +699,8 @@ function applyI18n() {
   if (lastInspectState) renderInspectResult(lastInspectState);
   if (lastDirState) {
     if (lastDirState.mode === 'verify') renderDirVerify(lastDirState);
+    else if (lastDirState.mode === 'bundle-pack') renderBundlePackResult(lastDirState);
+    else if (lastDirState.mode === 'bundle-unpack') renderBundleUnpackResult(lastDirState);
     else renderDirPlan(lastDirState);
   }
 }
@@ -455,27 +761,8 @@ function updateFolderMeta(inputEl, metaEl) {
 basisDirInput.addEventListener('change', () => updateFolderMeta(basisDirInput, basisDirMeta));
 targetDirInput.addEventListener('change', () => updateFolderMeta(targetDirInput, targetDirMeta));
 
-async function loadEngine() {
-  if (engine) return engine;
-  let lastErr = null;
-  for (const path of MODULE_PATHS) {
-    try {
-      engine = await import(path);
-      statusBar.className = 'status-bar ok';
-      statusText.textContent = t('engineReady');
-      statusAction.innerHTML = '';
-      return engine;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  statusBar.className = 'status-bar warn';
-  statusText.textContent = t('engineMissing');
-  throw lastErr;
-}
-
 // =========================================================================
-// Shared Component: Interactive Delta Block Reuse Heatmap
+// Shared Component: Interactive Delta Block Reuse Heatmap + Literal Hexdump
 // =========================================================================
 function buildHeatmapCardHtml(detail, prefix) {
   if (!detail || !detail.ok) return '';
@@ -500,7 +787,7 @@ function buildHeatmapCardHtml(detail, prefix) {
           const isCopy = it.kind === 'copy';
           const tip = isCopy
             ? `#${idx} COPY | basis_offset=${it.offset} | length=${it.length} B (${pct}%) | out_offset=${it.output_offset}`
-            : `#${idx} Literal | length=${it.length} B (${pct}%) | out_offset=${it.output_offset}`;
+            : `#${idx} Literal | length=${it.length} B (${pct}%) | out_offset=${it.output_offset} (click for Hexdump)`;
           return `<button type="button" class="hm-seg ${isCopy ? 'copy' : 'literal'}" data-hm="${prefix}" data-idx="${idx}" style="flex:${Math.max(1, len)} 0 auto;min-width:${minW};" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}"></button>`;
         })
         .join('') + tailHtml;
@@ -508,12 +795,16 @@ function buildHeatmapCardHtml(detail, prefix) {
   const rowsHtml = items
     .map((it, idx) => {
       const isCopy = it.kind === 'copy';
-      return `<tr>
+      const previewCell = !isCopy && it.preview_utf8
+        ? `<code style="font-size:0.74rem;color:var(--amber-text);">${escapeHtml(it.preview_utf8.slice(0, 32))}${it.preview_utf8.length > 32 || it.preview_truncated ? '…' : ''}</code>`
+        : '—';
+      return `<tr class="hm-row" data-hm-row="${prefix}" data-idx="${idx}" style="cursor:pointer;">
         <td><code>#${idx}</code></td>
         <td><span class="badge ${isCopy ? 'badge-add' : 'badge-update'}">${isCopy ? 'COPY' : 'Literal'}</span></td>
         <td><code>${isCopy ? Number(it.offset).toLocaleString() : '—'}</code></td>
         <td><code>${Number(it.length).toLocaleString()} B</code> (${fmtBytes(it.length)})</td>
         <td><code>${Number(it.output_offset).toLocaleString()}</code></td>
+        <td>${previewCell}</td>
       </tr>`;
     })
     .join('');
@@ -535,6 +826,7 @@ function buildHeatmapCardHtml(detail, prefix) {
       </div>
       <div class="heatmap-track" role="region" aria-label="Delta block reuse heatmap">${segsHtml}</div>
       <div id="${prefix}-tip" class="heatmap-tooltip">${escapeHtml(t('heatmapHint'))}</div>
+      <div id="${prefix}-hexbox" class="literal-preview-box" hidden></div>
       <details class="wire-box">
         <summary>${escapeHtml(I18N[lang].heatmapTableToggle(items.length))}</summary>
         <div class="table-wrap" style="margin-top:0.65rem;max-height:280px;overflow:auto;">
@@ -546,9 +838,10 @@ function buildHeatmapCardHtml(detail, prefix) {
                 <th>Basis Offset</th>
                 <th>Length</th>
                 <th>Output Offset</th>
+                <th>Preview</th>
               </tr>
             </thead>
-            <tbody>${rowsHtml || '<tr><td colspan="5" style="text-align:center;color:var(--text-subtle);">No instructions</td></tr>'}</tbody>
+            <tbody>${rowsHtml || '<tr><td colspan="6" style="text-align:center;color:var(--text-subtle);">No instructions</td></tr>'}</tbody>
           </table>
         </div>
       </details>
@@ -559,6 +852,7 @@ function buildHeatmapCardHtml(detail, prefix) {
 function wireHeatmapEvents(rootEl, detail, prefix) {
   if (!detail || !detail.ok) return;
   const tipEl = rootEl.querySelector(`#${prefix}-tip`);
+  const hexBox = rootEl.querySelector(`#${prefix}-hexbox`);
   if (!tipEl) return;
   const items = detail.items || [];
   const totalOut = Math.max(1, Number(detail.summary.output_bytes));
@@ -566,7 +860,7 @@ function wireHeatmapEvents(rootEl, detail, prefix) {
     const it = items[idx];
     if (!it) return;
     for (const s of rootEl.querySelectorAll(`.hm-seg[data-hm="${prefix}"]`)) {
-      s.classList.toggle('active', s === btn);
+      s.classList.toggle('active', btn ? s === btn : Number(s.dataset.idx) === idx);
     }
     const isCopy = it.kind === 'copy';
     const len = Number(it.length);
@@ -579,6 +873,22 @@ function wireHeatmapEvents(rootEl, detail, prefix) {
       <span>length=<strong>${len.toLocaleString()} B</strong> (${fmtBytes(len)}, ${pct}%)</span>
       <span>output_offset=<strong>${outStart.toLocaleString()}..${outEnd.toLocaleString()}</strong></span>
     `;
+    if (hexBox) {
+      if (!isCopy && typeof it.preview_hex === 'string') {
+        const shownBytes = Math.floor(it.preview_hex.length / 2);
+        const dump = formatHexdump(it.preview_hex, it.preview_utf8 || '', outStart);
+        hexBox.innerHTML = `
+          <div class="lit-head">
+            <span>${escapeHtml(I18N[lang].litPreviewTitle(shownBytes, len, !!it.preview_truncated))}</span>
+            <span>out=0x${outStart.toString(16).padStart(8, '0')}</span>
+          </div>
+          <pre class="lit-hexdump">${escapeHtml(dump)}</pre>
+        `;
+        hexBox.hidden = false;
+      } else {
+        hexBox.hidden = true;
+      }
+    }
   };
   for (const btn of rootEl.querySelectorAll(`.hm-seg[data-hm="${prefix}"]`)) {
     const idx = Number(btn.dataset.idx);
@@ -586,10 +896,14 @@ function wireHeatmapEvents(rootEl, detail, prefix) {
     btn.addEventListener('focus', () => showItem(idx, btn));
     btn.addEventListener('click', () => showItem(idx, btn));
   }
+  for (const tr of rootEl.querySelectorAll(`.hm-row[data-hm-row="${prefix}"]`)) {
+    const idx = Number(tr.dataset.idx);
+    tr.addEventListener('click', () => showItem(idx, null));
+  }
 }
 
 // =========================================================================
-// Tab 1: File Sync, Heatmap & Multi-Block-Size Benchmark
+// Tab 1: File Sync, Profile Selection, Rollback, Heatmap & Benchmark
 // =========================================================================
 function buildBenchmarkContentHtml(bench) {
   if (!bench) return '';
@@ -679,20 +993,24 @@ function renderResult(data, elapsedMs) {
   const gzBytes = Number(data.gzip_delta_bytes);
   const copyBytes = Number(data.copy_bytes);
   const litBytes = Number(data.literal_bytes);
+  const sigMagic = data.sig_magic || '0x72730147';
+  const sigProfile = data.sig_profile || 'rk-blake2';
   const copyPct = newBytes > 0 ? ((copyBytes / newBytes) * 100).toFixed(1) : '100.0';
   const deltaPct = newBytes > 0 ? ((deltaBytes / newBytes) * 100).toFixed(2) : '0.00';
   const gzPct = newBytes > 0 ? ((gzBytes / newBytes) * 100).toFixed(2) : '0.00';
   const savedPct = newBytes > 0 ? Math.max(0, (1 - gzBytes / newBytes) * 100).toFixed(2) : '0.00';
   const gzGain = gzBytes > 0 ? (deltaBytes / gzBytes).toFixed(2) : '1.00';
+  const rollbackLen = lastArtifacts?.rollbackDelta?.length || 0;
 
   const hexSection = lastArtifacts
     ? `
       <details class="wire-box">
         <summary>${escapeHtml(t('wireInspect'))}</summary>
         <div class="hex-grid">
-          <div class="hex-card"><div class="hex-title">.sig (0x72730147 · ${sigBytes} B)</div>${escapeHtml(toHexPreview(lastArtifacts.sig))}</div>
+          <div class="hex-card"><div class="hex-title">.sig (${escapeHtml(sigMagic)} · ${sigBytes} B)</div>${escapeHtml(toHexPreview(lastArtifacts.sig))}</div>
           <div class="hex-card"><div class="hex-title">.delta (0x72730236 · ${deltaBytes} B)</div>${escapeHtml(toHexPreview(lastArtifacts.delta))}</div>
           <div class="hex-card"><div class="hex-title">.delta.gz (RFC 1952 · ${gzBytes} B)</div>${escapeHtml(toHexPreview(lastArtifacts.deltaGz))}</div>
+          <div class="hex-card"><div class="hex-title">rollback.delta (NEW → OLD · ${rollbackLen} B)</div>${escapeHtml(toHexPreview(lastArtifacts.rollbackDelta))}</div>
         </div>
       </details>
     `
@@ -700,14 +1018,15 @@ function renderResult(data, elapsedMs) {
 
   const blockArg = Number(blockSelect.value) === 0 ? 'auto' : String(blockSelect.value);
   const sumArg = String(sumSelect.value);
+  const profileFlag = sigProfile === 'rollsum-blake2' ? ' --profile rollsum-blake2' : '';
   const oldName = (lastArtifacts?.baseName || 'old.bin').replaceAll('"', '');
   const newName = (lastArtifacts?.newName || 'new.bin').replaceAll('"', '');
   const cliCmd = [
-    `moonlibsync signature "${oldName}" "${oldName}.sig" --streaming --block-size ${blockArg} --sum-size ${sumArg}`,
+    `moonlibsync signature "${oldName}" "${oldName}.sig" --streaming --block-size ${blockArg} --sum-size ${sumArg}${profileFlag}`,
     `moonlibsync delta "${oldName}.sig" "${newName}" "${oldName}.delta" --streaming`,
     `moonlibsync compress "${oldName}.delta" "${oldName}.delta.gz" --streaming`,
-    `moonlibsync decompress "${oldName}.delta.gz" "${oldName}.delta.raw" --streaming`,
-    `moonlibsync patch "${oldName}" "${oldName}.delta.raw" "restored-${newName}" --streaming`,
+    `moonlibsync patch "${oldName}" "${oldName}.delta" "restored-${newName}" --streaming`,
+    `moonlibsync reverse-delta "${oldName}" "${newName}" "${oldName}.rollback.delta"`,
   ].join('\n');
 
   const heatmapHtml = buildHeatmapCardHtml(lastDetailState, 'file-hm');
@@ -727,7 +1046,7 @@ function renderResult(data, elapsedMs) {
     <div class="pipeline">
       <div class="pipe-step done">
         <div class="pipe-num">Stage 1 · Receiver</div>
-        <div class="pipe-name">SignatureHasher</div>
+        <div class="pipe-name">Signature (${escapeHtml(sigMagic)})</div>
         <div class="pipe-val">${fmtBytes(oldBytes)} → ${fmtBytes(sigBytes)} .sig</div>
       </div>
       <div class="pipe-step done">
@@ -759,7 +1078,7 @@ function renderResult(data, elapsedMs) {
         <div class="stat-sub">${newBytes.toLocaleString()} B</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Signature (.sig)</div>
+        <div class="stat-label">Signature (${escapeHtml(sigMagic)})</div>
         <div class="stat-value">${fmtBytes(sigBytes)}</div>
         <div class="stat-sub">block=${escapeHtml(data.block_len)} B · sum=${escapeHtml(data.strong_sum_len)} B</div>
       </div>
@@ -820,6 +1139,7 @@ function renderResult(data, elapsedMs) {
           <button id="dlSig" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlSig'))}</button>
           <button id="dlDelta" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlDelta'))}</button>
           <button id="dlDeltaGz" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('dlDeltaGz'))}</button>
+          <button id="dlRollback" class="btn btn-primary btn-sm" type="button">${escapeHtml(t('dlRollback'))}</button>
           <button id="dlRestored" class="btn btn-secondary btn-sm" type="button">${escapeHtml(t('dlRestored'))}</button>
         </div>
       </div>
@@ -857,7 +1177,7 @@ function renderResult(data, elapsedMs) {
   document.getElementById('runBenchmarkBtn').addEventListener('click', async () => {
     if (!lastInputs) return;
     const mod = await loadEngine();
-    const raw = mod.benchmark_block_sizes_json(lastInputs.oldBuf, lastInputs.newBuf, Number(sumSelect.value));
+    const raw = await mod.benchmark_block_sizes_json(lastInputs.oldBuf, lastInputs.newBuf, Number(sumSelect.value));
     lastBenchmarkState = JSON.parse(raw);
     const outEl = document.getElementById('benchmarkOut');
     if (outEl) outEl.innerHTML = buildBenchmarkContentHtml(lastBenchmarkState);
@@ -882,6 +1202,11 @@ function renderResult(data, elapsedMs) {
       downloadBlob(lastArtifacts.deltaGz, lastArtifacts.baseName + '.delta.gz', 'application/gzip');
     }
   });
+  document.getElementById('dlRollback').addEventListener('click', () => {
+    if (lastArtifacts?.rollbackDelta?.length) {
+      downloadBlob(lastArtifacts.rollbackDelta, lastArtifacts.baseName + '.rollback.delta');
+    }
+  });
   document.getElementById('dlRestored').addEventListener('click', () => {
     if (lastArtifacts) downloadBlob(lastArtifacts.restored, 'restored-' + lastArtifacts.newName);
   });
@@ -889,22 +1214,81 @@ function renderResult(data, elapsedMs) {
 
 async function runSync(oldBuf, newBuf, baseName = 'sample', newName = 'new.bin') {
   const mod = await loadEngine();
+  const profile = sigProfileSelect.value || 'rk-blake2';
   const blockLen = Number(blockSelect.value);
   const chunkSize = Number(chunkSelect.value);
   const sumLen = Number(sumSelect.value);
   const t0 = performance.now();
-  const json = mod.run_streaming_sync_json(oldBuf, newBuf, blockLen, sumLen, chunkSize);
+
+  let parsed = null;
+  let sig = null;
+  let delta = null;
+  let deltaGz = null;
+  let restored = null;
+  let rollbackDelta = null;
+  let detail = null;
+
+  if (profile === 'rk-blake2') {
+    const json = await mod.run_streaming_sync_json(oldBuf, newBuf, blockLen, sumLen, chunkSize);
+    parsed = JSON.parse(json);
+    if (parsed.ok) {
+      parsed.sig_magic = '0x72730147';
+      parsed.sig_profile = 'rk-blake2';
+      sig = await mod.create_signature_with_profile_bytes(oldBuf, blockLen, sumLen, 'rk-blake2');
+      delta = await mod.create_delta_bytes(sig, newBuf);
+      deltaGz = await mod.compress_gzip_bytes(delta, 6);
+      restored = await mod.apply_patch_bytes(oldBuf, delta);
+      rollbackDelta = await mod.create_reverse_delta_bytes(oldBuf, newBuf, blockLen, sumLen);
+      detail = JSON.parse(await mod.inspect_delta_detailed_json(delta, 512));
+    }
+  } else {
+    sig = await mod.create_signature_with_profile_bytes(oldBuf, blockLen, sumLen, profile);
+    if (!sig.length) {
+      parsed = { ok: false, error: 'InvalidSignatureProfileOrOptions' };
+    } else {
+      delta = await mod.create_delta_bytes(sig, newBuf);
+      deltaGz = delta.length ? await mod.compress_gzip_bytes(delta, 6) : new Uint8Array(0);
+      restored = delta.length ? await mod.apply_patch_bytes(oldBuf, delta) : new Uint8Array(0);
+      rollbackDelta = await mod.create_reverse_delta_bytes(oldBuf, newBuf, blockLen, sumLen);
+      const sigIns = JSON.parse(await mod.inspect_artifact_json(sig));
+      detail = JSON.parse(await mod.inspect_delta_detailed_json(delta, 512));
+      const [oldSha, newSha, recSha] = await Promise.all([
+        mod.sha256_hex_bytes(oldBuf),
+        mod.sha256_hex_bytes(newBuf),
+        mod.sha256_hex_bytes(restored),
+      ]);
+      const sum = detail.summary || {};
+      const sigSum = sigIns.summary || {};
+      parsed = {
+        ok: true,
+        sig_magic: sigSum.magic || '0x72730137',
+        sig_profile: 'rollsum-blake2',
+        block_len: sigSum.block_len || String(blockLen),
+        strong_sum_len: sigSum.strong_sum_len || String(sumLen),
+        old_bytes: String(oldBuf.length),
+        new_bytes: String(newBuf.length),
+        signature_bytes: String(sig.length),
+        delta_bytes: String(delta.length),
+        gzip_delta_bytes: String(deltaGz.length),
+        copy_bytes: sum.copy_bytes || '0',
+        literal_bytes: sum.literal_bytes || '0',
+        instruction_count: sum.instruction_count || '0',
+        copy_commands: sum.copy_commands || '0',
+        literal_commands: sum.literal_commands || '0',
+        old_sha256: oldSha,
+        new_sha256: newSha,
+        restored_sha256: recSha,
+        verified: recSha === newSha && restored.length === newBuf.length,
+      };
+    }
+  }
+
   const elapsed = performance.now() - t0;
-  const parsed = JSON.parse(json);
   lastInputs = { oldBuf, newBuf, baseName, newName };
   lastBenchmarkState = null;
-  if (parsed.ok) {
-    const sig = mod.create_signature_bytes(oldBuf, blockLen, sumLen);
-    const delta = mod.create_delta_bytes(sig, newBuf);
-    const deltaGz = mod.compress_gzip_bytes(delta, 6);
-    const restored = mod.apply_patch_bytes(oldBuf, delta);
-    lastArtifacts = { sig, delta, deltaGz, restored, baseName, newName };
-    lastDetailState = JSON.parse(mod.inspect_delta_detailed_json(delta, 512));
+  if (parsed && parsed.ok) {
+    lastArtifacts = { sig, delta, deltaGz, rollbackDelta, restored, baseName, newName };
+    lastDetailState = detail;
   } else {
     lastArtifacts = null;
     lastDetailState = null;
@@ -920,9 +1304,9 @@ function makeBuiltInBinaryPair() {
   }
   const newBuf = new Uint8Array(oldBuf.length);
   newBuf.set(oldBuf);
-  const patchA = new TextEncoder().encode('MOONLIBSYNC-050-HEADER-EDIT-SEGMENT '.repeat(6));
+  const patchA = new TextEncoder().encode('MOONLIBSYNC-060-HEADER-EDIT-SEGMENT '.repeat(6));
   const patchB = new TextEncoder().encode(
-    'MOONLIBSYNC-BROWSER-CHUNKED-PATCH-REPEATED-LOG-LINE '.repeat(12),
+    'MOONLIBSYNC-BROWSER-WORKER-LITERAL-HEXDUMP-LINE '.repeat(12),
   );
   newBuf.set(patchA, 20480);
   newBuf.set(patchB, 65536);
@@ -966,6 +1350,7 @@ runFilesBtn.addEventListener('click', async () => {
 // =========================================================================
 // Tab 2: Split-Role rdiff (Generate .sig / Generate .delta / Apply & Verify)
 // =========================================================================
+const rdiffSigProfile = document.getElementById('rdiffSigProfile');
 const rdiffSigBlock = document.getElementById('rdiffSigBlock');
 const rdiffSigSum = document.getElementById('rdiffSigSum');
 const rdiffSigOldDrop = document.getElementById('rdiffSigOldDrop');
@@ -1027,18 +1412,22 @@ rdiffGenSigBtn.addEventListener('click', async () => {
   }
   const mod = await loadEngine();
   const oldBytes = new Uint8Array(await file.arrayBuffer());
+  const profile = rdiffSigProfile.value || 'rk-blake2';
   const blockLen = Number(rdiffSigBlock.value);
   const sumLen = Number(rdiffSigSum.value);
   const t0 = performance.now();
-  const sigBytes = mod.create_signature_bytes(oldBytes, blockLen, sumLen);
+  const sigBytes = await mod.create_signature_with_profile_bytes(oldBytes, blockLen, sumLen, profile);
   const elapsed = performance.now() - t0;
   if (!sigBytes.length) {
     rdiffSigOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate signature (check size limits)</div>`;
     return;
   }
-  const inspected = JSON.parse(mod.inspect_artifact_json(sigBytes));
-  const sigSha = mod.sha256_hex_bytes(sigBytes);
-  const oldSha = mod.sha256_hex_bytes(oldBytes);
+  const [inspectedRaw, sigSha, oldSha] = await Promise.all([
+    mod.inspect_artifact_json(sigBytes),
+    mod.sha256_hex_bytes(sigBytes),
+    mod.sha256_hex_bytes(oldBytes),
+  ]);
+  const inspected = JSON.parse(inspectedRaw);
   const s = inspected.summary || {};
   rdiffSigOut.innerHTML = `
     <div class="stats-grid">
@@ -1069,23 +1458,26 @@ rdiffGenDeltaBtn.addEventListener('click', async () => {
   const [sigArr, newArr] = await Promise.all([sigFile.arrayBuffer(), newFile.arrayBuffer()]);
   const sigBytes = new Uint8Array(sigArr);
   const newBytes = new Uint8Array(newArr);
-  const sigCheck = JSON.parse(mod.inspect_artifact_json(sigBytes));
+  const sigCheck = JSON.parse(await mod.inspect_artifact_json(sigBytes));
   if (!sigCheck.ok || sigCheck.artifact_kind !== 'signature') {
     rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Invalid .sig:</strong> <code>${escapeHtml(sigCheck.error || sigCheck.artifact_kind || 'InvalidSignature')}</code></div>`;
     return;
   }
   const t0 = performance.now();
-  const deltaBytes = mod.create_delta_bytes(sigBytes, newBytes);
-  const gzBytes = deltaBytes.length ? mod.compress_gzip_bytes(deltaBytes, 6) : new Uint8Array(0);
+  const deltaBytes = await mod.create_delta_bytes(sigBytes, newBytes);
+  const gzBytes = deltaBytes.length ? await mod.compress_gzip_bytes(deltaBytes, 6) : new Uint8Array(0);
   const elapsed = performance.now() - t0;
   if (!deltaBytes.length) {
     rdiffDeltaOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Error:</strong> failed to generate delta</div>`;
     return;
   }
-  const detail = JSON.parse(mod.inspect_delta_detailed_json(deltaBytes, 64));
+  const [detailRaw, deltaSha] = await Promise.all([
+    mod.inspect_delta_detailed_json(deltaBytes, 64),
+    mod.sha256_hex_bytes(deltaBytes),
+  ]);
+  const detail = JSON.parse(detailRaw);
   const sum = detail.summary || {};
   const copyPct = newBytes.length > 0 ? ((Number(sum.copy_bytes || 0) / newBytes.length) * 100).toFixed(1) : '100.0';
-  const deltaSha = mod.sha256_hex_bytes(deltaBytes);
   rdiffDeltaOut.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">.delta Size</div><div class="stat-value">${fmtBytes(deltaBytes.length)}</div><div class="stat-sub">${deltaBytes.length.toLocaleString()} B · ${elapsed.toFixed(1)} ms</div></div>
@@ -1126,7 +1518,7 @@ rdiffApplyPatchBtn.addEventListener('click', async () => {
   const oldBytes = new Uint8Array(oldArr);
   const deltaOrGz = new Uint8Array(deltaArr);
   const t0 = performance.now();
-  const res = JSON.parse(mod.apply_verified_patch_json(oldBytes, deltaOrGz, manifestText));
+  const res = JSON.parse(await mod.apply_verified_patch_json(oldBytes, deltaOrGz, manifestText));
   const elapsed = performance.now() - t0;
   if (!res.ok) {
     rdiffPatchOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Patch / Verify Failed:</strong> <code>${escapeHtml(res.error)}</code></div>`;
@@ -1141,8 +1533,8 @@ rdiffApplyPatchBtn.addEventListener('click', async () => {
     } catch (_) {}
   }
   const restoredBytes = isFullManifest
-    ? (res.decompressed_gzip ? mod.decompress_gzip_bytes(deltaOrGz, 67108864) : deltaOrGz)
-    : mod.apply_patch_or_gzip_bytes(oldBytes, deltaOrGz);
+    ? (res.decompressed_gzip ? await mod.decompress_gzip_bytes(deltaOrGz, 67108864) : deltaOrGz)
+    : await mod.apply_patch_or_gzip_bytes(oldBytes, deltaOrGz);
 
   const badgeText = res.verified_manifest
     ? '✓ Manifest SHA-256 Verified'
@@ -1170,16 +1562,18 @@ rdiffApplyPatchBtn.addEventListener('click', async () => {
 });
 
 // =========================================================================
-// Tab 3: Universal Artifact Inspector
+// Tab 3: Universal Artifact Inspector (.sig, .delta, .gz, .mbundle, .menc, .msig.json)
 // =========================================================================
 const inspectDrop = document.getElementById('inspectDrop');
 const inspectFile = document.getElementById('inspectFile');
 const inspectMeta = document.getElementById('inspectMeta');
 const inspectSampleDeltaBtn = document.getElementById('inspectSampleDelta');
 const inspectSampleSigBtn = document.getElementById('inspectSampleSig');
+const inspectSampleSealBtn = document.getElementById('inspectSampleSeal');
+const inspectSamplePubSigBtn = document.getElementById('inspectSamplePubSig');
 
 function renderInspectResult(state) {
-  const { name, rawBytes, parsed, detail, innerDeltaDetail, elapsedMs } = state;
+  const { name, rawBytes, parsed, detail, innerDeltaDetail, innerBundleInfo, elapsedMs } = state;
   if (!parsed.ok) {
     inspectResultsEl.innerHTML = `
       <div class="card err-card">
@@ -1196,12 +1590,25 @@ function renderInspectResult(state) {
 
   const statCards = [];
   const hashRows = [];
+  const hashKeys = new Set([
+    'public_key',
+    'signature',
+    'salt_hex',
+    'nonce_prefix_hex',
+    'header_hex',
+  ]);
   const pushSummaryFields = (obj) => {
     for (const [k, v] of Object.entries(obj || {})) {
-      if (k.includes('sha256')) {
+      if (k.includes('sha256') || hashKeys.has(k)) {
         hashRows.push([k, String(v)]);
       } else {
-        const isBytes = k.endsWith('_bytes') || k === 'block_len' || k === 'strong_sum_len';
+        const isBytes =
+          k.endsWith('_bytes') ||
+          k === 'block_len' ||
+          k === 'strong_sum_len' ||
+          k === 'chunk_size' ||
+          k === 'byte_length' ||
+          k === 'payload_length';
         const displayVal = isBytes && /^\d+$/.test(String(v)) ? fmtBytes(v) : String(v);
         const subVal = isBytes && /^\d+$/.test(String(v)) ? `${Number(v).toLocaleString()} B` : '';
         statCards.push({ label: k.replaceAll('_', ' '), value: displayVal, sub: subVal });
@@ -1255,7 +1662,9 @@ function renderInspectResult(state) {
   const heatmapDetail = detail || innerDeltaDetail;
   const innerNote = innerDeltaDetail
     ? `<div class="status-bar ok" style="margin-bottom:1rem;"><div class="status-left"><span class="dot"></span><span>${escapeHtml(t('inspectInnerDelta'))}</span></div></div>`
-    : '';
+    : innerBundleInfo
+      ? `<div class="status-bar ok" style="margin-bottom:1rem;"><div class="status-left"><span class="dot"></span><span>${escapeHtml(t('inspectInnerBundle'))} — unchanged=${escapeHtml(innerBundleInfo.summary.unchanged)}, copy_from_basis=${escapeHtml(innerBundleInfo.summary.copy_from_basis || '0')}, update_delta=${escapeHtml(innerBundleInfo.summary.update_delta)}, add_full=${escapeHtml(innerBundleInfo.summary.add_full)}, delete=${escapeHtml(innerBundleInfo.summary.delete)}</span></div></div>`
+      : '';
   const heatmapHtml = heatmapDetail ? buildHeatmapCardHtml(heatmapDetail, 'inspect-hm') : '';
 
   inspectResultsEl.innerHTML = `
@@ -1291,20 +1700,24 @@ function renderInspectResult(state) {
 async function inspectArtifactBytes(bytes, name) {
   const mod = await loadEngine();
   const t0 = performance.now();
-  const parsed = JSON.parse(mod.inspect_artifact_json(bytes));
+  const parsed = JSON.parse(await mod.inspect_artifact_json(bytes));
   let detail = null;
   let innerDeltaDetail = null;
+  let innerBundleInfo = null;
   if (parsed.ok && parsed.artifact_kind === 'delta') {
-    detail = JSON.parse(mod.inspect_delta_detailed_json(bytes, 512));
+    detail = JSON.parse(await mod.inspect_delta_detailed_json(bytes, 512));
   } else if (parsed.ok && parsed.artifact_kind === 'gzip') {
-    const plain = mod.decompress_gzip_bytes(bytes, 67108864);
+    const plain = await mod.decompress_gzip_bytes(bytes, 67108864);
     if (plain.length >= 5 && plain[0] === 0x72 && plain[1] === 0x73 && plain[2] === 0x02 && plain[3] === 0x36) {
-      const inner = JSON.parse(mod.inspect_delta_detailed_json(plain, 512));
+      const inner = JSON.parse(await mod.inspect_delta_detailed_json(plain, 512));
       if (inner.ok) innerDeltaDetail = inner;
+    } else if (plain.length >= 8 && new TextDecoder().decode(plain.subarray(0, 8)) === 'MLSBDL01') {
+      const inner = JSON.parse(await mod.inspect_artifact_json(plain));
+      if (inner.ok && inner.artifact_kind === 'bundle-archive') innerBundleInfo = inner;
     }
   }
   const elapsedMs = performance.now() - t0;
-  lastInspectState = { name, rawBytes: bytes, parsed, detail, innerDeltaDetail, elapsedMs };
+  lastInspectState = { name, rawBytes: bytes, parsed, detail, innerDeltaDetail, innerBundleInfo, elapsedMs };
   renderInspectResult(lastInspectState);
 }
 
@@ -1316,8 +1729,8 @@ wireDropzone(inspectDrop, inspectFile, inspectMeta, async (file) => {
 inspectSampleDeltaBtn.addEventListener('click', async () => {
   const mod = await loadEngine();
   const { oldBuf, newBuf } = makeBuiltInBinaryPair();
-  const sig = mod.create_signature_bytes(oldBuf, 2048, 16);
-  const delta = mod.create_delta_bytes(sig, newBuf);
+  const sig = await mod.create_signature_bytes(oldBuf, 2048, 16);
+  const delta = await mod.create_delta_bytes(sig, newBuf);
   inspectMeta.textContent = `sample-128k.delta (${fmtBytes(delta.length)})`;
   inspectMeta.classList.add('selected');
   await inspectArtifactBytes(delta, 'sample-128k.delta');
@@ -1326,25 +1739,63 @@ inspectSampleDeltaBtn.addEventListener('click', async () => {
 inspectSampleSigBtn.addEventListener('click', async () => {
   const mod = await loadEngine();
   const { oldBuf } = makeBuiltInBinaryPair();
-  const sig = mod.create_signature_bytes(oldBuf, 0, 16);
-  inspectMeta.textContent = `sample-128k.sig (${fmtBytes(sig.length)})`;
+  const sig = await mod.create_signature_with_profile_bytes(oldBuf, 0, 16, 'rollsum-blake2');
+  inspectMeta.textContent = `sample-rollsum-128k.sig (${fmtBytes(sig.length)})`;
   inspectMeta.classList.add('selected');
-  await inspectArtifactBytes(sig, 'sample-128k.sig');
+  await inspectArtifactBytes(sig, 'sample-rollsum-128k.sig');
+});
+
+inspectSampleSealBtn.addEventListener('click', async () => {
+  const mod = await loadEngine();
+  const enc = new TextEncoder();
+  const plain = enc.encode('MoonLibSync 0.6.0 sample MLSENC01 authenticated stream container');
+  const salt = new Uint8Array(16);
+  crypto.getRandomValues(salt);
+  const nonce = new Uint8Array(12);
+  crypto.getRandomValues(nonce.subarray(0, 8));
+  const sealed = JSON.parse(
+    await mod.seal_bytes_json(plain, enc.encode('demo-passphrase'), true, salt, nonce, 65536, 1024, 1),
+  );
+  if (!sealed.ok) return;
+  const mencBytes = hexToBytes(sealed.cipher_hex);
+  inspectMeta.textContent = `sample-release.menc (${fmtBytes(mencBytes.length)})`;
+  inspectMeta.classList.add('selected');
+  await inspectArtifactBytes(mencBytes, 'sample-release.menc');
+});
+
+inspectSamplePubSigBtn.addEventListener('click', async () => {
+  const mod = await loadEngine();
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+  const payload = new TextEncoder().encode('MoonLibSync 0.6.0 sample release payload');
+  const signed = JSON.parse(await mod.ed25519_sign_bytes_json(seed, payload));
+  if (!signed.ok) return;
+  const sigBytes = new TextEncoder().encode(signed.signature_json);
+  inspectMeta.textContent = `release.msig.json (${fmtBytes(sigBytes.length)})`;
+  inspectMeta.classList.add('selected');
+  await inspectArtifactBytes(sigBytes, 'release.msig.json');
 });
 
 // =========================================================================
-// Tab 4: Directory Sync Planner & Integrity Audit (dir-verify + --exclude)
+// Tab 4: Directory Sync Planner, Integrity Audit & .mbundle.gz Pack/Unpack
 // =========================================================================
 function setDirMode(mode) {
   dirMode = mode;
   dirModePlanBtn.classList.toggle('active', mode === 'plan');
   dirModeVerifyBtn.classList.toggle('active', mode === 'verify');
+  dirModeBundleBtn.classList.toggle('active', mode === 'bundle');
+  dirBundlePanel.hidden = mode !== 'bundle';
 }
 dirModePlanBtn.addEventListener('click', () => setDirMode('plan'));
 dirModeVerifyBtn.addEventListener('click', () => setDirMode('verify'));
+dirModeBundleBtn.addEventListener('click', () => setDirMode('bundle'));
 
 fillExcludePresetBtn.addEventListener('click', () => {
   dirExcludeInput.value = '.git, node_modules, *.tmp';
+});
+
+wireDropzone(bundleUnpackDrop, bundleUnpackFile, bundleUnpackMeta, (f) => {
+  droppedBundleArchiveFile = f;
 });
 
 function parseExcludePatterns() {
@@ -1371,20 +1822,23 @@ function normalizeRelativeFolderFiles(fileList) {
 
 function badgeClassForKind(kind) {
   if (kind === 'unchanged') return 'badge badge-unchanged';
-  if (kind === 'add-full') return 'badge badge-add';
-  if (kind === 'update-candidate' || kind === 'modified') return 'badge badge-update';
+  if (kind === 'add-full' || kind === 'copy-from-basis') return 'badge badge-add';
+  if (kind === 'update-candidate' || kind === 'update-delta' || kind === 'update-delta-from' || kind === 'update-full' || kind === 'modified') {
+    return 'badge badge-update';
+  }
   if (kind === 'extra') return 'badge badge-info';
   return 'badge badge-delete';
 }
 
 function renderDirPlan(state) {
-  const { planText, basisSnapText, targetSnapText, patterns, elapsedMs } = state;
+  const { planText, basisSnapText, targetSnapText, patterns, detectMoves, elapsedMs } = state;
   const plan = JSON.parse(planText);
   if (plan.ok === false) {
     dirResultsEl.innerHTML = `<div class="card err-card"><strong>Directory plan error:</strong> <code>${escapeHtml(plan.error)}</code></div>`;
     return;
   }
   const s = plan.summary;
+  const cfbCount = s.copy_from_basis || '0';
   const q = currentDirSearch.trim().toLowerCase();
   const filtered = plan.actions.filter((a) => {
     if (currentDirFilter !== 'all' && a.kind !== currentDirFilter) return false;
@@ -1396,9 +1850,13 @@ function renderDirPlan(state) {
     .map((a) => {
       const bLen = a.basis ? fmtBytes(a.basis.byte_length) : '—';
       const tLen = a.target ? fmtBytes(a.target.byte_length) : '—';
+      const actionExtra =
+        a.kind === 'copy-from-basis' && a.source_path
+          ? ` <span class="hint">← <code>${escapeHtml(a.source_path)}</code> (0 B)</span>`
+          : '';
       return `<tr>
         <td><code>${escapeHtml(a.path)}</code></td>
-        <td><span class="${badgeClassForKind(a.kind)}">${escapeHtml(a.kind)}</span></td>
+        <td><span class="${badgeClassForKind(a.kind)}">${escapeHtml(a.kind)}</span>${actionExtra}</td>
         <td>${bLen}</td>
         <td>${tLen}</td>
       </tr>`;
@@ -1408,6 +1866,7 @@ function renderDirPlan(state) {
   const filterKinds = [
     ['all', `${t('allFilter')} (${plan.actions.length})`],
     ['unchanged', `unchanged (${s.unchanged})`],
+    ['copy-from-basis', `copy-from-basis (${cfbCount})`],
     ['add-full', `add-full (${s.add})`],
     ['update-candidate', `update-candidate (${s.update})`],
     ['delete', `delete (${s.delete})`],
@@ -1420,16 +1879,18 @@ function renderDirPlan(state) {
     .join('');
 
   const exFlags = excludeCliArgs(patterns || []);
+  const moveFlag = detectMoves ? ' --detect-moves' : '';
   const dirCli = [
     `moonlibsync dir-snapshot ./basis basis.snap.json${exFlags}`,
-    `moonlibsync dir-signatures ./basis basis.snap.json ./basis-sigs --block-size auto --streaming`,
-    `moonlibsync dir-pack basis.snap.json ./basis-sigs ./target ./bundle --streaming${exFlags}`,
-    `moonlibsync dir-apply ./basis ./bundle ./restored --streaming`,
+    `moonlibsync dir-plan basis.snap.json target.snap.json${moveFlag}`,
+    `moonlibsync dir-pack basis.snap.json ./basis-sigs ./target ./bundle.mbundle.gz --archive --gzip${moveFlag}${exFlags}`,
+    `moonlibsync dir-apply ./basis ./bundle.mbundle.gz ./restored --streaming`,
   ].join('\n');
 
   dirResultsEl.innerHTML = `
     <div class="stats-grid cols-5">
       <div class="stat-card"><div class="stat-label">Unchanged</div><div class="stat-value">${escapeHtml(s.unchanged)}</div></div>
+      <div class="stat-card"><div class="stat-label">Copy From Basis (0 B)</div><div class="stat-value" style="color:var(--emerald-text)">${escapeHtml(cfbCount)}</div></div>
       <div class="stat-card"><div class="stat-label">Add Full</div><div class="stat-value" style="color:var(--emerald-text)">${escapeHtml(s.add)}</div></div>
       <div class="stat-card"><div class="stat-label">Update Candidate</div><div class="stat-value" style="color:var(--amber-text)">${escapeHtml(s.update)}</div></div>
       <div class="stat-card"><div class="stat-label">Delete</div><div class="stat-value" style="color:var(--rose-text)">${escapeHtml(s.delete)}</div></div>
@@ -1438,7 +1899,7 @@ function renderDirPlan(state) {
 
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title">Schema 3 Sync Plan</h3>
+        <h3 class="card-title">Schema 3 Sync Plan${detectMoves ? ' (--detect-moves)' : ''}</h3>
         <div class="controls-row">
           <button id="dlPlan" class="btn btn-teal btn-sm" type="button">Download plan.json</button>
           <button id="dlBasisSnap" class="btn btn-secondary btn-sm" type="button">basis-snapshot.json</button>
@@ -1650,7 +2111,160 @@ function renderDirVerify(state) {
   });
 }
 
-function buildSnapshotWithExcludes(mod, entries, patterns) {
+function renderBundlePackResult(state) {
+  const { packRes, archiveBytes, elapsedMs } = state;
+  if (!packRes.ok) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle pack error:</strong> <code>${escapeHtml(packRes.error)}</code></div>`;
+    return;
+  }
+  const s = packRes.summary;
+  const ratio = packRes.archive_bytes > 0 ? (packRes.raw_bytes / packRes.archive_bytes).toFixed(2) : '1.00';
+  const ext = packRes.gzip ? '.mbundle.gz' : '.mbundle';
+  const entries = packRes.manifest?.entries || [];
+
+  const rows = entries
+    .map((e) => {
+      let detail = '—';
+      if (e.kind === 'copy-from-basis') {
+        detail = `← <code>${escapeHtml(e.source_path)}</code> (0 B payload)`;
+      } else if (e.kind === 'update-delta-from') {
+        detail = `← <code>${escapeHtml(e.source_path)}</code> · delta ${fmtBytes(e.delta.byte_length)}`;
+      } else if (e.kind === 'update-delta') {
+        detail = `delta ${fmtBytes(e.delta.byte_length)} → ${fmtBytes(e.result.byte_length)}`;
+      } else if (e.kind === 'add-full' || e.kind === 'update-full') {
+        detail = `full ${fmtBytes(e.target.byte_length)}`;
+      } else if (e.kind === 'unchanged') {
+        detail = `${fmtBytes(e.basis.byte_length)} (0 B payload)`;
+      } else if (e.kind === 'delete') {
+        detail = `remove ${fmtBytes(e.basis.byte_length)}`;
+      }
+      return `<tr>
+        <td><code>${escapeHtml(e.path)}</code></td>
+        <td><span class="${badgeClassForKind(e.kind)}">${escapeHtml(e.kind)}</span></td>
+        <td>${detail}</td>
+      </tr>`;
+    })
+    .join('');
+
+  dirResultsEl.innerHTML = `
+    <div class="result-hero">
+      <div class="hero-metric">
+        <span class="hero-pct" style="font-size:1.5rem;">${fmtBytes(packRes.archive_bytes)}</span>
+        <span class="hero-desc">MLSBDL01 raw ${fmtBytes(packRes.raw_bytes)} → ${ext} (${ratio}× · ${elapsedMs.toFixed(1)} ms)</span>
+      </div>
+      <div class="controls-row">
+        ${packRes.gzip ? '<span class="verified-pill info">RFC 1952 Gzip</span>' : '<span class="verified-pill info">Raw MLSBDL01</span>'}
+        <span class="verified-pill">✓ Bundle Packed</span>
+      </div>
+    </div>
+
+    <div class="stats-grid cols-5">
+      <div class="stat-card"><div class="stat-label">Copy From Basis</div><div class="stat-value" style="color:var(--emerald-text)">${escapeHtml(s.copy_from_basis)}</div><div class="stat-sub">0 B wire</div></div>
+      <div class="stat-card"><div class="stat-label">Update Delta</div><div class="stat-value" style="color:var(--amber-text)">${escapeHtml(s.update_delta)}</div></div>
+      <div class="stat-card"><div class="stat-label">Add / Update Full</div><div class="stat-value">${Number(s.add_full) + Number(s.update_full)}</div></div>
+      <div class="stat-card"><div class="stat-label">Unchanged / Delete</div><div class="stat-value">${escapeHtml(s.unchanged)} / ${escapeHtml(s.delete)}</div></div>
+      <div class="stat-card"><div class="stat-label">Total Payloads</div><div class="stat-value">${fmtBytes(s.total_payload_bytes)}</div><div class="stat-sub">${Number(s.total_payload_bytes).toLocaleString()} B</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">MLSBDL01 Bundle Archive (${ext})</h3>
+        <div class="controls-row">
+          <button id="bundleDlArchiveBtn" class="btn btn-teal btn-sm" type="button">${escapeHtml(I18N[lang].bundleDlArchive(packRes.gzip))}</button>
+          <button id="bundleRoundtripUnpackBtn" class="btn btn-primary btn-sm" type="button">${escapeHtml(t('bundleRoundtripBtn'))}</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>${escapeHtml(t('pathCol'))}</th>
+              <th>${escapeHtml(t('actionCol'))}</th>
+              <th>Payload / Source</th>
+            </tr>
+          </thead>
+          <tbody>${rows || `<tr><td colspan="3" style="text-align:center;color:var(--text-subtle);">${escapeHtml(t('emptyDir'))}</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('bundleDlArchiveBtn').addEventListener('click', () => {
+    downloadBlob(
+      archiveBytes,
+      'moonlibsync-bundle' + ext,
+      packRes.gzip ? 'application/gzip' : 'application/octet-stream',
+    );
+  });
+
+  document.getElementById('bundleRoundtripUnpackBtn').addEventListener('click', async () => {
+    if (!lastPackedBundle) return;
+    await runBundleUnpackBytes(lastPackedBundle.basisFilesJson, lastPackedBundle.archiveBytes, 'roundtrip' + ext);
+  });
+}
+
+function renderBundleUnpackResult(state) {
+  const { unpackRes, archiveName, elapsedMs } = state;
+  if (!unpackRes.ok) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle unpack / verification failed:</strong> <code>${escapeHtml(unpackRes.error)}</code></div>`;
+    return;
+  }
+  const files = unpackRes.files || [];
+  const rows = files
+    .map(
+      (f, idx) => `<tr>
+        <td><code>${escapeHtml(f.path)}</code></td>
+        <td><code>${fmtBytes(f.byte_length)}</code> (${Number(f.byte_length).toLocaleString()} B)</td>
+        <td><code style="font-size:0.74rem;">${escapeHtml(f.sha256.slice(0, 20))}...</code></td>
+        <td><button class="btn btn-secondary btn-sm bundle-dl-file" data-idx="${idx}" type="button">${escapeHtml(t('bundleDownloadFile'))}</button></td>
+      </tr>`,
+    )
+    .join('');
+
+  dirResultsEl.innerHTML = `
+    <div class="result-hero">
+      <div class="hero-metric">
+        <span class="hero-pct" style="font-size:1.45rem;">${unpackRes.file_count} Files Restored</span>
+        <span class="hero-desc">${escapeHtml(archiveName)} · ${elapsedMs.toFixed(1)} ms</span>
+      </div>
+      <div class="controls-row">
+        ${unpackRes.was_gzip ? '<span class="verified-pill info">Gzip Auto-Decompressed</span>' : ''}
+        <span class="verified-pill">${escapeHtml(I18N[lang].bundleUnpackOkBadge(unpackRes.file_count))}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Verified Restored Files (SHA-256 Checked)</h3>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>${escapeHtml(t('pathCol'))}</th>
+              <th>Size</th>
+              <th>Verified SHA-256</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-subtle);">${escapeHtml(t('emptyDir'))}</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  for (const btn of dirResultsEl.querySelectorAll('.bundle-dl-file')) {
+    btn.addEventListener('click', () => {
+      const f = files[Number(btn.dataset.idx)];
+      if (!f) return;
+      const baseName = f.path.split('/').pop() || 'file.bin';
+      downloadBlob(hexToBytes(f.content_hex), baseName);
+    });
+  }
+}
+
+async function buildSnapshotWithExcludes(mod, entries, patterns) {
   if (patterns.length > 0) {
     return mod.filter_dir_entries_json(JSON.stringify(entries), JSON.stringify(patterns));
   }
@@ -1661,39 +2275,92 @@ async function buildSnapshotFromFiles(mod, fileList, patterns) {
   const entries = [];
   for (const { rel, file } of normalizeRelativeFolderFiles(fileList)) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const sha256 = mod.sha256_hex_bytes(bytes);
+    const sha256 = await mod.sha256_hex_bytes(bytes);
     entries.push({ path: rel, byte_length: String(bytes.length), sha256 });
   }
   return buildSnapshotWithExcludes(mod, entries, patterns);
 }
 
-function makeSampleDirEntries(mod) {
+function makeSampleRawFiles() {
   const enc = new TextEncoder();
-  const entryOf = (rel, text) => {
-    const b = enc.encode(text);
-    return { path: rel, byte_length: String(b.length), sha256: mod.sha256_hex_bytes(b) };
+  const make = (path, text) => ({ path, bytes: enc.encode(text) });
+  const movedManual =
+    '# MoonLibSync Operations Manual\n' +
+    'Zero-byte content-digest move detection avoids re-uploading renamed files.\n'.repeat(30);
+  const changelogBase =
+    '# Changelog\n' +
+    Array.from({ length: 60 }, (_, i) => `- v0.5.${i}: deterministic streaming check #${i}\n`).join('');
+  const basisFiles = [
+    make('.git/HEAD', 'ref: refs/heads/main\n'),
+    make('README.md', '# MoonLibSync 0.6.0\n'),
+    make('assets/logo.svg', '<svg viewBox="0 0 28 28">v1</svg>'),
+    make('assets/manual-v1.txt', movedManual),
+    make('cache/session.tmp', 'temporary scratch data'),
+    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220)),
+    make('legacy/changelog.md', changelogBase),
+    make('legacy/deprecated.txt', 'old legacy file'),
+  ];
+  const targetFiles = [
+    make('.git/HEAD', 'ref: refs/heads/release-0.6\n'),
+    make('README.md', '# MoonLibSync 0.6.0\n'),
+    make('assets/logo.svg', '<svg viewBox="0 0 28 28">v2-updated-vector</svg>'),
+    make('cache/session.tmp', 'temporary scratch data v2'),
+    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220) + '// v0.6.0 rollsum + crypto\n'),
+    make('docs/manual.txt', movedManual),
+    make('docs/changelog.md', changelogBase + '- v0.6.0: Ed25519 signing, AEAD sealing, and move detection!\n'),
+    make('compress/gzip.mbt', 'pub fn compress_gzip() {}\n'.repeat(30)),
+  ];
+  return { basisFiles, targetFiles };
+}
+
+async function makeSampleDirEntries(mod) {
+  const { basisFiles, targetFiles } = makeSampleRawFiles();
+  const toEntries = async (list) => {
+    const out = [];
+    for (const f of list) {
+      const sha256 = await mod.sha256_hex_bytes(f.bytes);
+      out.push({ path: f.path, byte_length: String(f.bytes.length), sha256 });
+    }
+    return out;
   };
-  const basisEntries = [
-    entryOf('.git/HEAD', 'ref: refs/heads/main\n'),
-    entryOf('README.md', '# MoonLibSync\n'),
-    entryOf('assets/logo.svg', '<svg viewBox="0 0 28 28">v1</svg>'),
-    entryOf('cache/session.tmp', 'temporary scratch data'),
-    entryOf('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(180)),
-    entryOf('legacy/deprecated.txt', 'old legacy file'),
-  ];
-  const targetEntries = [
-    entryOf('.git/HEAD', 'ref: refs/heads/release-0.5\n'),
-    entryOf('README.md', '# MoonLibSync\n'),
-    entryOf('assets/logo.svg', '<svg viewBox="0 0 28 28">v2-updated-vector</svg>'),
-    entryOf('cache/session.tmp', 'temporary scratch data v2'),
-    entryOf('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(180) + '// v0.5.0 streaming\n'),
-    entryOf('docs/dir-sync.md', '# Schema 3 Directory Sync Guide\n'.repeat(40)),
-    entryOf('compress/gzip.mbt', 'pub fn compress_gzip() {}\n'.repeat(30)),
-  ];
+  const [basisEntries, targetEntries] = await Promise.all([
+    toEntries(basisFiles),
+    toEntries(targetFiles),
+  ]);
   return { basisEntries, targetEntries };
 }
 
-function executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, t0) {
+async function filterRawFilesByExcludes(mod, rawFiles, patterns) {
+  if (!patterns.length) return rawFiles;
+  const entries = [];
+  for (const f of rawFiles) {
+    const sha256 = await mod.sha256_hex_bytes(f.bytes);
+    entries.push({ path: f.path, byte_length: String(f.bytes.length), sha256 });
+  }
+  const snap = JSON.parse(
+    await mod.filter_dir_entries_json(JSON.stringify(entries), JSON.stringify(patterns)),
+  );
+  if (snap.ok === false) {
+    throw new Error(snap.error || 'Invalid exclude pattern');
+  }
+  const kept = new Set((snap.entries || []).map((e) => e.path));
+  return rawFiles.filter((f) => kept.has(f.path));
+}
+
+function serializeHexFiles(rawFiles) {
+  return JSON.stringify(rawFiles.map((f) => ({ path: f.path, content_hex: bytesToHex(f.bytes) })));
+}
+
+async function readFolderToRawFiles(fileList) {
+  const out = [];
+  for (const { rel, file } of normalizeRelativeFolderFiles(fileList)) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    out.push({ path: rel, bytes });
+  }
+  return out;
+}
+
+async function executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, detectMoves, t0) {
   const parsedBasis = JSON.parse(basisSnap);
   if (parsedBasis.ok === false) {
     dirResultsEl.innerHTML = `<div class="card err-card"><strong>BASIS / Expected snapshot error:</strong> <code>${escapeHtml(parsedBasis.error)}</code></div>`;
@@ -1707,7 +2374,7 @@ function executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, t0) {
   currentDirFilter = 'all';
   currentDirSearch = '';
   if (mode === 'verify') {
-    const verifyText = mod.verify_dir_snapshots_json(basisSnap, targetSnap);
+    const verifyText = await mod.verify_dir_snapshots_json(basisSnap, targetSnap);
     lastDirState = {
       mode: 'verify',
       verifyText,
@@ -1718,27 +2385,73 @@ function executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, t0) {
     };
     renderDirVerify(lastDirState);
   } else {
-    const planText = mod.plan_dir_snapshots_json(basisSnap, targetSnap);
+    const planText = await mod.plan_dir_snapshots_with_options_json(basisSnap, targetSnap, detectMoves);
     lastDirState = {
       mode: 'plan',
       planText,
       basisSnapText: basisSnap,
       targetSnapText: targetSnap,
       patterns,
+      detectMoves,
       elapsedMs: performance.now() - t0,
     };
     renderDirPlan(lastDirState);
   }
 }
 
-runDirSampleBtn.addEventListener('click', async () => {
+async function runBundlePackRaw(basisRaw, targetRaw) {
   const mod = await loadEngine();
   const patterns = parseExcludePatterns();
+  const detectMoves = !!dirDetectMovesCheckbox.checked;
+  const gzipCompress = !!bundleGzipToggle.checked;
   const t0 = performance.now();
-  const { basisEntries, targetEntries } = makeSampleDirEntries(mod);
-  const basisSnap = buildSnapshotWithExcludes(mod, basisEntries, patterns);
-  const targetSnap = buildSnapshotWithExcludes(mod, targetEntries, patterns);
-  executeDirComparison(mod, basisSnap, targetSnap, dirMode, patterns, t0);
+  try {
+    const [basisKept, targetKept] = await Promise.all([
+      filterRawFilesByExcludes(mod, basisRaw, patterns),
+      filterRawFilesByExcludes(mod, targetRaw, patterns),
+    ]);
+    const basisFilesJson = serializeHexFiles(basisKept);
+    const targetFilesJson = serializeHexFiles(targetKept);
+    const packRes = JSON.parse(
+      await mod.pack_dir_bundle_archive_json(basisFilesJson, targetFilesJson, detectMoves, gzipCompress),
+    );
+    const elapsedMs = performance.now() - t0;
+    const archiveBytes = packRes.ok ? hexToBytes(packRes.archive_hex) : new Uint8Array(0);
+    if (packRes.ok) {
+      lastPackedBundle = { archiveBytes, isGz: packRes.gzip, basisFilesJson, packRes };
+    }
+    lastDirState = { mode: 'bundle-pack', packRes, archiveBytes, elapsedMs };
+    renderBundlePackResult(lastDirState);
+  } catch (err) {
+    dirResultsEl.innerHTML = `<div class="card err-card"><strong>Bundle pack error:</strong> <code>${escapeHtml(err instanceof Error ? err.message : String(err))}</code></div>`;
+  }
+}
+
+async function runBundleUnpackBytes(basisFilesJson, archiveBytes, archiveName) {
+  const mod = await loadEngine();
+  const t0 = performance.now();
+  const unpackRes = JSON.parse(await mod.unpack_dir_bundle_archive_json(basisFilesJson, archiveBytes));
+  const elapsedMs = performance.now() - t0;
+  lastDirState = { mode: 'bundle-unpack', unpackRes, archiveName, elapsedMs };
+  renderBundleUnpackResult(lastDirState);
+}
+
+runDirSampleBtn.addEventListener('click', async () => {
+  if (dirMode === 'bundle') {
+    const { basisFiles, targetFiles } = makeSampleRawFiles();
+    await runBundlePackRaw(basisFiles, targetFiles);
+    return;
+  }
+  const mod = await loadEngine();
+  const patterns = parseExcludePatterns();
+  const detectMoves = !!dirDetectMovesCheckbox.checked;
+  const t0 = performance.now();
+  const { basisEntries, targetEntries } = await makeSampleDirEntries(mod);
+  const [basisSnap, targetSnap] = await Promise.all([
+    buildSnapshotWithExcludes(mod, basisEntries, patterns),
+    buildSnapshotWithExcludes(mod, targetEntries, patterns),
+  ]);
+  await executeDirComparison(mod, basisSnap, targetSnap, dirMode, patterns, detectMoves, t0);
 });
 
 runDirVerifyCleanSampleBtn.addEventListener('click', async () => {
@@ -1746,9 +2459,9 @@ runDirVerifyCleanSampleBtn.addEventListener('click', async () => {
   setDirMode('verify');
   const patterns = parseExcludePatterns();
   const t0 = performance.now();
-  const { basisEntries } = makeSampleDirEntries(mod);
-  const snap = buildSnapshotWithExcludes(mod, basisEntries, patterns);
-  executeDirComparison(mod, snap, snap, 'verify', patterns, t0);
+  const { basisEntries } = await makeSampleDirEntries(mod);
+  const snap = await buildSnapshotWithExcludes(mod, basisEntries, patterns);
+  await executeDirComparison(mod, snap, snap, 'verify', patterns, false, t0);
 });
 
 async function runDirFoldersWithMode(mode) {
@@ -1759,17 +2472,60 @@ async function runDirFoldersWithMode(mode) {
     return;
   }
   const patterns = parseExcludePatterns();
+  const detectMoves = !!dirDetectMovesCheckbox.checked;
   const t0 = performance.now();
-  const basisSnap = await buildSnapshotFromFiles(mod, basisDirInput.files, patterns);
-  const targetSnap = await buildSnapshotFromFiles(mod, targetDirInput.files, patterns);
-  executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, t0);
+  const [basisSnap, targetSnap] = await Promise.all([
+    buildSnapshotFromFiles(mod, basisDirInput.files, patterns),
+    buildSnapshotFromFiles(mod, targetDirInput.files, patterns),
+  ]);
+  await executeDirComparison(mod, basisSnap, targetSnap, mode, patterns, detectMoves, t0);
 }
 
 runDirDiffBtn.addEventListener('click', () => runDirFoldersWithMode('plan'));
 runDirVerifyBtn.addEventListener('click', () => runDirFoldersWithMode('verify'));
 
+runBundleSamplePackBtn.addEventListener('click', async () => {
+  setDirMode('bundle');
+  const { basisFiles, targetFiles } = makeSampleRawFiles();
+  await runBundlePackRaw(basisFiles, targetFiles);
+});
+
+runBundleFolderPackBtn.addEventListener('click', async () => {
+  setDirMode('bundle');
+  if (!basisDirInput.files?.length && !targetDirInput.files?.length) {
+    dirResultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('pickDirWarn'))}</div>`;
+    return;
+  }
+  const [basisRaw, targetRaw] = await Promise.all([
+    readFolderToRawFiles(basisDirInput.files),
+    readFolderToRawFiles(targetDirInput.files),
+  ]);
+  await runBundlePackRaw(basisRaw, targetRaw);
+});
+
+runBundleUnpackBtn.addEventListener('click', async () => {
+  const archiveFile = droppedBundleArchiveFile || bundleUnpackFile.files?.[0];
+  if (!archiveFile) {
+    dirResultsEl.innerHTML = `<div class="card err-card">${escapeHtml(t('bundlePickArchiveWarn'))}</div>`;
+    return;
+  }
+  const mod = await loadEngine();
+  const patterns = parseExcludePatterns();
+  const archiveBytes = new Uint8Array(await archiveFile.arrayBuffer());
+  let basisFilesJson;
+  if (basisDirInput.files?.length) {
+    const basisRaw = await filterRawFilesByExcludes(mod, await readFolderToRawFiles(basisDirInput.files), patterns);
+    basisFilesJson = serializeHexFiles(basisRaw);
+  } else {
+    const { basisFiles } = makeSampleRawFiles();
+    const basisKept = await filterRawFilesByExcludes(mod, basisFiles, patterns);
+    basisFilesJson = serializeHexFiles(basisKept);
+  }
+  await runBundleUnpackBytes(basisFilesJson, archiveBytes, archiveFile.name);
+});
+
 // =========================================================================
-// Tab 5: Gzip Security Defense Lab
+// Tab 5: Security & Crypto Lab (Gzip Guard + Ed25519 + MLSENC01 AEAD)
 // =========================================================================
 const runAllLabBtn = document.getElementById('runAllLab');
 const runBombBtn = document.getElementById('runBombBtn');
@@ -1787,10 +2543,10 @@ const labCustomOut = document.getElementById('labCustomOut');
 async function runBombDrill() {
   const mod = await loadEngine();
   const raw = new Uint8Array(262144);
-  const gz = mod.compress_gzip_bytes(raw, 6);
-  const res = JSON.parse(mod.decompress_gzip_check_json(gz, 4096));
+  const gz = await mod.compress_gzip_bytes(raw, 6);
+  const res = JSON.parse(await mod.decompress_gzip_check_json(gz, 4096));
   const ratio = (raw.length / gz.length).toFixed(0);
-  labBombOut.className = 'lab-out ' + (!res.ok && res.error === 'LimitExceeded' ? 'blocked' : '');
+  labBombOut.className = 'lab-out ' + (!res.ok && res.error === 'LimitExceeded' ? 'blocked' : 'err');
   labBombOut.textContent = !res.ok
     ? `✓ BLOCKED (${res.error}) — 256 KiB → ${gz.length} B bomb (${ratio}×) stopped at 4,096 B cap`
     : `Unexpected pass: ${JSON.stringify(res)}`;
@@ -1799,12 +2555,12 @@ async function runBombDrill() {
 async function runTrailingDrill() {
   const mod = await loadEngine();
   const sample = new TextEncoder().encode('moonlibsync-strict-framing-check');
-  const gz = mod.compress_gzip_bytes(sample, 6);
+  const gz = await mod.compress_gzip_bytes(sample, 6);
   const forged = new Uint8Array(gz.length + 1);
   forged.set(gz, 0);
   forged[gz.length] = 0x42;
-  const res = JSON.parse(mod.decompress_gzip_check_json(forged, 65536));
-  labTrailOut.className = 'lab-out ' + (!res.ok && res.error === 'TrailingData' ? 'blocked' : '');
+  const res = JSON.parse(await mod.decompress_gzip_check_json(forged, 65536));
+  labTrailOut.className = 'lab-out ' + (!res.ok && res.error === 'TrailingData' ? 'blocked' : 'err');
   labTrailOut.textContent = !res.ok
     ? `✓ BLOCKED (${res.error}) — ${gz.length} B valid frame + 1 rogue byte rejected`
     : `Unexpected pass: ${JSON.stringify(res)}`;
@@ -1813,10 +2569,10 @@ async function runTrailingDrill() {
 async function runTruncatedDrill() {
   const mod = await loadEngine();
   const sample = new TextEncoder().encode('moonlibsync-strict-trailer-check');
-  const gz = mod.compress_gzip_bytes(sample, 6);
+  const gz = await mod.compress_gzip_bytes(sample, 6);
   const trunc = gz.subarray(0, gz.length - 1);
-  const res = JSON.parse(mod.decompress_gzip_check_json(trunc, 65536));
-  labTruncOut.className = 'lab-out ' + (!res.ok && res.error === 'TruncatedInput' ? 'blocked' : '');
+  const res = JSON.parse(await mod.decompress_gzip_check_json(trunc, 65536));
+  labTruncOut.className = 'lab-out ' + (!res.ok && res.error === 'TruncatedInput' ? 'blocked' : 'err');
   labTruncOut.textContent = !res.ok
     ? `✓ BLOCKED (${res.error}) — ${trunc.length}/${gz.length} B truncated trailer rejected`
     : `Unexpected pass: ${JSON.stringify(res)}`;
@@ -1827,8 +2583,8 @@ async function runCustomGzipDrill() {
   const raw = new TextEncoder().encode(labInputEl.value || '');
   const level = Number(labLevelEl.value);
   const cap = Math.max(0, Number(labMaxOutEl.value) || 0);
-  const gz = mod.compress_gzip_bytes(raw, level);
-  const check = JSON.parse(mod.decompress_gzip_check_json(gz, cap));
+  const gz = await mod.compress_gzip_bytes(raw, level);
+  const check = JSON.parse(await mod.decompress_gzip_check_json(gz, cap));
   if (check.ok) {
     const pct = raw.length > 0 ? ((gz.length / raw.length) * 100).toFixed(1) : '100.0';
     labCustomOut.className = 'lab-out blocked';
@@ -1850,6 +2606,266 @@ runAllLabBtn.addEventListener('click', async () => {
   await runTrailingDrill();
   await runTruncatedDrill();
   await runCustomGzipDrill();
+});
+
+// --- Card 2: Ed25519 Publisher Sign & Verify Lab ---
+const edGenKeyBtn = document.getElementById('edGenKeyBtn');
+const edKeyIdVal = document.getElementById('edKeyIdVal');
+const edPubKeyVal = document.getElementById('edPubKeyVal');
+const edCopyKeyIdBtn = document.getElementById('edCopyKeyIdBtn');
+const edCopyPubKeyBtn = document.getElementById('edCopyPubKeyBtn');
+const edPayloadInput = document.getElementById('edPayloadInput');
+const edSignBtn = document.getElementById('edSignBtn');
+const edDlSigBtn = document.getElementById('edDlSigBtn');
+const edSigPreview = document.getElementById('edSigPreview');
+const edVerifyValidBtn = document.getElementById('edVerifyValidBtn');
+const edVerifyTamperBtn = document.getElementById('edVerifyTamperBtn');
+const edVerifyUntrustedBtn = document.getElementById('edVerifyUntrustedBtn');
+const edVerifyOut = document.getElementById('edVerifyOut');
+
+async function ensureEdKeypair(forceNew = false) {
+  if (edState && !forceNew) return edState;
+  const mod = await loadEngine();
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+  const kp = JSON.parse(await mod.ed25519_keypair_from_seed_json(seed));
+  if (!kp.ok) throw new Error(kp.error || 'Keypair generation failed');
+  edState = {
+    seed,
+    keyId: kp.key_id,
+    publicKeyHex: kp.public_key_hex,
+    lastSigJson: null,
+    lastPayloadBytes: null,
+  };
+  edKeyIdVal.textContent = kp.key_id;
+  edPubKeyVal.textContent = kp.public_key_hex;
+  edDlSigBtn.disabled = true;
+  edSigPreview.hidden = true;
+  return edState;
+}
+
+async function runEdSign() {
+  const state = await ensureEdKeypair(false);
+  const mod = await loadEngine();
+  const payloadBytes = new TextEncoder().encode(edPayloadInput.value || '');
+  const t0 = performance.now();
+  const signed = JSON.parse(await mod.ed25519_sign_bytes_json(state.seed, payloadBytes));
+  const elapsed = performance.now() - t0;
+  if (!signed.ok) {
+    edVerifyOut.className = 'lab-out err';
+    edVerifyOut.textContent = `✕ Sign failed: ${signed.error}`;
+    return null;
+  }
+  state.lastSigJson = signed.signature_json;
+  state.lastPayloadBytes = payloadBytes;
+  edSigPreview.textContent = JSON.stringify(signed.signature, null, 2);
+  edSigPreview.hidden = false;
+  edDlSigBtn.disabled = false;
+  edVerifyOut.className = 'lab-out blocked';
+  edVerifyOut.textContent = `✓ Signed ${payloadBytes.length} B with key_id=${state.keyId} (${elapsed.toFixed(1)} ms) — ready to verify or download .msig.json`;
+  return state;
+}
+
+edGenKeyBtn.addEventListener('click', async () => {
+  const st = await ensureEdKeypair(true);
+  edVerifyOut.className = 'lab-out blocked';
+  edVerifyOut.textContent = `✓ Generated new RFC 8032 Ed25519 keypair · key_id=${st.keyId}`;
+});
+
+edCopyKeyIdBtn.addEventListener('click', () => {
+  if (edState && navigator.clipboard) {
+    navigator.clipboard.writeText(edState.keyId);
+    edCopyKeyIdBtn.textContent = t('copiedBtn');
+    setTimeout(() => { edCopyKeyIdBtn.textContent = t('copyBtn'); }, 1200);
+  }
+});
+
+edCopyPubKeyBtn.addEventListener('click', () => {
+  if (edState && navigator.clipboard) {
+    navigator.clipboard.writeText(edState.publicKeyHex);
+    edCopyPubKeyBtn.textContent = t('copiedBtn');
+    setTimeout(() => { edCopyPubKeyBtn.textContent = t('copyBtn'); }, 1200);
+  }
+});
+
+edSignBtn.addEventListener('click', runEdSign);
+
+edDlSigBtn.addEventListener('click', () => {
+  if (edState?.lastSigJson) {
+    downloadBlob(edState.lastSigJson, `publisher-${edState.keyId}.msig.json`, 'application/json');
+  }
+});
+
+edVerifyValidBtn.addEventListener('click', async () => {
+  const state = edState?.lastSigJson ? edState : await runEdSign();
+  if (!state) return;
+  const mod = await loadEngine();
+  const t0 = performance.now();
+  const res = JSON.parse(
+    await mod.ed25519_verify_bytes_json(
+      state.lastSigJson,
+      JSON.stringify([state.publicKeyHex]),
+      state.lastPayloadBytes,
+    ),
+  );
+  const elapsed = performance.now() - t0;
+  edVerifyOut.className = 'lab-out ' + (res.ok && res.verified ? 'blocked' : 'err');
+  edVerifyOut.textContent = res.ok
+    ? `✓ Verified (Ed25519 OK · ${elapsed.toFixed(1)} ms) — key_id=${res.key_id} · payload=${res.payload_length} B · sha256=${res.payload_sha256.slice(0, 16)}...`
+    : `✕ Verification failed: ${res.error}`;
+});
+
+edVerifyTamperBtn.addEventListener('click', async () => {
+  const state = edState?.lastSigJson ? edState : await runEdSign();
+  if (!state) return;
+  const mod = await loadEngine();
+  const tampered = new Uint8Array(state.lastPayloadBytes.length || 1);
+  tampered.set(state.lastPayloadBytes);
+  tampered[0] = (tampered[0] ^ 0x01) & 0xff;
+  const res = JSON.parse(
+    await mod.ed25519_verify_bytes_json(
+      state.lastSigJson,
+      JSON.stringify([state.publicKeyHex]),
+      tampered,
+    ),
+  );
+  edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('DigestMismatch') ? 'blocked' : 'err');
+  edVerifyOut.textContent = !res.verified
+    ? `✕ ${res.error} — 1-byte payload tamper rejected as expected!`
+    : `Unexpected pass: ${JSON.stringify(res)}`;
+});
+
+edVerifyUntrustedBtn.addEventListener('click', async () => {
+  const state = edState?.lastSigJson ? edState : await runEdSign();
+  if (!state) return;
+  const mod = await loadEngine();
+  const otherSeed = new Uint8Array(32);
+  crypto.getRandomValues(otherSeed);
+  const otherKp = JSON.parse(await mod.ed25519_keypair_from_seed_json(otherSeed));
+  const res = JSON.parse(
+    await mod.ed25519_verify_bytes_json(
+      state.lastSigJson,
+      JSON.stringify([otherKp.public_key_hex]),
+      state.lastPayloadBytes,
+    ),
+  );
+  edVerifyOut.className = 'lab-out ' + (!res.verified && String(res.error).startsWith('UntrustedKey') ? 'blocked' : 'err');
+  edVerifyOut.textContent = !res.verified
+    ? `✕ ${res.error} — signer key not in trusted set rejected as expected!`
+    : `Unexpected pass: ${JSON.stringify(res)}`;
+});
+
+// --- Card 3: AEAD Streaming Encryption Lab (MLSENC01) ---
+const aeadModeSelect = document.getElementById('aeadModeSelect');
+const aeadArgonMem = document.getElementById('aeadArgonMem');
+const aeadArgonPasses = document.getElementById('aeadArgonPasses');
+const aeadSecretInput = document.getElementById('aeadSecretInput');
+const aeadGenRawKeyBtn = document.getElementById('aeadGenRawKeyBtn');
+const aeadPlainInput = document.getElementById('aeadPlainInput');
+const aeadSealBtn = document.getElementById('aeadSealBtn');
+const aeadDlMencBtn = document.getElementById('aeadDlMencBtn');
+const aeadUnsealBtn = document.getElementById('aeadUnsealBtn');
+const aeadTamperBtn = document.getElementById('aeadTamperBtn');
+const aeadOut = document.getElementById('aeadOut');
+
+function generateRandomRawKeyHex() {
+  const key = new Uint8Array(32);
+  crypto.getRandomValues(key);
+  return bytesToHex(key);
+}
+
+aeadGenRawKeyBtn.addEventListener('click', () => {
+  aeadModeSelect.value = 'raw-key';
+  aeadSecretInput.value = generateRandomRawKeyHex();
+  aeadOut.className = 'lab-out blocked';
+  aeadOut.textContent = '✓ Generated random 32-byte raw ChaCha20-Poly1305 key (64 hex chars).';
+});
+
+aeadModeSelect.addEventListener('change', () => {
+  if (aeadModeSelect.value === 'raw-key' && !/^[0-9a-fA-F]{64}$/.test(aeadSecretInput.value.trim())) {
+    aeadSecretInput.value = generateRandomRawKeyHex();
+  } else if (aeadModeSelect.value === 'argon2id' && /^[0-9a-fA-F]{64}$/.test(aeadSecretInput.value.trim())) {
+    aeadSecretInput.value = 'moonlibsync-060-browser-passphrase';
+  }
+});
+
+function getCurrentAeadSecret() {
+  const usePassphrase = aeadModeSelect.value === 'argon2id';
+  const raw = aeadSecretInput.value || '';
+  if (usePassphrase) {
+    return { usePassphrase: true, secretBytes: new TextEncoder().encode(raw) };
+  }
+  const keyBytes = hexToBytes(raw);
+  return { usePassphrase: false, secretBytes: keyBytes };
+}
+
+async function runAeadSeal() {
+  const mod = await loadEngine();
+  const plainBytes = new TextEncoder().encode(aeadPlainInput.value || '');
+  const { usePassphrase, secretBytes } = getCurrentAeadSecret();
+  const salt16 = new Uint8Array(16);
+  crypto.getRandomValues(salt16);
+  const noncePrefix12 = new Uint8Array(12);
+  crypto.getRandomValues(noncePrefix12.subarray(0, 8)); // bytes 8..11 stay 0x00
+  const memKib = Number(aeadArgonMem.value) || 1024;
+  const passes = Number(aeadArgonPasses.value) || 1;
+  const t0 = performance.now();
+  const res = JSON.parse(
+    await mod.seal_bytes_json(plainBytes, secretBytes, usePassphrase, salt16, noncePrefix12, 65536, memKib, passes),
+  );
+  const elapsed = performance.now() - t0;
+  if (!res.ok) {
+    aeadOut.className = 'lab-out err';
+    aeadOut.textContent = `✕ Seal failed: ${res.error}`;
+    return null;
+  }
+  const cipherBytes = hexToBytes(res.cipher_hex);
+  aeadState = { cipherBytes, usePassphrase, secretBytes };
+  aeadDlMencBtn.disabled = false;
+  aeadOut.className = 'lab-out blocked';
+  aeadOut.textContent = `✓ Sealed MLSENC01 (${res.kdf_mode}) — plain=${res.plain_bytes} B → cipher=${res.cipher_bytes} B (56 B header + AEAD tag · ${elapsed.toFixed(1)} ms) · header=${toHexPreview(cipherBytes, 16)}`;
+  return aeadState;
+}
+
+aeadSealBtn.addEventListener('click', runAeadSeal);
+
+aeadDlMencBtn.addEventListener('click', () => {
+  if (aeadState?.cipherBytes?.length) {
+    downloadBlob(aeadState.cipherBytes, 'sealed-payload.menc', 'application/octet-stream');
+  }
+});
+
+aeadUnsealBtn.addEventListener('click', async () => {
+  const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
+  if (!state) return;
+  const mod = await loadEngine();
+  const { usePassphrase, secretBytes } = getCurrentAeadSecret();
+  const t0 = performance.now();
+  const res = JSON.parse(await mod.unseal_bytes_json(state.cipherBytes, secretBytes, usePassphrase));
+  const elapsed = performance.now() - t0;
+  if (res.ok) {
+    const plainText = new TextDecoder().decode(hexToBytes(res.plain_hex));
+    const snippet = plainText.length > 72 ? plainText.slice(0, 72) + '…' : plainText;
+    aeadOut.className = 'lab-out blocked';
+    aeadOut.textContent = `✓ Authenticated (${res.kdf_mode} · ${elapsed.toFixed(1)} ms) — plain=${res.plain_bytes} B · sha256=${res.plain_sha256.slice(0, 16)}... · "${snippet}"`;
+  } else {
+    aeadOut.className = 'lab-out err';
+    aeadOut.textContent = `✕ Unseal failed (${res.error})`;
+  }
+});
+
+aeadTamperBtn.addEventListener('click', async () => {
+  const state = aeadState?.cipherBytes?.length ? aeadState : await runAeadSeal();
+  if (!state) return;
+  const mod = await loadEngine();
+  const tampered = new Uint8Array(state.cipherBytes.length);
+  tampered.set(state.cipherBytes);
+  tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff;
+  const res = JSON.parse(await mod.unseal_bytes_json(tampered, state.secretBytes, state.usePassphrase));
+  aeadOut.className = 'lab-out ' + (!res.ok && res.error === 'AuthenticationFailed' ? 'blocked' : 'err');
+  aeadOut.textContent = !res.ok
+    ? `✕ ${res.error} — 1-byte ciphertext / Poly1305 tag tamper rejected as expected!`
+    : `Unexpected pass: ${JSON.stringify(res)}`;
 });
 
 applyTheme();

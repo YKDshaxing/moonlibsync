@@ -16,11 +16,21 @@ pub fn create_delta_bytes(Bytes, Bytes) -> Bytes
 
 pub fn create_dir_snapshot_json(String) -> String
 
+pub fn create_reverse_delta_bytes(Bytes, Bytes, Int32, Int32) -> Bytes
+
 pub fn create_signature_bytes(Bytes, Int32, Int32) -> Bytes
+
+pub fn create_signature_with_profile_bytes(Bytes, Int32, Int32, String) -> Bytes
 
 pub fn decompress_gzip_bytes(Bytes, Int32) -> Bytes
 
 pub fn decompress_gzip_check_json(Bytes, Int32) -> String
+
+pub fn ed25519_keypair_from_seed_json(Bytes) -> String
+
+pub fn ed25519_sign_bytes_json(Bytes, Bytes) -> String
+
+pub fn ed25519_verify_bytes_json(String, String, Bytes) -> String
 
 pub fn filter_dir_entries_json(String, String) -> String
 
@@ -28,11 +38,21 @@ pub fn inspect_artifact_json(Bytes) -> String
 
 pub fn inspect_delta_detailed_json(Bytes, Int32) -> String
 
+pub fn pack_dir_bundle_archive_json(String, String, Bool, Bool) -> String
+
 pub fn plan_dir_snapshots_json(String, String) -> String
+
+pub fn plan_dir_snapshots_with_options_json(String, String, Bool) -> String
 
 pub fn run_streaming_sync_json(Bytes, Bytes, Int32, Int32, Int32) -> String
 
+pub fn seal_bytes_json(Bytes, Bytes, Bool, Bytes, Bytes, Int32, Int32, Int32) -> String
+
 pub fn sha256_hex_bytes(Bytes) -> String
+
+pub fn unpack_dir_bundle_archive_json(String, Bytes) -> String
+
+pub fn unseal_bytes_json(Bytes, Bytes, Bool) -> String
 
 pub fn verify_dir_snapshots_json(String, String) -> String
 

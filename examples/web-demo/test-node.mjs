@@ -508,6 +508,409 @@ if (
   throw new Error('apply_patch_or_gzip_bytes roundtrip or error fallback failed');
 }
 
+// =========================================================================
+// 0.6.0 Tests: Verify all 27 exports & every new capability
+// =========================================================================
+const expectedExports = [
+  'run_streaming_sync_json',
+  'create_signature_bytes',
+  'create_delta_bytes',
+  'apply_patch_bytes',
+  'sha256_hex_bytes',
+  'compress_gzip_bytes',
+  'decompress_gzip_bytes',
+  'decompress_gzip_check_json',
+  'create_dir_snapshot_json',
+  'plan_dir_snapshots_json',
+  'inspect_delta_detailed_json',
+  'inspect_artifact_json',
+  'benchmark_block_sizes_json',
+  'verify_dir_snapshots_json',
+  'filter_dir_entries_json',
+  'apply_verified_patch_json',
+  'apply_patch_or_gzip_bytes',
+  'create_signature_with_profile_bytes',
+  'create_reverse_delta_bytes',
+  'plan_dir_snapshots_with_options_json',
+  'pack_dir_bundle_archive_json',
+  'unpack_dir_bundle_archive_json',
+  'ed25519_keypair_from_seed_json',
+  'ed25519_sign_bytes_json',
+  'ed25519_verify_bytes_json',
+  'seal_bytes_json',
+  'unseal_bytes_json',
+];
+for (const name of expectedExports) {
+  if (typeof wasmSync[name] !== 'function') {
+    throw new Error(`Missing expected 0.6.0 export: ${name}`);
+  }
+}
+
+const bytesToHex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+const hexToBytes = (h) => {
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+  return out;
+};
+
+// 11. NEW (0.6.0): Literal preview_hex / preview_utf8 / preview_truncated in inspect_delta_detailed_json.
+const litItems = detailed.items.filter((it) => it.kind === 'literal');
+if (litItems.length === 0) {
+  throw new Error('Expected at least one literal command in detailed delta');
+}
+for (const lit of litItems) {
+  if (
+    typeof lit.index !== 'number' ||
+    typeof lit.preview_hex !== 'string' ||
+    typeof lit.preview_utf8 !== 'string' ||
+    typeof lit.preview_truncated !== 'boolean'
+  ) {
+    throw new Error('Missing 0.6.0 literal preview fields: ' + JSON.stringify(lit));
+  }
+  const expectedPreviewBytes = Math.min(Number(lit.length), 64);
+  if (
+    lit.preview_hex.length !== expectedPreviewBytes * 2 ||
+    lit.preview_utf8.length !== expectedPreviewBytes ||
+    lit.preview_truncated !== (Number(lit.length) > 64)
+  ) {
+    throw new Error('Literal preview length/truncation mismatch: ' + JSON.stringify(lit));
+  }
+}
+// Explicit short literal with control/high bytes + quote + backslash escaping
+const litOld = enc.encode('A'.repeat(2048));
+const litPayload = new Uint8Array([0x00, 0x22, 0x5c, 0x48, 0x69, 0x7f, 0xff]); // \0 "\Hi \x7f \xff
+const litNew = new Uint8Array(litOld.length + litPayload.length);
+litNew.set(litOld, 0);
+litNew.set(litPayload, litOld.length);
+const litDelta = wasmSync.create_delta_bytes(wasmSync.create_signature_bytes(litOld, 512, 16), litNew);
+const litDetail = JSON.parse(wasmSync.inspect_delta_detailed_json(litDelta, 64));
+const shortLit = litDetail.items.find((it) => it.kind === 'literal');
+if (
+  !shortLit ||
+  shortLit.preview_hex !== '00225c48697fff' ||
+  shortLit.preview_utf8 !== '."\\Hi..' ||
+  shortLit.preview_truncated !== false
+) {
+  throw new Error('Unexpected short literal preview encoding: ' + JSON.stringify(shortLit));
+}
+
+// 12. NEW (0.6.0): create_signature_with_profile_bytes (0x72730137 Rollsum+BLAKE2b + 0x72730147 RK+BLAKE2b).
+const rollsumSig = wasmSync.create_signature_with_profile_bytes(oldBytes, 0, 16, 'rollsum-blake2');
+const rkSig = wasmSync.create_signature_with_profile_bytes(oldBytes, 0, 16, 'rk-blake2');
+if (
+  rollsumSig[0] !== 0x72 ||
+  rollsumSig[1] !== 0x73 ||
+  rollsumSig[2] !== 0x01 ||
+  rollsumSig[3] !== 0x37 ||
+  rkSig[3] !== 0x47
+) {
+  throw new Error('Signature profile magic bytes mismatch');
+}
+const insRollsum = JSON.parse(wasmSync.inspect_artifact_json(rollsumSig));
+if (
+  !insRollsum.ok ||
+  insRollsum.artifact_kind !== 'signature' ||
+  insRollsum.summary.magic !== '0x72730137' ||
+  insRollsum.summary.profile !== 'rollsum-blake2'
+) {
+  throw new Error('inspect_artifact_json(rollsum sig) failed: ' + JSON.stringify(insRollsum));
+}
+const rollsumDelta = wasmSync.create_delta_bytes(rollsumSig, newBytes);
+const rollsumRestored = wasmSync.apply_patch_bytes(oldBytes, rollsumDelta);
+if (wasmSync.sha256_hex_bytes(rollsumRestored) !== res.new_sha256) {
+  throw new Error('Rollsum signature delta/patch roundtrip mismatch');
+}
+
+// 13. NEW (0.6.0): create_reverse_delta_bytes (NEW -> OLD rollback delta).
+const revDelta = wasmSync.create_reverse_delta_bytes(oldBytes, newBytes, 0, 0);
+if (revDelta.length < 5) {
+  throw new Error('create_reverse_delta_bytes returned empty/short delta');
+}
+const rolledBack = wasmSync.apply_patch_bytes(newBytes, revDelta);
+if (
+  rolledBack.length !== oldBytes.length ||
+  wasmSync.sha256_hex_bytes(rolledBack) !== res.old_sha256
+) {
+  throw new Error('Reverse delta rollback verification failed');
+}
+
+// 14. NEW (0.6.0): plan_dir_snapshots_with_options_json (detect_moves=true vs false).
+const movedBody = 'IDENTICAL-MOVED-CONTENT-BLOCK-'.repeat(40);
+const moveSnapBasis = wasmSync.create_dir_snapshot_json(
+  JSON.stringify([
+    makeEntry('keep.txt', 'same'),
+    makeEntry('old/moved.txt', movedBody),
+  ]),
+);
+const moveSnapTarget = wasmSync.create_dir_snapshot_json(
+  JSON.stringify([
+    makeEntry('keep.txt', 'same'),
+    makeEntry('new/moved.txt', movedBody),
+  ]),
+);
+const movePlanOnText = wasmSync.plan_dir_snapshots_with_options_json(moveSnapBasis, moveSnapTarget, true);
+const movePlanOn = JSON.parse(movePlanOnText);
+const movePlanOff = JSON.parse(
+  wasmSync.plan_dir_snapshots_with_options_json(moveSnapBasis, moveSnapTarget, false),
+);
+if (
+  movePlanOn.schema_version !== 3 ||
+  movePlanOn.summary.copy_from_basis !== '1' ||
+  movePlanOn.summary.add !== '0' ||
+  movePlanOn.summary.transfer_upper_bound_bytes !== '0' ||
+  !movePlanOn.actions.some((a) => a.path === 'new/moved.txt' && a.kind === 'copy-from-basis' && a.source_path === 'old/moved.txt')
+) {
+  throw new Error('detect_moves=true plan mismatch: ' + JSON.stringify(movePlanOn));
+}
+if (
+  movePlanOff.summary.add !== '1' ||
+  movePlanOff.summary.delete !== '1' ||
+  Number(movePlanOff.summary.transfer_upper_bound_bytes) !== enc.encode(movedBody).length
+) {
+  throw new Error('detect_moves=false plan mismatch: ' + JSON.stringify(movePlanOff));
+}
+const insMovePlan = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(movePlanOnText)));
+if (!insMovePlan.ok || insMovePlan.summary.copy_from_basis !== '1') {
+  throw new Error('inspect_artifact_json(move plan) failed: ' + JSON.stringify(insMovePlan));
+}
+
+// 15. NEW (0.6.0): pack_dir_bundle_archive_json & unpack_dir_bundle_archive_json (.mbundle.gz + raw .mbundle).
+const makeHexFile = (p, text) => ({ path: p, content_hex: bytesToHex(enc.encode(text)) });
+const bigBase = 'LINE-UNCHANGED-BLOCK-DATA-0123456789\n'.repeat(180);
+const bigMovedEditedBase = 'CHANGELOG-ENTRY-LINE-ABCDEF\n'.repeat(120);
+const packBasisFiles = [
+  makeHexFile('README.md', '# Unchanged'),
+  makeHexFile('assets/manual-v1.txt', movedBody),
+  makeHexFile('src/app.mbt', bigBase),
+  makeHexFile('tiny.txt', 'v1'),
+  makeHexFile('legacy/changelog.md', bigMovedEditedBase),
+  makeHexFile('drop.txt', 'delete me'),
+];
+const packTargetFiles = [
+  makeHexFile('README.md', '# Unchanged'),
+  makeHexFile('docs/manual.txt', movedBody),
+  makeHexFile('src/app.mbt', bigBase + '// patched v0.6.0\n'),
+  makeHexFile('tiny.txt', 'v2-full'),
+  makeHexFile('docs/changelog.md', bigMovedEditedBase + '+ moved and edited v0.6.0\n'),
+  makeHexFile('added.txt', 'brand new file'),
+];
+const packGz = JSON.parse(
+  wasmSync.pack_dir_bundle_archive_json(
+    JSON.stringify(packBasisFiles),
+    JSON.stringify(packTargetFiles),
+    true,
+    true,
+  ),
+);
+if (
+  !packGz.ok ||
+  packGz.gzip !== true ||
+  packGz.archive_bytes >= packGz.raw_bytes ||
+  packGz.summary.copy_from_basis !== '1' ||
+  packGz.summary.unchanged !== '1' ||
+  packGz.summary.delete !== '3' ||
+  packGz.summary.update_full !== '1' ||
+  packGz.summary.add_full !== '1' ||
+  Number(packGz.summary.update_delta) !== 2 ||
+  !packGz.manifest.entries.some((e) => e.path === 'docs/manual.txt' && e.kind === 'copy-from-basis') ||
+  !packGz.manifest.entries.some((e) => e.path === 'docs/changelog.md' && e.kind === 'update-delta-from')
+) {
+  throw new Error('pack_dir_bundle_archive_json(gzip) failed: ' + JSON.stringify(packGz));
+}
+const archiveGzBytes = hexToBytes(packGz.archive_hex);
+const unpackedGz = JSON.parse(
+  wasmSync.unpack_dir_bundle_archive_json(JSON.stringify(packBasisFiles), archiveGzBytes),
+);
+if (!unpackedGz.ok || unpackedGz.was_gzip !== true || unpackedGz.file_count !== packTargetFiles.length) {
+  throw new Error('unpack_dir_bundle_archive_json(gzip) failed: ' + JSON.stringify(unpackedGz));
+}
+const unpackedByPath = new Map(unpackedGz.files.map((f) => [f.path, f]));
+for (const expected of packTargetFiles) {
+  const got = unpackedByPath.get(expected.path);
+  if (!got || got.content_hex !== expected.content_hex) {
+    throw new Error(`Unpacked file mismatch for ${expected.path}`);
+  }
+}
+// Raw (non-gzip) pack + inspect_artifact_json + unpack + basis tamper rejection
+const packRaw = JSON.parse(
+  wasmSync.pack_dir_bundle_archive_json(
+    JSON.stringify(packBasisFiles),
+    JSON.stringify(packTargetFiles),
+    true,
+    false,
+  ),
+);
+const archiveRawBytes = hexToBytes(packRaw.archive_hex);
+const insRawBundle = JSON.parse(wasmSync.inspect_artifact_json(archiveRawBytes));
+if (!insRawBundle.ok || insRawBundle.artifact_kind !== 'bundle-archive' || insRawBundle.summary.copy_from_basis !== '1') {
+  throw new Error('inspect_artifact_json(packed raw bundle) failed: ' + JSON.stringify(insRawBundle));
+}
+const unpackedRaw = JSON.parse(
+  wasmSync.unpack_dir_bundle_archive_json(JSON.stringify(packBasisFiles), archiveRawBytes),
+);
+if (!unpackedRaw.ok || unpackedRaw.was_gzip !== false || unpackedRaw.file_count !== packTargetFiles.length) {
+  throw new Error('unpack_dir_bundle_archive_json(raw) failed: ' + JSON.stringify(unpackedRaw));
+}
+const tamperedBasis = packBasisFiles.map((f) =>
+  f.path === 'assets/manual-v1.txt' ? { ...f, content_hex: bytesToHex(enc.encode('CORRUPTED')) } : f,
+);
+const unpackTampered = JSON.parse(
+  wasmSync.unpack_dir_bundle_archive_json(JSON.stringify(tamperedBasis), archiveGzBytes),
+);
+if (unpackTampered.ok !== false || !String(unpackTampered.error).includes('BindingMismatch')) {
+  throw new Error('Expected BindingMismatch on tampered basis unpack: ' + JSON.stringify(unpackTampered));
+}
+
+// 16. NEW (0.6.0): Ed25519 keygen, sign, verify, 1-byte tamper, untrusted key + inspect_artifact_json.
+const seed1 = new Uint8Array(32);
+const seed2 = new Uint8Array(32);
+for (let i = 0; i < 32; i++) {
+  seed1[i] = (i * 13 + 7) & 0xff;
+  seed2[i] = (i * 29 + 3) & 0xff;
+}
+const kp1 = JSON.parse(wasmSync.ed25519_keypair_from_seed_json(seed1));
+const kp2 = JSON.parse(wasmSync.ed25519_keypair_from_seed_json(seed2));
+if (
+  !kp1.ok ||
+  kp1.seed_hex !== bytesToHex(seed1) ||
+  kp1.public_key_hex.length !== 64 ||
+  kp1.key_id.length !== 16
+) {
+  throw new Error('ed25519_keypair_from_seed_json failed: ' + JSON.stringify(kp1));
+}
+const badKp = JSON.parse(wasmSync.ed25519_keypair_from_seed_json(new Uint8Array(16)));
+if (badKp.ok !== false || !String(badKp.error).includes('InvalidKey')) {
+  throw new Error('Expected InvalidKey for 16-byte seed: ' + JSON.stringify(badKp));
+}
+const signPayload = enc.encode('MoonLibSync 0.6.0 signed release manifest payload');
+const signed = JSON.parse(wasmSync.ed25519_sign_bytes_json(seed1, signPayload));
+if (!signed.ok || !signed.signature_json || signed.signature.key_id !== kp1.key_id) {
+  throw new Error('ed25519_sign_bytes_json failed: ' + JSON.stringify(signed));
+}
+const insPubSig = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(signed.signature_json)));
+if (
+  !insPubSig.ok ||
+  insPubSig.artifact_kind !== 'publisher-signature' ||
+  insPubSig.summary.algorithm !== 'ed25519' ||
+  insPubSig.summary.key_id !== kp1.key_id ||
+  insPubSig.summary.public_key !== kp1.public_key_hex ||
+  insPubSig.summary.payload_length !== String(signPayload.length) ||
+  insPubSig.summary.payload_sha256 !== wasmSync.sha256_hex_bytes(signPayload) ||
+  insPubSig.summary.signature.length !== 128
+) {
+  throw new Error('inspect_artifact_json(publisher-signature) failed: ' + JSON.stringify(insPubSig));
+}
+const verifyOkEd = JSON.parse(
+  wasmSync.ed25519_verify_bytes_json(signed.signature_json, JSON.stringify([kp1.public_key_hex]), signPayload),
+);
+if (!verifyOkEd.ok || verifyOkEd.verified !== true || verifyOkEd.key_id !== kp1.key_id) {
+  throw new Error('ed25519_verify_bytes_json(valid) failed: ' + JSON.stringify(verifyOkEd));
+}
+const tamperedPayload = new Uint8Array(signPayload);
+tamperedPayload[0] ^= 0x01;
+const verifyTamperEd = JSON.parse(
+  wasmSync.ed25519_verify_bytes_json(signed.signature_json, JSON.stringify([kp1.public_key_hex]), tamperedPayload),
+);
+if (
+  verifyTamperEd.ok !== false ||
+  verifyTamperEd.verified !== false ||
+  !String(verifyTamperEd.error).includes('DigestMismatch')
+) {
+  throw new Error('Expected DigestMismatch on tampered payload: ' + JSON.stringify(verifyTamperEd));
+}
+const verifyUntrustedEd = JSON.parse(
+  wasmSync.ed25519_verify_bytes_json(signed.signature_json, JSON.stringify([kp2.public_key_hex]), signPayload),
+);
+if (
+  verifyUntrustedEd.ok !== false ||
+  verifyUntrustedEd.verified !== false ||
+  !String(verifyUntrustedEd.error).includes('UntrustedKey')
+) {
+  throw new Error('Expected UntrustedKey for wrong pubkey: ' + JSON.stringify(verifyUntrustedEd));
+}
+
+// 17. NEW (0.6.0): MLSENC01 AEAD seal / unseal (raw-key & Argon2id) + tamper + inspect_artifact_json.
+const aeadPlain = enc.encode('Confidential MoonLibSync 0.6.0 release bundle payload '.repeat(25));
+const aeadKey = new Uint8Array(32);
+const aeadSalt = new Uint8Array(16);
+const aeadNonce = new Uint8Array(12);
+for (let i = 0; i < 32; i++) aeadKey[i] = (i * 11 + 5) & 0xff;
+for (let i = 0; i < 16; i++) aeadSalt[i] = (i * 17 + 1) & 0xff;
+for (let i = 0; i < 8; i++) aeadNonce[i] = (i * 23 + 9) & 0xff; // bytes 8..11 stay 0
+
+const sealedRaw = JSON.parse(
+  wasmSync.seal_bytes_json(aeadPlain, aeadKey, false, aeadSalt, aeadNonce, 0, 0, 0),
+);
+if (!sealedRaw.ok || sealedRaw.kdf_mode !== 'raw-key' || sealedRaw.plain_bytes !== aeadPlain.length) {
+  throw new Error('seal_bytes_json(raw-key) failed: ' + JSON.stringify(sealedRaw));
+}
+const cipherRaw = hexToBytes(sealedRaw.cipher_hex);
+const insSealRaw = JSON.parse(wasmSync.inspect_artifact_json(cipherRaw));
+if (
+  !insSealRaw.ok ||
+  insSealRaw.artifact_kind !== 'seal-archive' ||
+  insSealRaw.summary.kdf_mode !== 0 ||
+  insSealRaw.summary.kdf_name !== 'raw-key' ||
+  insSealRaw.summary.chunk_size !== 65536 ||
+  insSealRaw.summary.salt_hex !== bytesToHex(aeadSalt) ||
+  insSealRaw.summary.nonce_prefix_hex !== bytesToHex(aeadNonce) ||
+  insSealRaw.summary.header_hex.length !== 112
+) {
+  throw new Error('inspect_artifact_json(seal raw-key) failed: ' + JSON.stringify(insSealRaw));
+}
+const unsealedRaw = JSON.parse(wasmSync.unseal_bytes_json(cipherRaw, aeadKey, false));
+if (
+  !unsealedRaw.ok ||
+  unsealedRaw.kdf_mode !== 'raw-key' ||
+  unsealedRaw.plain_hex !== bytesToHex(aeadPlain) ||
+  unsealedRaw.plain_sha256 !== wasmSync.sha256_hex_bytes(aeadPlain)
+) {
+  throw new Error('unseal_bytes_json(raw-key) failed: ' + JSON.stringify(unsealedRaw));
+}
+const tamperedCipher = new Uint8Array(cipherRaw);
+tamperedCipher[tamperedCipher.length - 1] ^= 0x01;
+const unsealTampered = JSON.parse(wasmSync.unseal_bytes_json(tamperedCipher, aeadKey, false));
+if (unsealTampered.ok !== false || unsealTampered.error !== 'AuthenticationFailed') {
+  throw new Error('Expected AuthenticationFailed on tampered ciphertext: ' + JSON.stringify(unsealTampered));
+}
+
+// Argon2id passphrase mode
+const passphraseBytes = enc.encode('moonlibsync-060-test-passphrase');
+const sealedArgon = JSON.parse(
+  wasmSync.seal_bytes_json(aeadPlain, passphraseBytes, true, aeadSalt, aeadNonce, 4096, 1024, 1),
+);
+if (!sealedArgon.ok || sealedArgon.kdf_mode !== 'argon2id' || sealedArgon.chunk_size !== 4096) {
+  throw new Error('seal_bytes_json(argon2id) failed: ' + JSON.stringify(sealedArgon));
+}
+const cipherArgon = hexToBytes(sealedArgon.cipher_hex);
+const insSealArgon = JSON.parse(wasmSync.inspect_artifact_json(cipherArgon));
+if (
+  !insSealArgon.ok ||
+  insSealArgon.artifact_kind !== 'seal-archive' ||
+  insSealArgon.summary.kdf_mode !== 1 ||
+  insSealArgon.summary.kdf_name !== 'argon2id' ||
+  insSealArgon.summary.argon2_memory_kib !== 1024 ||
+  insSealArgon.summary.argon2_passes !== 1 ||
+  insSealArgon.summary.argon2_lanes !== 1
+) {
+  throw new Error('inspect_artifact_json(seal argon2id) failed: ' + JSON.stringify(insSealArgon));
+}
+const unsealedArgon = JSON.parse(wasmSync.unseal_bytes_json(cipherArgon, passphraseBytes, true));
+if (
+  !unsealedArgon.ok ||
+  unsealedArgon.kdf_mode !== 'argon2id' ||
+  unsealedArgon.plain_hex !== bytesToHex(aeadPlain) ||
+  unsealedArgon.plain_sha256 !== wasmSync.sha256_hex_bytes(aeadPlain)
+) {
+  throw new Error('unseal_bytes_json(argon2id) failed: ' + JSON.stringify(unsealedArgon));
+}
+const wrongPassUnseal = JSON.parse(
+  wasmSync.unseal_bytes_json(cipherArgon, enc.encode('wrong-passphrase'), true),
+);
+if (wrongPassUnseal.ok !== false || wrongPassUnseal.error !== 'AuthenticationFailed') {
+  throw new Error('Expected AuthenticationFailed on wrong passphrase: ' + JSON.stringify(wrongPassUnseal));
+}
+
 console.log(
-  `WEB_DEMO_OK sig=${res.signature_bytes} delta=${res.delta_bytes} delta_gz=${res.gzip_delta_bytes} copy=${res.copy_bytes} exports=17 verified=true`,
+  `WEB_DEMO_OK sig=${res.signature_bytes} delta=${res.delta_bytes} delta_gz=${res.gzip_delta_bytes} copy=${res.copy_bytes} exports=27 verified=true`,
 );

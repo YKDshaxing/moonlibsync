@@ -38,7 +38,7 @@ const oldBytes = new Uint8Array(80000);
 for (let i = 0; i < oldBytes.length; i++) {
   oldBytes[i] = (i * 73 + 19 + Math.floor(i / 512) * 11) % 256;
 }
-const patchBytes = enc.encode('MOONLIBSYNC-JS-SDK-050-PATCH-REPEATED-'.repeat(8));
+const patchBytes = enc.encode('MOONLIBSYNC-JS-SDK-060-PATCH-REPEATED-'.repeat(8));
 const newBytes = new Uint8Array(oldBytes.length + patchBytes.length);
 newBytes.set(oldBytes.subarray(0, 40000), 0);
 newBytes.set(patchBytes, 40000);
@@ -134,7 +134,7 @@ assertSyncError(
   'applyPatch rejects gzip',
 );
 
-// 4. Detailed delta inspection (full & truncated).
+// 4. Detailed delta inspection (full, truncated, and 0.6.0 literal preview fields).
 const detailed = client.inspectDeltaDetailed(deltaBytes, { maxItems: 512 });
 assert.equal(detailed.ok, true);
 assert.equal(detailed.truncated, false);
@@ -142,7 +142,18 @@ assert.equal(detailed.summary.delta_bytes, String(deltaBytes.length));
 assert.equal(detailed.summary.output_bytes, String(newBytes.length));
 assert.ok(detailed.items.length >= 2);
 assert.ok(detailed.items.some((item) => item.kind === 'copy'));
-assert.ok(detailed.items.some((item) => item.kind === 'literal'));
+const literalItem = detailed.items.find((item) => item.kind === 'literal');
+assert.ok(literalItem, 'expected at least one literal item');
+if (literalItem.preview_hex !== undefined) {
+  assert.equal(typeof literalItem.preview_hex, 'string');
+  assert.ok(literalItem.preview_hex.length > 0);
+}
+if (literalItem.preview_utf8 !== undefined) {
+  assert.equal(typeof literalItem.preview_utf8, 'string');
+}
+if (literalItem.preview_truncated !== undefined) {
+  assert.equal(typeof literalItem.preview_truncated, 'boolean');
+}
 
 const truncatedInspect = client.inspectDeltaDetailed(deltaBytes, { maxItems: 1 });
 assert.equal(truncatedInspect.truncated, true);
@@ -325,5 +336,390 @@ assert.deepEqual(patchedFull.bytes, fullPayload);
 assert.equal(patchedFull.sha256, fullDigest.sha256);
 assert.equal(patchedFull.decompressedGzip, true);
 assert.equal(patchedFull.verifiedManifest, true);
+
+// 9. [0.6.0] Signature profiles: Rollsum+BLAKE2b (0x72730137) & explicit createSignatureWithProfile.
+const rollsumSig = client.createSignature(oldBytes, {
+  blockLen: 512,
+  strongSumLen: 16,
+  profile: 'rollsum-blake2',
+});
+assert.deepEqual(Array.from(rollsumSig.subarray(0, 4)), [0x72, 0x73, 0x01, 0x37]);
+const rollsumSigExplicit = client.createSignatureWithProfile(oldBytes, {
+  blockLen: 512,
+  strongSumLen: 16,
+  profile: 'rollsum-blake2',
+});
+assert.deepEqual(rollsumSigExplicit, rollsumSig);
+
+const rkSigExplicit = client.createSignatureWithProfile(oldBytes, {
+  blockLen: 512,
+  strongSumLen: 16,
+  profile: 'rk-blake2',
+});
+assert.deepEqual(Array.from(rkSigExplicit.subarray(0, 4)), [0x72, 0x73, 0x01, 0x47]);
+
+const rollsumArtifact = client.inspectArtifact(rollsumSig);
+assert.equal(rollsumArtifact.artifact_kind, 'signature');
+assert.equal(rollsumArtifact.summary.magic, '0x72730137');
+
+const rollsumDelta = client.createDelta(rollsumSig, newBytes);
+const rollsumRestored = client.applyPatch(oldBytes, rollsumDelta);
+assert.deepEqual(rollsumRestored, newBytes);
+
+assertSyncError(
+  () => client.createSignature(oldBytes, { profile: /** @type {never} */ ('md4-legacy') }),
+  'InvalidOptions:profile',
+  'createSignature invalid profile',
+);
+
+// 10. [0.6.0] Reverse delta (NEW -> OLD rollback).
+const revDelta = client.createReverseDelta(oldBytes, newBytes, {
+  blockLen: 0,
+  strongSumLen: 16,
+});
+assert.deepEqual(Array.from(revDelta.subarray(0, 4)), [0x72, 0x73, 0x02, 0x36]);
+const rolledBack = client.applyPatch(newBytes, revDelta);
+assert.deepEqual(rolledBack, oldBytes);
+assert.equal(client.sha256Hex(rolledBack), syncRes.old_sha256);
+
+assertSyncError(
+  () => client.createReverseDelta(oldBytes, newBytes, { strongSumLen: 0 }),
+  'InvalidOptions:strong_sum_len',
+  'createReverseDelta invalid strongSumLen',
+);
+
+// 11. [0.6.0] Schema 3 directory planning with detectMoves (copy-from-basis 0-byte move).
+const moveBasis = client.createDirSnapshot([
+  makeEntry('keep.txt', 'constant content'),
+  makeEntry('legacy/archive.bin', 'large-moved-payload-content-0123456789'),
+]);
+const moveTarget = client.createDirSnapshot([
+  makeEntry('keep.txt', 'constant content'),
+  makeEntry('relocated/archive.bin', 'large-moved-payload-content-0123456789'),
+]);
+
+const planNoMoves = client.planDirSnapshots(moveBasis, moveTarget, { detectMoves: false });
+assert.equal(planNoMoves.summary.add, '1');
+assert.equal(planNoMoves.summary.delete, '1');
+
+const planWithMoves = client.planDirSnapshots(moveBasis, moveTarget, { detectMoves: true });
+assert.equal(planWithMoves.schema_version, 3);
+assert.equal(planWithMoves.kind, 'moonlibsync-dir-plan');
+assert.equal(planWithMoves.summary.copy_from_basis, '1');
+assert.equal(planWithMoves.summary.add, '0');
+assert.equal(planWithMoves.summary.transfer_upper_bound_bytes, '0');
+const copyAction = planWithMoves.actions.find((a) => a.path === 'relocated/archive.bin');
+assert.ok(copyAction && copyAction.kind === 'copy-from-basis');
+assert.equal(copyAction.source_path, 'legacy/archive.bin');
+
+// 12. [0.6.0] .mbundle & .mbundle.gz pack/unpack with detectMoves and tamper rejection.
+const largeBase = new Uint8Array(12288);
+for (let i = 0; i < largeBase.length; i++) {
+  largeBase[i] = (i * 31 + 7) % 256;
+}
+const largeEdited = largeBase.slice();
+largeEdited.set(enc.encode('EDITED-MIDDLE-BLOCK-060'), 6000);
+
+const movedBase = new Uint8Array(8192);
+for (let i = 0; i < movedBase.length; i++) {
+  movedBase[i] = (i * 17 + 3) % 256;
+}
+const movedAndEdited = movedBase.slice();
+movedAndEdited.set(enc.encode('MOVED-AND-EDITED-060'), 4096);
+
+const bundleBasisFiles = [
+  { path: 'keep.txt', bytes: enc.encode('unchanged-file') },
+  { path: 'data/app.bin', bytes: largeBase },
+  { path: 'old/exact.bin', bytes: enc.encode('exact-move-payload-'.repeat(64)) },
+  { path: 'old/shifted.bin', bytes: movedBase },
+  { path: 'obsolete.txt', bytes: enc.encode('delete-me') },
+];
+
+const bundleTargetFiles = [
+  { path: 'keep.txt', bytes: enc.encode('unchanged-file') },
+  { path: 'data/app.bin', bytes: largeEdited },
+  { path: 'new/exact.bin', bytes: enc.encode('exact-move-payload-'.repeat(64)) },
+  { path: 'new/shifted.bin', bytes: movedAndEdited },
+  { path: 'added.txt', bytes: enc.encode('brand-new-file') },
+  { path: 'empty.txt', bytes: new Uint8Array(0) },
+];
+
+const packedRaw = client.packDirBundleArchive(bundleBasisFiles, bundleTargetFiles, {
+  detectMoves: true,
+  gzip: false,
+});
+assert.equal(packedRaw.gzip, false);
+assert.equal(packedRaw.archive.length, packedRaw.archiveBytes);
+assert.equal(new TextDecoder().decode(packedRaw.archive.subarray(0, 8)), 'MLSBDL01');
+assert.equal(packedRaw.manifest.schema_version, 3);
+assert.equal(packedRaw.manifest.kind, 'moonlibsync-dir-bundle');
+assert.ok(
+  packedRaw.manifest.entries.some(
+    (e) =>
+      e.path === 'new/exact.bin' &&
+      e.kind === 'copy-from-basis' &&
+      e.source_path === 'old/exact.bin',
+  ),
+  'expected copy-from-basis entry for renamed identical file',
+);
+assert.ok(
+  packedRaw.manifest.entries.some(
+    (e) =>
+      e.path === 'new/shifted.bin' &&
+      e.kind === 'update-delta-from' &&
+      e.source_path === 'old/shifted.bin',
+  ),
+  'expected update-delta-from entry for renamed and edited file',
+);
+
+const bundleArtifact = client.inspectArtifact(packedRaw.archive);
+assert.equal(bundleArtifact.artifact_kind, 'bundle-archive');
+
+const unpackedRaw = client.unpackDirBundleArchive(bundleBasisFiles, packedRaw.archive);
+assert.equal(unpackedRaw.wasGzip, false);
+assert.equal(unpackedRaw.fileCount, bundleTargetFiles.length);
+assert.equal(unpackedRaw.files.length, bundleTargetFiles.length);
+const targetByPath = new Map(bundleTargetFiles.map((f) => [f.path, f.bytes]));
+for (const file of unpackedRaw.files) {
+  const expected = targetByPath.get(file.path);
+  assert.ok(expected !== undefined, `unexpected unpacked path: ${file.path}`);
+  assert.equal(file.byteLength, expected.length);
+  assert.equal(file.sha256, client.sha256Hex(expected));
+  assert.deepEqual(file.bytes, expected);
+}
+
+const packedGz = client.packDirBundleArchive(bundleBasisFiles, bundleTargetFiles, {
+  detectMoves: true,
+  gzip: true,
+});
+assert.equal(packedGz.gzip, true);
+assert.equal(packedGz.archive[0], 0x1f);
+assert.equal(packedGz.archive[1], 0x8b);
+assert.equal(packedGz.archive.length, packedGz.archiveBytes);
+
+const unpackedGz = client.unpackDirBundleArchive(bundleBasisFiles, packedGz.archive);
+assert.equal(unpackedGz.wasGzip, true);
+assert.equal(unpackedGz.fileCount, bundleTargetFiles.length);
+for (const file of unpackedGz.files) {
+  assert.deepEqual(file.bytes, targetByPath.get(file.path));
+}
+
+const tamperedBundle = packedRaw.archive.slice();
+tamperedBundle[tamperedBundle.length - 1] ^= 0xff;
+assertSyncError(
+  () => client.unpackDirBundleArchive(bundleBasisFiles, tamperedBundle),
+  /.+/,
+  'unpackDirBundleArchive rejects tampered archive',
+);
+
+// 13. [0.6.0] Ed25519 publisher signing, inspection, verification, and tamper rejections.
+const seedA = new Uint8Array(32);
+const seedB = new Uint8Array(32);
+for (let i = 0; i < 32; i++) {
+  seedA[i] = (i * 9 + 1) & 0xff;
+  seedB[i] = (i * 13 + 7) & 0xff;
+}
+
+const kpA = client.ed25519KeypairFromSeed(seedA);
+const kpB = client.ed25519KeypairFromSeed(seedB);
+assert.equal(kpA.seedHex.length, 64);
+assert.equal(kpA.publicKeyHex.length, 64);
+assert.equal(kpA.publicKey.length, 32);
+assert.equal(kpA.keyId.length, 16);
+assert.notEqual(kpA.publicKeyHex, kpB.publicKeyHex);
+
+const signedPayload = packedGz.archive;
+const signed = client.ed25519Sign(seedA, signedPayload);
+assert.equal(typeof signed.signatureJson, 'string');
+assert.equal(signed.signature.algorithm, 'ed25519');
+assert.equal(signed.signature.key_id, kpA.keyId);
+assert.equal(signed.signature.public_key, kpA.publicKeyHex);
+assert.equal(signed.signature.payload_sha256, client.sha256Hex(signedPayload));
+
+const pubSigArtifact = client.inspectArtifact(enc.encode(signed.signatureJson));
+assert.equal(pubSigArtifact.artifact_kind, 'publisher-signature');
+assert.equal(pubSigArtifact.artifact_type, 'publisher-signature');
+assert.equal(pubSigArtifact.algorithm, 'ed25519');
+assert.equal(pubSigArtifact.key_id, kpA.keyId);
+assert.equal(pubSigArtifact.public_key, kpA.publicKeyHex);
+assert.equal(pubSigArtifact.payload_sha256, client.sha256Hex(signedPayload));
+
+const verifyByHex = client.ed25519Verify(
+  signed.signatureJson,
+  [kpA.publicKeyHex],
+  signedPayload,
+);
+assert.equal(verifyByHex.verified, true);
+assert.equal(verifyByHex.keyId, kpA.keyId);
+assert.equal(verifyByHex.publicKeyHex, kpA.publicKeyHex);
+assert.equal(verifyByHex.payloadLength, signedPayload.length);
+assert.equal(verifyByHex.payloadSha256, client.sha256Hex(signedPayload));
+
+const verifyByBytes = client.ed25519Verify(
+  signed.signatureJson,
+  [kpB.publicKey, kpA.publicKey],
+  signedPayload,
+);
+assert.equal(verifyByBytes.verified, true);
+assert.equal(verifyByBytes.keyId, kpA.keyId);
+
+assertSyncError(
+  () => client.ed25519Verify(signed.signatureJson, [kpB.publicKeyHex], signedPayload),
+  /^UntrustedKey(:|$)/,
+  'ed25519Verify rejects untrusted key',
+);
+
+const tamperedPayload = signedPayload.slice();
+tamperedPayload[0] ^= 0x01;
+assertSyncError(
+  () => client.ed25519Verify(signed.signatureJson, [kpA.publicKeyHex], tamperedPayload),
+  /^DigestMismatch(:|$)/,
+  'ed25519Verify rejects modified payload',
+);
+
+const parsedSigObj = JSON.parse(signed.signatureJson);
+const flippedFirstHex = parsedSigObj.signature[0] === '0' ? '1' : '0';
+const tamperedSigJson = JSON.stringify({
+  ...parsedSigObj,
+  signature: flippedFirstHex + parsedSigObj.signature.slice(1),
+});
+assertSyncError(
+  () => client.ed25519Verify(tamperedSigJson, [kpA.publicKeyHex], signedPayload),
+  /^InvalidSignature(:|$)/,
+  'ed25519Verify rejects forged signature',
+);
+
+assertSyncError(
+  () => client.ed25519KeypairFromSeed(new Uint8Array(16)),
+  /^InvalidKey(:|$)/,
+  'ed25519KeypairFromSeed rejects wrong seed length',
+);
+
+// 14. [0.6.0] AEAD MLSENC01 ChaCha20-Poly1305 & Argon2id seal/unseal + header inspection + tamper checks.
+const rawKey = new Uint8Array(32);
+const wrongKey = new Uint8Array(32);
+for (let i = 0; i < 32; i++) {
+  rawKey[i] = (i * 5 + 3) & 0xff;
+  wrongKey[i] = (i * 5 + 4) & 0xff;
+}
+
+const secretPlain = new Uint8Array(3500); // > 3 chunks at chunkSize=1024
+for (let i = 0; i < secretPlain.length; i++) {
+  secretPlain[i] = (i * 41 + 17) & 0xff;
+}
+
+const sealedKey = client.seal(secretPlain, {
+  key: rawKey,
+  chunkSize: 1024,
+});
+assert.equal(sealedKey.kdfMode, 'raw-key');
+assert.equal(sealedKey.plainBytes, secretPlain.length);
+assert.equal(sealedKey.cipherBytes, sealedKey.cipher.length);
+assert.equal(sealedKey.chunkSize, 1024);
+assert.equal(new TextDecoder().decode(sealedKey.cipher.subarray(0, 8)), 'MLSENC01');
+assert.deepEqual(Array.from(sealedKey.cipher.subarray(52, 56)), [0, 0, 0, 0]);
+
+const sealKeyArtifact = client.inspectArtifact(sealedKey.cipher);
+assert.equal(sealKeyArtifact.artifact_kind, 'seal-archive');
+assert.equal(sealKeyArtifact.artifact_type, 'seal-archive');
+assert.equal(sealKeyArtifact.kdf_mode, 0);
+assert.equal(sealKeyArtifact.kdf_name, 'raw-key');
+assert.equal(sealKeyArtifact.chunk_size, 1024);
+assert.equal(sealKeyArtifact.byte_length, sealedKey.cipher.length);
+assert.ok(sealKeyArtifact.nonce_prefix_hex.endsWith('00000000'));
+
+const unsealedKey = client.unseal(sealedKey.cipher, { key: rawKey });
+assert.equal(unsealedKey.kdfMode, 'raw-key');
+assert.equal(unsealedKey.chunkSize, 1024);
+assert.equal(unsealedKey.plainBytes, secretPlain.length);
+assert.equal(unsealedKey.plainSha256, client.sha256Hex(secretPlain));
+assert.deepEqual(unsealedKey.plain, secretPlain);
+
+const sealedPass = client.seal(secretPlain, {
+  passphrase: 'moonlibsync-060-test-passphrase',
+  chunkSize: 1024,
+  argon2MemoryKib: 64,
+  argon2Passes: 1,
+});
+assert.equal(sealedPass.kdfMode, 'argon2id');
+const sealPassArtifact = client.inspectArtifact(sealedPass.cipher);
+assert.equal(sealPassArtifact.artifact_kind, 'seal-archive');
+assert.equal(sealPassArtifact.artifact_type, 'seal-archive');
+assert.equal(sealPassArtifact.kdf_mode, 1);
+assert.equal(sealPassArtifact.kdf_name, 'argon2id');
+assert.equal(sealPassArtifact.argon2_memory_kib, 64);
+assert.equal(sealPassArtifact.argon2_passes, 1);
+
+const unsealedPass = client.unseal(sealedPass.cipher, {
+  passphrase: 'moonlibsync-060-test-passphrase',
+});
+assert.equal(unsealedPass.kdfMode, 'argon2id');
+assert.deepEqual(unsealedPass.plain, secretPlain);
+
+const unsealedPassBytes = client.unseal(sealedPass.cipher, {
+  passphrase: enc.encode('moonlibsync-060-test-passphrase'),
+});
+assert.deepEqual(unsealedPassBytes.plain, secretPlain);
+
+const tamperedCipherBody = sealedKey.cipher.slice();
+tamperedCipherBody[tamperedCipherBody.length - 1] ^= 0x01;
+assertSyncError(
+  () => client.unseal(tamperedCipherBody, { key: rawKey }),
+  'AuthenticationFailed',
+  'unseal rejects tampered ciphertext body',
+);
+
+const tamperedCipherHeader = sealedKey.cipher.slice();
+tamperedCipherHeader[30] ^= 0x01; // flips salt byte bound into AAD
+assertSyncError(
+  () => client.unseal(tamperedCipherHeader, { key: rawKey }),
+  'AuthenticationFailed',
+  'unseal rejects tampered header AAD',
+);
+
+assertSyncError(
+  () => client.unseal(sealedKey.cipher, { key: wrongKey }),
+  'AuthenticationFailed',
+  'unseal rejects wrong raw key',
+);
+
+assertSyncError(
+  () => client.unseal(sealedPass.cipher, { passphrase: 'wrong-passphrase' }),
+  'AuthenticationFailed',
+  'unseal rejects wrong passphrase',
+);
+
+assertSyncError(
+  () => client.unseal(sealedKey.cipher.subarray(0, sealedKey.cipher.length - 5), { key: rawKey }),
+  'TruncatedInput',
+  'unseal rejects truncated ciphertext',
+);
+
+const trailingCipher = new Uint8Array(sealedKey.cipher.length + 1);
+trailingCipher.set(sealedKey.cipher, 0);
+trailingCipher[sealedKey.cipher.length] = 0x99;
+assertSyncError(
+  () => client.unseal(trailingCipher, { key: rawKey }),
+  'TrailingData',
+  'unseal rejects trailing ciphertext byte',
+);
+
+const badNoncePrefix = new Uint8Array(12);
+badNoncePrefix[11] = 1;
+assertSyncError(
+  () => client.seal(secretPlain, { key: rawKey, noncePrefix12: badNoncePrefix }),
+  /^InvalidOptions(:|$)/,
+  'seal rejects non-zero trailing 4 bytes in noncePrefix12',
+);
+
+assertSyncError(
+  () =>
+    client.seal(secretPlain, /** @type {never} */ ({
+      key: rawKey,
+      passphrase: 'both-should-fail',
+    })),
+  'InvalidOptions:secret',
+  'seal rejects simultaneous key and passphrase',
+);
 
 console.log('JS_SDK_OK');

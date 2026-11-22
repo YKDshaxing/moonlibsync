@@ -2,7 +2,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createClient } from './index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -74,6 +75,18 @@ if (!sourceBundle) {
 }
 
 fs.copyFileSync(sourceBundle, outFile);
+try {
+  const mod = await import(`${pathToFileURL(outFile).href}?t=${Date.now()}`);
+  createClient(mod);
+} catch (err) {
+  if (fs.existsSync(outFile)) {
+    fs.unlinkSync(outFile);
+  }
+  throw err;
+}
+
 const stat = fs.statSync(outFile);
 const relSource = path.relative(root, sourceBundle).replaceAll('\\', '/');
-console.log(`Built js/moonlibsync-core.js (${stat.size} bytes) from ${relSource}`);
+console.log(
+  `Built js/moonlibsync-core.js (${stat.size} bytes, 27 exports verified) from ${relSource}`,
+);

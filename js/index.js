@@ -3,7 +3,9 @@
 const REQUIRED_EXPORTS = Object.freeze([
   'run_streaming_sync_json',
   'create_signature_bytes',
+  'create_signature_with_profile_bytes',
   'create_delta_bytes',
+  'create_reverse_delta_bytes',
   'apply_patch_bytes',
   'sha256_hex_bytes',
   'compress_gzip_bytes',
@@ -11,6 +13,9 @@ const REQUIRED_EXPORTS = Object.freeze([
   'decompress_gzip_check_json',
   'create_dir_snapshot_json',
   'plan_dir_snapshots_json',
+  'plan_dir_snapshots_with_options_json',
+  'pack_dir_bundle_archive_json',
+  'unpack_dir_bundle_archive_json',
   'inspect_delta_detailed_json',
   'inspect_artifact_json',
   'benchmark_block_sizes_json',
@@ -18,16 +23,30 @@ const REQUIRED_EXPORTS = Object.freeze([
   'filter_dir_entries_json',
   'apply_verified_patch_json',
   'apply_patch_or_gzip_bytes',
+  'ed25519_keypair_from_seed_json',
+  'ed25519_sign_bytes_json',
+  'ed25519_verify_bytes_json',
+  'seal_bytes_json',
+  'unseal_bytes_json',
 ]);
 
 const INT32_MIN = -2147483648;
 const INT32_MAX = 2147483647;
 const DEFAULT_MAX_GZIP_OUTPUT = 67108864;
+const DEFAULT_SEAL_CHUNK_SIZE = 65536;
+const DEFAULT_ARGON2_MEMORY_KIB = 16384;
+const DEFAULT_ARGON2_PASSES = 2;
+
+const UTF8_ENCODER = new TextEncoder();
+const HEX_LUT = Object.freeze(
+  Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0')),
+);
 
 /**
  * Structured error thrown by MoonLibSync SDK operations.
  * Carries a stable `.code` string (e.g. `"LimitExceeded"`, `"TrailingData"`,
- * `"InvalidOptions:strong_sum_len"`, `"BindingMismatch:delta_sha256"`).
+ * `"InvalidOptions:strong_sum_len"`, `"BindingMismatch:delta_sha256"`,
+ * `"UntrustedKey"`, `"DigestMismatch"`, `"InvalidSignature"`, `"AuthenticationFailed"`).
  */
 export class MoonLibSyncError extends Error {
   /**
@@ -72,6 +91,16 @@ function assertInt32(value, name) {
   return value;
 }
 
+function assertBoolean(value, name) {
+  if (typeof value !== 'boolean') {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected boolean for "${name}"`,
+    );
+  }
+  return value;
+}
+
 function assertOptionsObject(options) {
   if (options === undefined || options === null) {
     return {};
@@ -83,6 +112,117 @@ function assertOptionsObject(options) {
     );
   }
   return options;
+}
+
+function assertSignatureProfile(profile) {
+  if (profile === undefined) {
+    return 'rk-blake2';
+  }
+  if (profile !== 'rk-blake2' && profile !== 'rollsum-blake2') {
+    throw new MoonLibSyncError(
+      'InvalidOptions:profile',
+      'Signature profile must be "rk-blake2" or "rollsum-blake2"',
+    );
+  }
+  return profile;
+}
+
+function bytesToHex(bytes) {
+  const parts = new Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    parts[i] = HEX_LUT[bytes[i]];
+  }
+  return parts.join('');
+}
+
+function hexNibble(code) {
+  if (code >= 0x30 && code <= 0x39) return code - 0x30;
+  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;
+  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;
+  return -1;
+}
+
+function hexToBytes(hex, label) {
+  if (typeof hex !== 'string' || (hex.length & 1) !== 0) {
+    throw new MoonLibSyncError(
+      'InvalidHex',
+      `Expected even-length hexadecimal string for "${label}"`,
+    );
+  }
+  const out = new Uint8Array(hex.length >>> 1);
+  for (let i = 0, j = 0; i < hex.length; i += 2, j++) {
+    const hi = hexNibble(hex.charCodeAt(i));
+    const lo = hexNibble(hex.charCodeAt(i + 1));
+    if (hi < 0 || lo < 0) {
+      throw new MoonLibSyncError(
+        'InvalidHex',
+        `Invalid hexadecimal character in "${label}"`,
+      );
+    }
+    out[j] = (hi << 4) | lo;
+  }
+  return out;
+}
+
+function randomBytes(length) {
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || typeof cryptoObj.getRandomValues !== 'function') {
+    throw new MoonLibSyncError(
+      'CryptoUnavailable',
+      'globalThis.crypto.getRandomValues is required to generate random salt/nonce bytes',
+    );
+  }
+  const out = new Uint8Array(length);
+  cryptoObj.getRandomValues(out);
+  return out;
+}
+
+function generateNoncePrefix12() {
+  const out = new Uint8Array(12);
+  out.set(randomBytes(8), 0);
+  // Last 4 bytes must be 0x00, 0x00, 0x00, 0x00 for the 32-bit big-endian chunk counter.
+  out[8] = 0;
+  out[9] = 0;
+  out[10] = 0;
+  out[11] = 0;
+  return out;
+}
+
+function resolveSealSecret(options) {
+  const opts = assertOptionsObject(options);
+  const hasKey = opts.key !== undefined;
+  const hasPassphrase = opts.passphrase !== undefined;
+  if ((hasKey && hasPassphrase) || (!hasKey && !hasPassphrase)) {
+    throw new MoonLibSyncError(
+      'InvalidOptions:secret',
+      'Specify exactly one of "key" (32-byte Uint8Array) or "passphrase" (string | Uint8Array)',
+    );
+  }
+  if (hasKey) {
+    return {
+      secret: assertBytes(opts.key, 'key'),
+      usePassphrase: false,
+      opts,
+    };
+  }
+  if (typeof opts.passphrase === 'string') {
+    return {
+      secret: UTF8_ENCODER.encode(opts.passphrase),
+      usePassphrase: true,
+      opts,
+    };
+  }
+  if (opts.passphrase instanceof Uint8Array) {
+    return {
+      secret: assertBytes(opts.passphrase, 'passphrase'),
+      usePassphrase: true,
+      opts,
+    };
+  }
+  throw new MoonLibSyncError(
+    'InvalidOptions:passphrase',
+    'Expected string or Uint8Array for "passphrase"',
+  );
 }
 
 function hasGzipMagic(bytes) {
@@ -117,10 +257,16 @@ function isErrorEnvelope(value) {
   );
 }
 
+function errorEnvelopeMessage(parsed, label) {
+  return typeof parsed.message === 'string' && parsed.message.length > 0
+    ? parsed.message
+    : `${label} failed: ${parsed.error}`;
+}
+
 function parseOkJson(rawText, label) {
   const parsed = parseJsonStrict(rawText, label);
   if (isErrorEnvelope(parsed)) {
-    throw new MoonLibSyncError(parsed.error, `${label} failed: ${parsed.error}`);
+    throw new MoonLibSyncError(parsed.error, errorEnvelopeMessage(parsed, label));
   }
   if (!parsed || typeof parsed !== 'object' || parsed.ok !== true) {
     throw new MoonLibSyncError(
@@ -134,7 +280,7 @@ function parseOkJson(rawText, label) {
 function parseSchema3Json(rawText, expectedKind, label) {
   const parsed = parseJsonStrict(rawText, label);
   if (isErrorEnvelope(parsed)) {
-    throw new MoonLibSyncError(parsed.error, `${label} failed: ${parsed.error}`);
+    throw new MoonLibSyncError(parsed.error, errorEnvelopeMessage(parsed, label));
   }
   if (
     !parsed ||
@@ -150,6 +296,77 @@ function parseSchema3Json(rawText, expectedKind, label) {
   return parsed;
 }
 
+function toSafeIntIfDecimal(value) {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value)) {
+    const n = Number(value);
+    if (Number.isSafeInteger(n)) {
+      return n;
+    }
+  }
+  return value;
+}
+
+function normalizeArtifactInspection(parsed) {
+  const kind =
+    typeof parsed.artifact_kind === 'string'
+      ? parsed.artifact_kind
+      : typeof parsed.artifact_type === 'string'
+        ? parsed.artifact_type
+        : null;
+
+  if (kind === 'seal-archive') {
+    const src =
+      parsed.summary &&
+      typeof parsed.summary === 'object' &&
+      !Array.isArray(parsed.summary)
+        ? { ...parsed.summary, ...parsed }
+        : { ...parsed };
+    return {
+      ...src,
+      ok: true,
+      artifact_kind: 'seal-archive',
+      artifact_type: 'seal-archive',
+      kdf_mode: toSafeIntIfDecimal(src.kdf_mode),
+      chunk_size: toSafeIntIfDecimal(src.chunk_size),
+      argon2_memory_kib: toSafeIntIfDecimal(src.argon2_memory_kib),
+      argon2_passes: toSafeIntIfDecimal(src.argon2_passes),
+      argon2_lanes: toSafeIntIfDecimal(src.argon2_lanes),
+      byte_length: toSafeIntIfDecimal(src.byte_length),
+    };
+  }
+
+  if (kind === 'publisher-signature') {
+    const src =
+      parsed.summary &&
+      typeof parsed.summary === 'object' &&
+      !Array.isArray(parsed.summary)
+        ? { ...parsed.summary, ...parsed }
+        : { ...parsed };
+    return {
+      ...src,
+      ok: true,
+      artifact_kind: 'publisher-signature',
+      artifact_type: 'publisher-signature',
+      payload_length:
+        src.payload_length !== undefined
+          ? String(src.payload_length)
+          : src.payload_length,
+    };
+  }
+
+  if (
+    typeof parsed.artifact_kind !== 'string' &&
+    typeof parsed.artifact_type === 'string'
+  ) {
+    return { ...parsed, artifact_kind: parsed.artifact_type };
+  }
+
+  return parsed;
+}
+
 function serializeSnapshotInput(snapshot, name) {
   if (typeof snapshot === 'string') {
     return snapshot;
@@ -161,6 +378,27 @@ function serializeSnapshotInput(snapshot, name) {
     `InvalidOptions:${name}`,
     `Expected DirSnapshot object or JSON string for "${name}"`,
   );
+}
+
+function extractDirSnapshotEntriesJson(jsonText) {
+  let obj;
+  try {
+    obj = JSON.parse(jsonText);
+  } catch {
+    return null;
+  }
+  if (
+    obj === null ||
+    typeof obj !== 'object' ||
+    Array.isArray(obj) ||
+    obj.schema_version !== 3 ||
+    obj.kind !== 'moonlibsync-dir-snapshot' ||
+    !Array.isArray(obj.entries) ||
+    Object.keys(obj).length !== 3
+  ) {
+    return null;
+  }
+  return JSON.stringify(obj.entries);
 }
 
 function serializeDirEntriesInput(entries) {
@@ -186,6 +424,34 @@ function serializeDirEntriesInput(entries) {
   return JSON.stringify(normalized);
 }
 
+function serializeDirFilesInput(files, name) {
+  if (!Array.isArray(files)) {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected an array of { path, bytes } entries for "${name}"`,
+    );
+  }
+  const out = new Array(files.length);
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new MoonLibSyncError(
+        `InvalidOptions:${name}`,
+        `Expected object { path, bytes } at ${name}[${i}]`,
+      );
+    }
+    if (typeof item.path !== 'string') {
+      throw new MoonLibSyncError(
+        `InvalidOptions:${name}`,
+        `Expected string "path" at ${name}[${i}]`,
+      );
+    }
+    const bytes = assertBytes(item.bytes, `${name}[${i}].bytes`);
+    out[i] = { path: item.path, content_hex: bytesToHex(bytes) };
+  }
+  return JSON.stringify(out);
+}
+
 function serializeManifestInput(manifestJson) {
   if (manifestJson === undefined || manifestJson === null || manifestJson === '') {
     return '';
@@ -200,6 +466,47 @@ function serializeManifestInput(manifestJson) {
     'InvalidOptions:manifestJson',
     'Expected manifest JSON string or manifest object',
   );
+}
+
+function serializeSignatureJsonInput(signatureJson) {
+  if (typeof signatureJson === 'string') {
+    return signatureJson;
+  }
+  if (
+    signatureJson !== null &&
+    typeof signatureJson === 'object' &&
+    !Array.isArray(signatureJson)
+  ) {
+    return JSON.stringify(signatureJson);
+  }
+  throw new MoonLibSyncError(
+    'InvalidOptions:signatureJson',
+    'Expected signature JSON string or PublisherSignature object',
+  );
+}
+
+function serializeTrustedPublicKeys(trustedPublicKeys) {
+  if (!Array.isArray(trustedPublicKeys)) {
+    throw new MoonLibSyncError(
+      'InvalidOptions:trustedPublicKeys',
+      'Expected an array of hex public key strings or 32-byte Uint8Arrays',
+    );
+  }
+  const normalized = new Array(trustedPublicKeys.length);
+  for (let i = 0; i < trustedPublicKeys.length; i++) {
+    const key = trustedPublicKeys[i];
+    if (typeof key === 'string') {
+      normalized[i] = key;
+    } else if (key instanceof Uint8Array) {
+      normalized[i] = bytesToHex(assertBytes(key, `trustedPublicKeys[${i}]`));
+    } else {
+      throw new MoonLibSyncError(
+        'InvalidOptions:trustedPublicKeys',
+        `Expected hex string or Uint8Array at trustedPublicKeys[${i}]`,
+      );
+    }
+  }
+  return JSON.stringify(normalized);
 }
 
 function getMissingExports(mod) {
@@ -339,9 +646,11 @@ export class MoonLibSyncClient {
   }
 
   /**
-   * Generate standard librsync 0x72730147 signature bytes (`blockLen = 0` selects auto).
+   * Generate standard librsync signature bytes (`blockLen = 0` selects auto).
+   * Defaults to `rk-blake2` (`0x72730147`); pass `{ profile: 'rollsum-blake2' }`
+   * for `RS_BLAKE2_SIG_MAGIC` (`0x72730137`).
    * @param {Uint8Array} oldBytes
-   * @param {{ blockLen?: number, strongSumLen?: number }} [options]
+   * @param {{ blockLen?: number, strongSumLen?: number, profile?: 'rk-blake2' | 'rollsum-blake2' }} [options]
    * @returns {Uint8Array}
    */
   createSignature(oldBytes, options = {}) {
@@ -349,6 +658,7 @@ export class MoonLibSyncClient {
     const opts = assertOptionsObject(options);
     const blockLen = assertInt32(opts.blockLen ?? 0, 'block_len');
     const strongSumLen = assertInt32(opts.strongSumLen ?? 32, 'strong_sum_len');
+    const profile = assertSignatureProfile(opts.profile);
     if (blockLen < 0) {
       throw new MoonLibSyncError(
         'InvalidOptions:block_len',
@@ -361,7 +671,15 @@ export class MoonLibSyncClient {
         'strongSumLen must be an integer between 1 and 32',
       );
     }
-    const sig = this.raw.create_signature_bytes(basis, blockLen, strongSumLen);
+    const sig =
+      profile === 'rollsum-blake2'
+        ? this.raw.create_signature_with_profile_bytes(
+            basis,
+            blockLen,
+            strongSumLen,
+            profile,
+          )
+        : this.raw.create_signature_bytes(basis, blockLen, strongSumLen);
     if (!(sig instanceof Uint8Array) || sig.length === 0) {
       throw new MoonLibSyncError(
         'LimitExceeded',
@@ -372,7 +690,48 @@ export class MoonLibSyncClient {
   }
 
   /**
-   * Generate standard librsync 0x72730236 delta bytes from signature and new target bytes.
+   * Explicitly generate librsync signature bytes with a chosen weak-sum profile
+   * (`'rk-blake2'` = `0x72730147` or `'rollsum-blake2'` = `0x72730137`).
+   * @param {Uint8Array} oldBytes
+   * @param {{ blockLen?: number, strongSumLen?: number, profile?: 'rk-blake2' | 'rollsum-blake2' }} [options]
+   * @returns {Uint8Array}
+   */
+  createSignatureWithProfile(oldBytes, options = {}) {
+    const basis = assertBytes(oldBytes, 'oldBytes');
+    const opts = assertOptionsObject(options);
+    const blockLen = assertInt32(opts.blockLen ?? 0, 'block_len');
+    const strongSumLen = assertInt32(opts.strongSumLen ?? 32, 'strong_sum_len');
+    const profile = assertSignatureProfile(opts.profile);
+    if (blockLen < 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:block_len',
+        'blockLen must be 0 (auto) or a positive 32-bit integer',
+      );
+    }
+    if (strongSumLen < 1 || strongSumLen > 32) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:strong_sum_len',
+        'strongSumLen must be an integer between 1 and 32',
+      );
+    }
+    const sig = this.raw.create_signature_with_profile_bytes(
+      basis,
+      blockLen,
+      strongSumLen,
+      profile,
+    );
+    if (!(sig instanceof Uint8Array) || sig.length === 0) {
+      throw new MoonLibSyncError(
+        'LimitExceeded',
+        'Failed to create signature with profile (invalid options or limit exceeded)',
+      );
+    }
+    return sig;
+  }
+
+  /**
+   * Generate standard librsync 0x72730236 delta bytes from signature (`0x72730147` or `0x72730137`)
+   * and new target bytes.
    * @param {Uint8Array} sigBytes
    * @param {Uint8Array} newBytes
    * @returns {Uint8Array}
@@ -391,15 +750,57 @@ export class MoonLibSyncClient {
           probe.error === 'UnsupportedArtifact' ? 'InvalidSignature' : probe.error;
         throw new MoonLibSyncError(code, `Failed to create delta: ${code}`);
       }
-      if (probe.artifact_kind !== 'signature') {
+      const detectedKind = probe.artifact_kind ?? probe.artifact_type ?? 'unknown';
+      if (detectedKind !== 'signature') {
         throw new MoonLibSyncError(
           'InvalidSignature',
-          `Expected signature artifact, received "${probe.artifact_kind}"`,
+          `Expected signature artifact, received "${detectedKind}"`,
         );
       }
       throw new MoonLibSyncError(
         'LimitExceeded',
         'Failed to create delta (input or output exceeded limits)',
+      );
+    }
+    return delta;
+  }
+
+  /**
+   * Generate a rollback delta (`NEW -> OLD`) that reverts `newBytes` back to `oldBytes`
+   * when applied with `applyPatch(newBytes, reverseDelta)`.
+   * @param {Uint8Array} oldBytes
+   * @param {Uint8Array} newBytes
+   * @param {{ blockLen?: number, strongSumLen?: number }} [options]
+   * @returns {Uint8Array}
+   */
+  createReverseDelta(oldBytes, newBytes, options = {}) {
+    const basis = assertBytes(oldBytes, 'oldBytes');
+    const target = assertBytes(newBytes, 'newBytes');
+    const opts = assertOptionsObject(options);
+    const blockLen = assertInt32(opts.blockLen ?? 0, 'block_len');
+    const strongSumLen = assertInt32(opts.strongSumLen ?? 16, 'strong_sum_len');
+    if (blockLen < 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:block_len',
+        'blockLen must be 0 (auto) or a positive 32-bit integer',
+      );
+    }
+    if (strongSumLen < 1 || strongSumLen > 32) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:strong_sum_len',
+        'strongSumLen must be an integer between 1 and 32',
+      );
+    }
+    const delta = this.raw.create_reverse_delta_bytes(
+      basis,
+      target,
+      blockLen,
+      strongSumLen,
+    );
+    if (!(delta instanceof Uint8Array) || delta.length === 0) {
+      throw new MoonLibSyncError(
+        'LimitExceeded',
+        'Failed to create reverse delta (invalid options or limit exceeded)',
       );
     }
     return delta;
@@ -422,7 +823,10 @@ export class MoonLibSyncClient {
     }
     const restored = this.raw.apply_patch_bytes(basis, delta);
     if (!(restored instanceof Uint8Array)) {
-      throw new MoonLibSyncError('UnexpectedError', 'apply_patch_bytes did not return Uint8Array');
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'apply_patch_bytes did not return Uint8Array',
+      );
     }
     if (restored.length === 0) {
       // Distinguish a legitimate 0-byte patched result from a patch failure.
@@ -561,7 +965,8 @@ export class MoonLibSyncClient {
   }
 
   /**
-   * Validate a standard 0x72730236 delta and inspect ordered COPY/Literal instructions.
+   * Validate a standard 0x72730236 delta and inspect ordered COPY/Literal instructions
+   * (including optional literal preview hex/UTF-8 metadata).
    * @param {Uint8Array} deltaBytes
    * @param {{ maxItems?: number }} [options]
    */
@@ -582,15 +987,17 @@ export class MoonLibSyncClient {
   }
 
   /**
-   * Auto-detect and validate any MoonLibSync binary artifact or Schema 1/2/3 JSON document.
+   * Auto-detect and validate any MoonLibSync binary artifact (`.sig`, `.delta`, `.gz`,
+   * `.mbundle`, `.menc`) or Schema 1/2/3/4 JSON document (including publisher signatures).
    * @param {Uint8Array} data
    */
   inspectArtifact(data) {
     const bytes = assertBytes(data, 'data');
-    return parseOkJson(
+    const parsed = parseOkJson(
       this.raw.inspect_artifact_json(bytes),
       'inspect_artifact_json',
     );
+    return normalizeArtifactInspection(parsed);
   }
 
   /**
@@ -638,16 +1045,68 @@ export class MoonLibSyncClient {
 
   /**
    * Compute a deterministic Schema 3 `DirSyncPlan` from two directory snapshots.
+   * Pass `{ detectMoves: true }` to emit 0-byte `copy-from-basis` actions for moved/renamed files.
    * @param {Record<string, unknown> | string} basisSnapshot
    * @param {Record<string, unknown> | string} targetSnapshot
+   * @param {{ detectMoves?: boolean }} [options]
    */
-  planDirSnapshots(basisSnapshot, targetSnapshot) {
+  planDirSnapshots(basisSnapshot, targetSnapshot, options = {}) {
     const basisJson = serializeSnapshotInput(basisSnapshot, 'basisSnapshot');
     const targetJson = serializeSnapshotInput(targetSnapshot, 'targetSnapshot');
-    return parseSchema3Json(
-      this.raw.plan_dir_snapshots_json(basisJson, targetJson),
-      'moonlibsync-dir-plan',
-      'plan_dir_snapshots_json',
+    const opts = assertOptionsObject(options);
+    const detectMoves = assertBoolean(opts.detectMoves ?? false, 'detectMoves');
+
+    if (!detectMoves) {
+      return parseSchema3Json(
+        this.raw.plan_dir_snapshots_json(basisJson, targetJson),
+        'moonlibsync-dir-plan',
+        'plan_dir_snapshots_json',
+      );
+    }
+
+    const label = 'plan_dir_snapshots_with_options_json';
+    let parsed = parseJsonStrict(
+      this.raw.plan_dir_snapshots_with_options_json(basisJson, targetJson, true),
+      label,
+    );
+    if (isErrorEnvelope(parsed) && parsed.error === 'InvalidSchema') {
+      const basisEntries = extractDirSnapshotEntriesJson(basisJson);
+      const targetEntries = extractDirSnapshotEntriesJson(targetJson);
+      if (basisEntries !== null && targetEntries !== null) {
+        parsed = parseJsonStrict(
+          this.raw.plan_dir_snapshots_with_options_json(basisEntries, targetEntries, true),
+          label,
+        );
+      }
+    }
+    if (isErrorEnvelope(parsed)) {
+      throw new MoonLibSyncError(parsed.error, errorEnvelopeMessage(parsed, label));
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.ok === true &&
+      parsed.plan &&
+      typeof parsed.plan === 'object' &&
+      parsed.plan.schema_version === 3 &&
+      parsed.plan.kind === 'moonlibsync-dir-plan'
+    ) {
+      return parsed.plan;
+    }
+    if (parsed && typeof parsed === 'object' && parsed.ok === true && typeof parsed.plan_json === 'string') {
+      return parseSchema3Json(parsed.plan_json, 'moonlibsync-dir-plan', label);
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.schema_version === 3 &&
+      parsed.kind === 'moonlibsync-dir-plan'
+    ) {
+      return parsed;
+    }
+    throw new MoonLibSyncError(
+      'InvalidSchema',
+      `${label} returned an unexpected DirSyncPlan payload`,
     );
   }
 
@@ -665,6 +1124,205 @@ export class MoonLibSyncClient {
       'moonlibsync-dir-verify',
       'verify_dir_snapshots_json',
     );
+  }
+
+  /**
+   * Pack an in-memory directory diff into a deterministic `MLSBDL01` `.mbundle` (or `.mbundle.gz`)
+   * archive with optional move/rename detection (`copy-from-basis` & `update-delta-from`).
+   * @param {ReadonlyArray<{ path: string, bytes: Uint8Array }>} basisFiles
+   * @param {ReadonlyArray<{ path: string, bytes: Uint8Array }>} targetFiles
+   * @param {{ detectMoves?: boolean, gzip?: boolean }} [options]
+   */
+  packDirBundleArchive(basisFiles, targetFiles, options = {}) {
+    const basisJson = serializeDirFilesInput(basisFiles, 'basisFiles');
+    const targetJson = serializeDirFilesInput(targetFiles, 'targetFiles');
+    const opts = assertOptionsObject(options);
+    const detectMoves = assertBoolean(opts.detectMoves ?? false, 'detectMoves');
+    const gzip = assertBoolean(opts.gzip ?? false, 'gzip');
+    const res = parseOkJson(
+      this.raw.pack_dir_bundle_archive_json(basisJson, targetJson, detectMoves, gzip),
+      'pack_dir_bundle_archive_json',
+    );
+    const archive = hexToBytes(res.archive_hex, 'archive_hex');
+    return {
+      gzip: Boolean(res.gzip),
+      rawBytes: Number(res.raw_bytes),
+      archiveBytes: Number(res.archive_bytes),
+      archive,
+      manifest: res.manifest,
+      summary: res.summary ?? (res.manifest ? res.manifest.summary : undefined),
+    };
+  }
+
+  /**
+   * Unpack and SHA-256-verify a `.mbundle` or `.mbundle.gz` archive against in-memory basis files.
+   * @param {ReadonlyArray<{ path: string, bytes: Uint8Array }>} basisFiles
+   * @param {Uint8Array} archive
+   */
+  unpackDirBundleArchive(basisFiles, archive) {
+    const basisJson = serializeDirFilesInput(basisFiles, 'basisFiles');
+    const archiveBytes = assertBytes(archive, 'archive');
+    const res = parseOkJson(
+      this.raw.unpack_dir_bundle_archive_json(basisJson, archiveBytes),
+      'unpack_dir_bundle_archive_json',
+    );
+    if (!Array.isArray(res.files)) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'unpack_dir_bundle_archive_json returned malformed files array',
+      );
+    }
+    const files = res.files.map((item, idx) => ({
+      path: String(item.path),
+      byteLength: Number(item.byte_length),
+      sha256: String(item.sha256),
+      bytes: hexToBytes(item.content_hex, `files[${idx}].content_hex`),
+    }));
+    return {
+      wasGzip: Boolean(res.was_gzip),
+      fileCount: Number(res.file_count ?? files.length),
+      manifest: res.manifest,
+      files,
+    };
+  }
+
+  /**
+   * Derive an RFC 8032 Ed25519 key pair and 16-char SHA-256 key ID from a 32-byte seed.
+   * @param {Uint8Array} seed
+   */
+  ed25519KeypairFromSeed(seed) {
+    const seedBytes = assertBytes(seed, 'seed');
+    const res = parseOkJson(
+      this.raw.ed25519_keypair_from_seed_json(seedBytes),
+      'ed25519_keypair_from_seed_json',
+    );
+    const publicKey = hexToBytes(res.public_key_hex, 'public_key_hex');
+    return {
+      seedHex: String(res.seed_hex),
+      publicKeyHex: String(res.public_key_hex),
+      publicKey,
+      keyId: String(res.key_id),
+    };
+  }
+
+  /**
+   * Sign payload bytes with a 32-byte Ed25519 seed and emit a canonical Schema 4
+   * `moonlibsync-signature` JSON document.
+   * @param {Uint8Array} seed
+   * @param {Uint8Array} payload
+   */
+  ed25519Sign(seed, payload) {
+    const seedBytes = assertBytes(seed, 'seed');
+    const payloadBytes = assertBytes(payload, 'payload');
+    const res = parseOkJson(
+      this.raw.ed25519_sign_bytes_json(seedBytes, payloadBytes),
+      'ed25519_sign_bytes_json',
+    );
+    return {
+      signatureJson: String(res.signature_json),
+      signature: res.signature,
+    };
+  }
+
+  /**
+   * Verify a Schema 4 Ed25519 publisher signature against trusted public keys and payload bytes.
+   * Throws `MoonLibSyncError` (e.g. `UntrustedKey`, `DigestMismatch`, `InvalidSignature`) on failure.
+   * @param {string | Record<string, unknown>} signatureJson
+   * @param {ReadonlyArray<string | Uint8Array>} trustedPublicKeys
+   * @param {Uint8Array} payload
+   */
+  ed25519Verify(signatureJson, trustedPublicKeys, payload) {
+    const sigText = serializeSignatureJsonInput(signatureJson);
+    const keysJson = serializeTrustedPublicKeys(trustedPublicKeys);
+    const payloadBytes = assertBytes(payload, 'payload');
+    const res = parseOkJson(
+      this.raw.ed25519_verify_bytes_json(sigText, keysJson, payloadBytes),
+      'ed25519_verify_bytes_json',
+    );
+    if (res.verified !== true) {
+      throw new MoonLibSyncError(
+        'InvalidSignature',
+        'Ed25519 signature verification failed',
+      );
+    }
+    return {
+      verified: true,
+      keyId: String(res.key_id),
+      publicKeyHex: String(res.public_key),
+      payloadLength: Number(res.payload_length),
+      payloadSha256: String(res.payload_sha256),
+    };
+  }
+
+  /**
+   * Encrypt and authenticate bytes into an `MLSENC01` ChaCha20-Poly1305 chunked container
+   * using either a raw 32-byte key (`{ key }`) or an Argon2id-derived passphrase (`{ passphrase }`).
+   * Auto-generates CSPRNG `salt16` and `noncePrefix12` (with trailing `0x00,0x00,0x00,0x00`) when omitted.
+   * @param {Uint8Array} plain
+   * @param {{ key?: Uint8Array, passphrase?: string | Uint8Array, salt16?: Uint8Array, noncePrefix12?: Uint8Array, chunkSize?: number, argon2MemoryKib?: number, argon2Passes?: number }} options
+   */
+  seal(plain, options) {
+    const plainBytes = assertBytes(plain, 'plain');
+    const { secret, usePassphrase, opts } = resolveSealSecret(options);
+    const salt16 =
+      opts.salt16 !== undefined ? assertBytes(opts.salt16, 'salt16') : randomBytes(16);
+    const noncePrefix12 =
+      opts.noncePrefix12 !== undefined
+        ? assertBytes(opts.noncePrefix12, 'noncePrefix12')
+        : generateNoncePrefix12();
+    const chunkSize = assertInt32(opts.chunkSize ?? DEFAULT_SEAL_CHUNK_SIZE, 'chunk_size');
+    const argon2MemoryKib = assertInt32(
+      opts.argon2MemoryKib ?? DEFAULT_ARGON2_MEMORY_KIB,
+      'argon2_memory_kib',
+    );
+    const argon2Passes = assertInt32(
+      opts.argon2Passes ?? DEFAULT_ARGON2_PASSES,
+      'argon2_passes',
+    );
+    const res = parseOkJson(
+      this.raw.seal_bytes_json(
+        plainBytes,
+        secret,
+        usePassphrase,
+        salt16,
+        noncePrefix12,
+        chunkSize,
+        argon2MemoryKib,
+        argon2Passes,
+      ),
+      'seal_bytes_json',
+    );
+    const cipher = hexToBytes(res.cipher_hex, 'cipher_hex');
+    return {
+      kdfMode: res.kdf_mode,
+      plainBytes: Number(res.plain_bytes),
+      cipherBytes: Number(res.cipher_bytes),
+      chunkSize: Number(res.chunk_size),
+      cipher,
+    };
+  }
+
+  /**
+   * Decrypt and authenticate an `MLSENC01` ChaCha20-Poly1305 container using `{ key }` or `{ passphrase }`.
+   * Throws `MoonLibSyncError('AuthenticationFailed', ...)` on tampering or wrong key/passphrase.
+   * @param {Uint8Array} cipher
+   * @param {{ key?: Uint8Array, passphrase?: string | Uint8Array }} options
+   */
+  unseal(cipher, options) {
+    const cipherBytes = assertBytes(cipher, 'cipher');
+    const { secret, usePassphrase } = resolveSealSecret(options);
+    const res = parseOkJson(
+      this.raw.unseal_bytes_json(cipherBytes, secret, usePassphrase),
+      'unseal_bytes_json',
+    );
+    const plain = hexToBytes(res.plain_hex, 'plain_hex');
+    return {
+      kdfMode: res.kdf_mode,
+      chunkSize: Number(res.chunk_size),
+      plainBytes: Number(res.plain_bytes),
+      plainSha256: String(res.plain_sha256),
+      plain,
+    };
   }
 }
 
@@ -725,7 +1383,9 @@ export async function loadMoonLibSync(options = {}) {
       if (missing.length === 0) {
         return createClient(mod);
       }
-      failures.push(`incompatible module (missing ${missing.length} export(s): ${missing.slice(0, 3).join(', ')})`);
+      failures.push(
+        `incompatible module (missing ${missing.length} export(s): ${missing.slice(0, 3).join(', ')})`,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       failures.push(reason);
