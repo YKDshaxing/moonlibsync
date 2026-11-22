@@ -26,43 +26,46 @@ priv struct Plan {
   block_choice : BlockChoice
   min_savings : Int64
   basis_path : String?
+  streaming : Bool
   options : @lib.SignatureOptions
   limits : @lib.Limits
+  dir_limits : @lib.DirLimits
 }
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.3.2; inspection, reusable signatures, auto block sizing and transfer workflows
+  #|MoonLibSync 0.4.0; streaming pipelines, directory sync planning, manifests and transfer workflows
   #|Usage:
-  #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N] [LIMITS]
-  #|  moonlibsync delta SIG NEW DELTA [LIMITS]
-  #|  moonlibsync patch OLD DELTA OUT [LIMITS]
+  #|  moonlibsync signature OLD SIG [--streaming] [--block-size N|auto] [--sum-size N] [LIMITS]
+  #|  moonlibsync delta SIG NEW DELTA [--streaming] [LIMITS]
+  #|  moonlibsync patch OLD DELTA OUT [--streaming] [LIMITS]
   #|  moonlibsync basis-info OLD SIG INFO [LIMITS]
   #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [LIMITS]
-  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [LIMITS]
+  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [--streaming] [LIMITS]
   #|  moonlibsync inspect-signature SIG [--json] [LIMITS]
   #|  moonlibsync inspect-delta DELTA [--json] [LIMITS]
   #|  moonlibsync check-patch OLD DELTA [--json] [LIMITS]
   #|  moonlibsync inspect-manifest MANIFEST [--json] [LIMITS]
   #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [LIMITS]
-  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [LIMITS]
+  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [--streaming] [LIMITS]
+  #|  moonlibsync dir-snapshot DIR OUT [DIR_LIMITS]
+  #|  moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [DIR_LIMITS]
   #|  moonlibsync --help
   #|  moonlibsync --version
   #|Options may appear anywhere after the command before --; -- ends option parsing.
+  #|--streaming uses bounded 64 KiB chunks (valid on signature, delta, patch, patch-verified, apply-update).
   #|Optional [LIMITS] overrides (default Limits::default()):
   #|  --max-old-bytes N  --max-new-bytes N  --max-signature-bytes N
   #|  --max-signature-records N  --max-block-bytes N  --max-delta-bytes N
   #|  --max-output-bytes N  --max-instructions N  --max-match-work N
-  #|--json is inspection-only. One schema_version=1 object; Int64 fields are decimal strings.
-  #|Inspection never creates output files; check-patch queries OLD metadata only.
-  #|inspect-manifest validates schema1/schema2 JSON structure and limits without reading payload files.
-  #|Range checks do not authenticate basis identity or verify recovered content.
+  #|Optional [DIR_LIMITS] overrides for dir-snapshot/dir-plan (default DirLimits::default()):
+  #|  --max-entries N  --max-path-bytes N  --max-depth N
+  #|  --max-snapshot-bytes N  --max-file-bytes N
+  #|--json is inspection-only (inspect-* and dir-plan). Int64 fields are decimal strings.
+  #|inspect-manifest validates schema1/schema2 JSON structure without reading payload files.
+  #|dir-snapshot rejects all symlinks and unsafe/colliding relative paths; dir-plan is read-only.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
   #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..max-block-bytes, sum 1..32.
-  #|auto is explicit policy v1, available since 0.3.0; default remains 2048.
-  #|Selected block length is stored normally in SIG; inspect-signature shows it.
-  #|Transfer options since 0.3.0: min-savings is nonnegative Int64 (default 0).
-  #|apply-update requires basis for Delta and forbids it for Full; no publisher authentication.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
   #|Existing output entries (including links) are refused; no overwrite option.
   #|Exit codes: 0 success/help/version; 2 usage; 1 file or core error.
@@ -102,15 +105,33 @@ fn is_limit_flag(flag : String) -> Bool {
 }
 
 ///|
+fn is_dir_limit_flag(flag : String) -> Bool {
+  flag == "--max-entries" ||
+  flag == "--max-path-bytes" ||
+  flag == "--max-depth" ||
+  flag == "--max-snapshot-bytes" ||
+  flag == "--max-file-bytes"
+}
+
+///|
+fn bounded_decimal(
+  text : String,
+  minimum : Int64,
+  maximum : Int64,
+) -> Int64 raise CliError {
+  let n = nonnegative_decimal(text)
+  guard n >= minimum && n <= maximum else {
+    raise Usage("numeric option out of range: " + text)
+  }
+  n
+}
+
+///|
 fn parse_limit_value(flag : String, text : String) -> Int64 raise CliError {
   if flag == "--max-block-bytes" {
     positive_decimal(text, 2147483647L)
   } else {
-    let n = nonnegative_decimal(text)
-    guard n <= 2147483647L else {
-      raise Usage("numeric option out of range: " + text)
-    }
-    n
+    bounded_decimal(text, 0L, 2147483647L)
   }
 }
 
@@ -135,14 +156,54 @@ fn apply_limit_flag(
 }
 
 ///|
+fn parse_dir_limit_value(flag : String, text : String) -> Int64 raise CliError {
+  match flag {
+    "--max-entries" => bounded_decimal(text, 0L, 65536L)
+    "--max-path-bytes" => bounded_decimal(text, 1L, 4096L)
+    "--max-depth" => bounded_decimal(text, 1L, 64L)
+    "--max-snapshot-bytes" => bounded_decimal(text, 64L, 16777216L)
+    "--max-file-bytes" => bounded_decimal(text, 0L, 2147483647L)
+    _ => raise Usage("unknown option: " + flag)
+  }
+}
+
+///|
+fn apply_dir_limit_flag(
+  limits : @lib.DirLimits,
+  flag : String,
+  value : Int64,
+) -> @lib.DirLimits raise CliError {
+  match flag {
+    "--max-entries" => { ..limits, max_entries: value, }
+    "--max-path-bytes" => { ..limits, max_path_bytes: value, }
+    "--max-depth" => { ..limits, max_depth: value, }
+    "--max-snapshot-bytes" => { ..limits, max_snapshot_bytes: value, }
+    "--max-file-bytes" => { ..limits, max_file_bytes: value, }
+    _ => raise Usage("unknown option: " + flag)
+  }
+}
+
+///|
+fn supports_streaming(operation : String) -> Bool {
+  operation == "signature" ||
+  operation == "delta" ||
+  operation == "patch" ||
+  operation == "patch-verified" ||
+  operation == "apply-update"
+}
+
+///|
 fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard args.length() > 0 else { raise Usage("missing command") }
   let operation = args[0]
+  let dir_op = operation == "dir-snapshot" || operation == "dir-plan"
   let inspection = operation == "inspect-signature" ||
     operation == "inspect-delta" ||
     operation == "check-patch" ||
-    operation == "inspect-manifest"
+    operation == "inspect-manifest" ||
+    operation == "dir-plan"
   guard inspection ||
+    dir_op ||
     operation == "signature" ||
     operation == "delta" ||
     operation == "patch" ||
@@ -154,19 +215,18 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     raise Usage("unknown command: " + operation)
   }
   let mut limits = @lib.Limits::default()
+  let mut dir_limits = @lib.DirLimits::default()
   let seen_limits : Map[String, Bool] = Map([])
-  let needed = if inspection {
-    if operation == "check-patch" {
-      2
-    } else {
-      1
-    }
+  let needed = if operation == "dir-plan" || operation == "check-patch" {
+    2
+  } else if inspection {
+    1
   } else if operation == "make-manifest" ||
     operation == "make-transfer-manifest" {
     5
   } else if operation == "patch-verified" {
     4
-  } else if operation == "signature" {
+  } else if operation == "signature" || operation == "dir-snapshot" {
     2
   } else {
     3
@@ -176,6 +236,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   let mut min_savings = 0L
   let mut saw_savings = false
   let mut basis_path : String? = None
+  let mut streaming = false
   let mut sum = 32L
   let mut saw_block = false
   let mut saw_sum = false
@@ -186,12 +247,28 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     let arg = args[i]
     if options && arg == "--" {
       options = false
+    } else if options && arg == "--streaming" {
+      guard supports_streaming(operation) else {
+        raise Usage("streaming is not supported for command: " + operation)
+      }
+      guard !streaming else { raise Usage("duplicate option: --streaming") }
+      streaming = true
     } else if options && is_limit_flag(arg) {
+      guard !dir_op else { raise Usage("file-only limit option: " + arg) }
       guard !seen_limits.contains(arg) && i + 1 < args.length() else {
         raise Usage("duplicate or missing value for " + arg)
       }
       let value = parse_limit_value(arg, args[i + 1])
       limits = apply_limit_flag(limits, arg, value)
+      seen_limits[arg] = true
+      i = i + 1
+    } else if options && is_dir_limit_flag(arg) {
+      guard dir_op else { raise Usage("directory-only limit option: " + arg) }
+      guard !seen_limits.contains(arg) && i + 1 < args.length() else {
+        raise Usage("duplicate or missing value for " + arg)
+      }
+      let value = parse_dir_limit_value(arg, args[i + 1])
+      dir_limits = apply_dir_limit_flag(dir_limits, arg, value)
       seen_limits[arg] = true
       i = i + 1
     } else if options && arg == "--min-savings" {
@@ -277,8 +354,9 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     block_choice,
     min_savings,
     basis_path,
+    streaming,
     // Keep legacy numeric options valid; Auto is represented only by its enum.
-    // The execution path resolves it from the actual bounded-read Bytes.
+    // The execution path resolves it from the actual bounded file size.
     options: {
       block_len: match block_choice {
         Explicit(value) => value
@@ -287,6 +365,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       strong_sum_len: sum,
     },
     limits,
+    dir_limits,
   }
 }
 

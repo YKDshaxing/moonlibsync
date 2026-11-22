@@ -1,4 +1,4 @@
-"""Real Native CLI tests. Separate from library210 and Python interop-tool6."""
+"""Real Native CLI tests. Separate from library218 and Python interop-tool6."""
 import ctypes
 import hashlib
 import json
@@ -18,8 +18,8 @@ os.chdir(ROOT)
 OUTPUT = ROOT / os.environ.get('MOONLIBSYNC_BUILD_DIR', '_build') / 'cli'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 report = dict(format=1, status='running', platform=platform.platform(), cases=[],
-              native_helper_tests=dict(expected=24, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, passed=0, status='not_executed'),
-              baseline_core_library_tests=179, core_library_tests=210, transfer_core_library_tests_added=15, v032_core_library_tests_added=10, baseline_python_interop_tool_tests=6,
+              native_helper_tests=dict(expected=30, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, v040_added=6, passed=0, status='not_executed'),
+              baseline_core_library_tests=179, core_library_tests=218, transfer_core_library_tests_added=15, v032_core_library_tests_added=10, v040_core_library_tests_added=8, baseline_python_interop_tool_tests=6,
               cleanup='not_completed', unsupported=[])
 log = (OUTPUT/'commands.log').open('w', encoding='utf-8')
 root = None
@@ -150,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(24,24,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(30,30,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -449,13 +449,15 @@ try:
     transfer_exercise(root, case, report)
     from cli_v032_cases import exercise as v032_exercise
     v032_exercise(root, case, report, not any(item['feature']=='symbolic links' for item in report['unsupported']))
+    from cli_v040_cases import exercise as v040_exercise
+    v040_exercise(root, case, report, not any(item['feature']=='symbolic links' for item in report['unsupported']))
     assert foreign.read_bytes()==b'FOREIGN' and temps()=={foreign.name}
     # Delete only this verified fresh run directory, after restoring permissions.
     assert root.is_relative_to(run_parent) and root.name.startswith('run-')
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 24 Native helper tests (19 previous + 5 v032); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 30 Native helper tests (24 previous + 6 v040); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:
@@ -470,7 +472,8 @@ finally:
     report['auto_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('auto_added'))
     report['manifest_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('manifest_added'))
     report['v032_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v032_added'))
-    report['original_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if not c.get('inspection_added') and not c.get('manifest_added') and not c.get('auto_added') and not c.get('transfer_added') and not c.get('v032_added'))
+    report['v040_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v040_added'))
+    report['original_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if not c.get('inspection_added') and not c.get('manifest_added') and not c.get('auto_added') and not c.get('transfer_added') and not c.get('v032_added') and not c.get('v040_added'))
     (OUTPUT/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     log.close()
 sys.exit(code)

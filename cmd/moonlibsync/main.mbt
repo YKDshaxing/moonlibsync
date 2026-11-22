@@ -21,7 +21,11 @@ fn core_error_tag(error : Error) -> String {
 async fn execute(plan : Plan) -> Unit {
   match plan.mode {
     WriteFile(output) =>
-      if plan.operation == "make-transfer-manifest" ||
+      if plan.operation == "dir-snapshot" {
+        execute_dir_snapshot(plan, output)
+      } else if plan.streaming {
+        execute_streaming_write(plan, output)
+      } else if plan.operation == "make-transfer-manifest" ||
         plan.operation == "apply-update" {
         execute_transfer_write(plan, output)
       } else if plan.operation == "basis-info" ||
@@ -31,7 +35,12 @@ async fn execute(plan : Plan) -> Unit {
       } else {
         execute_write(plan, output)
       }
-    Inspect(json) => execute_inspection(plan, json)
+    Inspect(json) =>
+      if plan.operation == "dir-plan" {
+        execute_dir_plan(plan, json)
+      } else {
+        execute_inspection(plan, json)
+      }
   }
 }
 
@@ -93,7 +102,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.3.2\n")
+      @stdio.stdout.write(b"MoonLibSync 0.4.0\n")
     } else {
       execute(parse_plan(args[1:]))
     }

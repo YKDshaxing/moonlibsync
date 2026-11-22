@@ -174,15 +174,7 @@ async fn publish_at(
 
 ///|
 async fn publish_output(output : String, data : Bytes) -> Unit {
-  let random = match @env.rand(16) {
-    Some(value) => @hex.encode(value)
-    None => raise FileFailure("temporary name randomness unavailable")
-  }
-  let parent = @path.Path(output).dirname()
-  let temporary = parent
-    .join(@path.Path(".moonlibsync-" + random + ".tmp"))
-    .to_string()
-  publish_at(temporary, output, data)
+  publish_at(unique_temp_path(output), output, data)
 }
 
 ///|
