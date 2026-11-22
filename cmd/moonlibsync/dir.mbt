@@ -29,10 +29,36 @@ async fn stream_hash_regular_file(
 }
 
 ///|
-fn validate_excludes(excludes : Array[String]) -> Unit raise @lib.ManifestError {
-  for pattern in excludes {
-    let _ = @lib.match_dir_exclude("a", pattern)
+async fn resolve_excludes(plan : Plan) -> Array[String] {
+  if plan.exclude_sources.length() == plan.excludes.length() {
+    for pat in plan.excludes {
+      let _ = @lib.match_dir_exclude("a", pat)
+    }
+    return plan.excludes
   }
+  let merged : Array[String] = []
+  for src in plan.exclude_sources {
+    match src {
+      Pattern(pat) => {
+        let _ = @lib.match_dir_exclude("a", pat)
+        guard merged.length() < 4096 else {
+          raise @lib.ManifestError::ResourceLimit("exclude_patterns")
+        }
+        merged.push(pat)
+      }
+      File(path) => {
+        let raw = bounded_read(path, plan.dir_limits.max_snapshot_bytes)
+        let parsed = @lib.parse_dir_exclude_file(raw, plan.dir_limits)
+        for pat in parsed {
+          guard merged.length() < 4096 else {
+            raise @lib.ManifestError::ResourceLimit("exclude_patterns")
+          }
+          merged.push(pat)
+        }
+      }
+    }
+  }
+  merged
 }
 
 ///|
@@ -136,7 +162,7 @@ async fn collect_dir_entries(
 async fn execute_dir_snapshot(plan : Plan, output_path : String) -> Unit {
   try {
     plan.dir_limits.validate()
-    validate_excludes(plan.excludes)
+    let effective_excludes = resolve_excludes(plan)
     let root_dir = plan.inputs[0]
     guard @fs.kind(root_dir, follow_symlink=false) is @fs.FileKind::Directory else {
       raise FileFailure(
@@ -154,7 +180,7 @@ async fn execute_dir_snapshot(plan : Plan, output_path : String) -> Unit {
       plan.dir_limits,
       seen_lower,
       entries,
-      excludes=plan.excludes,
+      excludes=effective_excludes,
       progress~,
     )
     let snapshot = @lib.create_dir_snapshot(entries, plan.dir_limits)
@@ -190,6 +216,7 @@ fn dir_action_text_tag(kind : @lib.DirActionKind) -> String {
     AddFull => "add-full"
     UpdateCandidate => "update-candidate"
     Delete => "delete"
+    CopyFromBasis(_) => "copy-from-basis"
   }
 }
 
@@ -198,6 +225,7 @@ fn format_dir_plan(
   plan : @lib.DirSyncPlan,
   limits : @lib.DirLimits,
   json : Bool,
+  show_copy_from_basis~ : Bool = false,
 ) -> String raise @lib.ManifestError {
   if json {
     @utf8.decode(@lib.encode_dir_plan(plan, limits)) catch {
@@ -210,11 +238,18 @@ fn format_dir_plan(
     out.write_string("add: \{plan.add_count}\n")
     out.write_string("update: \{plan.update_count}\n")
     out.write_string("delete: \{plan.delete_count}\n")
+    if show_copy_from_basis || plan.copy_from_basis_count > 0L {
+      out.write_string("copy_from_basis: \{plan.copy_from_basis_count}\n")
+    }
     out.write_string(
       "transfer_upper_bound_bytes: \{plan.transfer_upper_bound_bytes} bytes\n",
     )
     for a in plan.actions {
-      out.write_string("  \{dir_action_text_tag(a.kind)}: \{a.path}\n")
+      match a.kind {
+        CopyFromBasis(src) =>
+          out.write_string("  copy-from-basis: \{a.path} <- \{src}\n")
+        _ => out.write_string("  \{dir_action_text_tag(a.kind)}: \{a.path}\n")
+      }
     }
     out.write_string(
       "Read-only directory sync plan; no filesystem entries were modified.\n",
@@ -232,9 +267,19 @@ async fn execute_dir_plan(plan : Plan, json : Bool) -> Unit {
     let target_raw = bounded_read(plan.inputs[1], limits.max_snapshot_bytes)
     let basis = @lib.parse_dir_snapshot(basis_raw, limits)
     let target = @lib.parse_dir_snapshot(target_raw, limits)
-    let dir_plan = @lib.plan_dir_sync(basis, target, limits)
+    let dir_plan = @lib.plan_dir_sync_with_options(
+      basis,
+      target,
+      { detect_moves: plan.detect_moves, },
+      limits,
+    )
     (
-      format_dir_plan(dir_plan, limits, json),
+      format_dir_plan(
+        dir_plan,
+        limits,
+        json,
+        show_copy_from_basis=plan.detect_moves,
+      ),
       basis_raw.length().to_int64() + target_raw.length().to_int64(),
     )
   } catch {
@@ -302,7 +347,7 @@ async fn execute_dir_verify(
   let progress = make_progress(plan, -1L)
   let (report, text) = try {
     limits.validate()
-    validate_excludes(plan.excludes)
+    let effective_excludes = resolve_excludes(plan)
     let root_dir = plan.inputs[0]
     guard @fs.kind(root_dir, follow_symlink=false) is @fs.FileKind::Directory else {
       raise FileFailure(
@@ -320,7 +365,7 @@ async fn execute_dir_verify(
       limits,
       seen_lower,
       entries,
-      excludes=plan.excludes,
+      excludes=effective_excludes,
       progress~,
     )
     let actual = @lib.create_dir_snapshot(entries, limits)

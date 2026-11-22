@@ -1,6 +1,8 @@
 import {
   "YKDshaxing/moonlibsync" @lib,
   "YKDshaxing/moonlibsync/compress",
+  "YKDshaxing/moonlibsync/crypto",
+  "moonbitlang/core/buffer",
   "moonbitlang/core/env",
   "moonbitlang/core/path",
   "moonbitlang/core/async",

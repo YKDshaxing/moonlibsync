@@ -30,10 +30,9 @@ async fn execute_transfer_write(
         limits,
       )
     } else {
-      let manifest = @lib.parse_transfer_manifest(
-        bounded_read(p[1], 65536L),
-        limits,
-      )
+      let manifest_bytes = bounded_read(p[1], 65536L)
+      verify_attached_signature_bytes(plan, manifest_bytes)
+      let manifest = @lib.parse_transfer_manifest(manifest_bytes, limits)
       let cap = match manifest {
         @lib.TransferManifest::Delta(_) => limits.max_delta_bytes
         @lib.TransferManifest::Full(_, _) => limits.max_new_bytes

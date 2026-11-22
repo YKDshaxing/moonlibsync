@@ -12,26 +12,30 @@ fn unique_temp_path(output : String) -> String raise CliError {
 
 ///|
 fn stream_error_detail(error : Error) -> String {
-  match error {
-    @lib.ManifestError::Core(_)
-    | @lib.ManifestError::BindingMismatch(_)
-    | @lib.ManifestError::InvalidField(_)
-    | @lib.ManifestError::ResourceLimit(_)
-    | @lib.ManifestError::InvalidUtf8
-    | @lib.ManifestError::InvalidJson
-    | @lib.ManifestError::InvalidSchema
-    | @lib.ManifestError::HashFailure => manifest_error_tag(error)
-    @lib.SyncError::InvalidOptions(_)
-    | @lib.SyncError::UnsupportedSignatureProfile
-    | @lib.SyncError::TruncatedInput
-    | @lib.SyncError::InvalidSignature
-    | @lib.SyncError::InvalidDelta
-    | @lib.SyncError::InvalidOpcode
-    | @lib.SyncError::IntegerOutOfRange
-    | @lib.SyncError::CopyOutOfBounds
-    | @lib.SyncError::TrailingData
-    | @lib.SyncError::LimitExceeded => core_error_tag(error)
-    _ => cli_error_text(error)
+  match crypto_error_tag_of(error) {
+    Some(tag) => tag
+    None =>
+      match error {
+        @lib.ManifestError::Core(_)
+        | @lib.ManifestError::BindingMismatch(_)
+        | @lib.ManifestError::InvalidField(_)
+        | @lib.ManifestError::ResourceLimit(_)
+        | @lib.ManifestError::InvalidUtf8
+        | @lib.ManifestError::InvalidJson
+        | @lib.ManifestError::InvalidSchema
+        | @lib.ManifestError::HashFailure => manifest_error_tag(error)
+        @lib.SyncError::InvalidOptions(_)
+        | @lib.SyncError::UnsupportedSignatureProfile
+        | @lib.SyncError::TruncatedInput
+        | @lib.SyncError::InvalidSignature
+        | @lib.SyncError::InvalidDelta
+        | @lib.SyncError::InvalidOpcode
+        | @lib.SyncError::IntegerOutOfRange
+        | @lib.SyncError::CopyOutOfBounds
+        | @lib.SyncError::TrailingData
+        | @lib.SyncError::LimitExceeded => core_error_tag(error)
+        _ => cli_error_text(error)
+      }
   }
 }
 
@@ -213,40 +217,47 @@ fn wrap_stream_error(
   output_path : String,
   error : Error,
 ) -> CliError {
-  match error {
-    Usage(msg) => Usage(msg)
-    FileFailure(msg) => FileFailure(msg)
-    @lib.ManifestError::Core(_)
-    | @lib.ManifestError::BindingMismatch(_)
-    | @lib.ManifestError::InvalidField(_)
-    | @lib.ManifestError::ResourceLimit(_)
-    | @lib.ManifestError::InvalidUtf8
-    | @lib.ManifestError::InvalidJson
-    | @lib.ManifestError::InvalidSchema
-    | @lib.ManifestError::HashFailure =>
-      FileFailure(plan.operation + ": " + manifest_error_tag(error))
-    @lib.SyncError::InvalidOptions(_)
-    | @lib.SyncError::UnsupportedSignatureProfile
-    | @lib.SyncError::TruncatedInput
-    | @lib.SyncError::InvalidSignature
-    | @lib.SyncError::InvalidDelta
-    | @lib.SyncError::InvalidOpcode
-    | @lib.SyncError::IntegerOutOfRange
-    | @lib.SyncError::CopyOutOfBounds
-    | @lib.SyncError::TrailingData
-    | @lib.SyncError::LimitExceeded =>
-      FileFailure(
-        "core " +
-        plan.operation +
-        " for '" +
-        output_path +
-        "': " +
-        core_error_tag(error),
-      )
-    _ =>
-      FileFailure(
-        plan.operation + " for '" + output_path + "': \{cli_error_text(error)}",
-      )
+  match crypto_error_tag_of(error) {
+    Some(tag) => FileFailure(plan.operation + ": " + tag)
+    None =>
+      match error {
+        Usage(msg) => Usage(msg)
+        FileFailure(msg) => FileFailure(msg)
+        @lib.ManifestError::Core(_)
+        | @lib.ManifestError::BindingMismatch(_)
+        | @lib.ManifestError::InvalidField(_)
+        | @lib.ManifestError::ResourceLimit(_)
+        | @lib.ManifestError::InvalidUtf8
+        | @lib.ManifestError::InvalidJson
+        | @lib.ManifestError::InvalidSchema
+        | @lib.ManifestError::HashFailure =>
+          FileFailure(plan.operation + ": " + manifest_error_tag(error))
+        @lib.SyncError::InvalidOptions(_)
+        | @lib.SyncError::UnsupportedSignatureProfile
+        | @lib.SyncError::TruncatedInput
+        | @lib.SyncError::InvalidSignature
+        | @lib.SyncError::InvalidDelta
+        | @lib.SyncError::InvalidOpcode
+        | @lib.SyncError::IntegerOutOfRange
+        | @lib.SyncError::CopyOutOfBounds
+        | @lib.SyncError::TrailingData
+        | @lib.SyncError::LimitExceeded =>
+          FileFailure(
+            "core " +
+            plan.operation +
+            " for '" +
+            output_path +
+            "': " +
+            core_error_tag(error),
+          )
+        _ =>
+          FileFailure(
+            plan.operation +
+            " for '" +
+            output_path +
+            "': \{cli_error_text(error)}",
+          )
+      }
   }
 }
 
@@ -359,11 +370,17 @@ async fn streaming_create_basis_info(
   let sig_summary = @lib.inspect_signature(sig, limits) catch {
     error => raise @lib.ManifestError::Core(error)
   }
-  let sig_hasher = @lib.SignatureHasher::new(
+  let sig_profile = if sig_summary.magic == 0x72730137U {
+    @lib.SignatureProfile::RollsumBlake2
+  } else {
+    @lib.SignatureProfile::RkBlake2
+  }
+  let sig_hasher = @lib.SignatureHasher::new_with_profile(
     {
       block_len: sig_summary.block_len,
       strong_sum_len: sig_summary.strong_sum_len,
     },
+    sig_profile,
     limits,
   ) catch {
     error => raise @lib.ManifestError::Core(error)
@@ -558,8 +575,9 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
               limits,
             )
         }
-        let hasher = @lib.SignatureHasher::new(
+        let hasher = @lib.SignatureHasher::new_with_profile(
           { block_len: block, strong_sum_len: plan.options.strong_sum_len, },
+          plan.sig_profile,
           limits,
         )
         let output = prepare_output(output_path)
@@ -636,8 +654,63 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
         })
         finish_progress(progress)
       }
+      "reverse-delta" => {
+        let old_path = plan.inputs[0]
+        let new_path = plan.inputs[1]
+        let new_file = open_regular_input(new_path)
+        defer new_file.close()
+        let new_size = check_open_regular_sized(
+          new_file,
+          new_path,
+          limits.max_old_bytes,
+        )
+        let block = match plan.block_choice {
+          Explicit(v) => v
+          Auto =>
+            @lib.recommend_block_len(
+              new_size,
+              plan.options.strong_sum_len,
+              limits,
+            )
+        }
+        let old_file = open_regular_input(old_path)
+        defer old_file.close()
+        let old_size = check_open_regular_sized(
+          old_file,
+          old_path,
+          limits.max_new_bytes,
+        )
+        guard old_size <= limits.max_output_bytes else {
+          raise @lib.SyncError::LimitExceeded
+        }
+        let output = prepare_output(output_path)
+        let progress = make_progress(plan, new_size + old_size)
+        let sig_hasher = @lib.SignatureHasher::new(
+          { block_len: block, strong_sum_len: plan.options.strong_sum_len, },
+          limits,
+        )
+        let sig_buf = @buffer.Buffer(size_hint=256)
+        sig_buf.write_bytes(sig_hasher.take_ready())
+        stream_open_chunks(new_file, new_path, new_size, progress~, chunk => {
+          sig_hasher.update(chunk)
+          sig_buf.write_bytes(sig_hasher.take_ready())
+        })
+        sig_buf.write_bytes(sig_hasher.finish())
+        let prepared = @lib.prepare_signature(sig_buf.to_bytes(), limits)
+        let scanner = @lib.DeltaScanner::new(prepared, limits)
+        publish_stream(output, tmp_file => {
+          write_nonempty(tmp_file, scanner.take_ready()[:])
+          stream_open_chunks(old_file, old_path, old_size, progress~, chunk => {
+            scanner.feed(chunk)
+            write_nonempty(tmp_file, scanner.take_ready()[:])
+          })
+          write_nonempty(tmp_file, scanner.finish()[:])
+        })
+        finish_progress(progress)
+      }
       "patch-verified" => {
         let manifest_bytes = bounded_read(plan.inputs[2], 65536L)
+        verify_attached_signature_bytes(plan, manifest_bytes)
         let manifest = @lib.parse_update_manifest(manifest_bytes, limits)
         let progress = make_progress(
           plan,
@@ -655,6 +728,7 @@ async fn execute_streaming_write(plan : Plan, output_path : String) -> Unit {
       }
       _ => {
         let manifest_bytes = bounded_read(plan.inputs[1], 65536L)
+        verify_attached_signature_bytes(plan, manifest_bytes)
         let manifest = @lib.parse_transfer_manifest(manifest_bytes, limits)
         match manifest {
           @lib.TransferManifest::Delta(m) => {

@@ -27,6 +27,12 @@ async fn execute(plan : Plan) -> Unit {
         execute_dir_bundle_op(plan, output)
       } else if plan.operation == "compress" || plan.operation == "decompress" {
         execute_compress_op(plan, output)
+      } else if plan.operation == "keygen" {
+        execute_keygen(plan, output)
+      } else if plan.operation == "sign" {
+        execute_sign(plan, output)
+      } else if plan.operation == "seal" || plan.operation == "unseal" {
+        execute_seal_op(plan, output)
       } else if plan.streaming {
         execute_streaming_write(plan, output)
       } else if plan.operation == "make-transfer-manifest" ||
@@ -45,6 +51,12 @@ async fn execute(plan : Plan) -> Unit {
         execute_dir_plan(plan, json)
       } else if plan.operation == "dir-verify" {
         execute_dir_verify(plan, json)
+      } else if plan.operation == "verify" {
+        execute_verify(plan, json)
+      } else if plan.operation == "inspect-bundle" {
+        execute_inspect_bundle(plan, json)
+      } else if plan.operation == "completions" {
+        execute_completions(plan)
       } else {
         execute_inspection(plan, json)
       }
@@ -58,6 +70,8 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
   let output = prepare_output(output_path)
   let first_limit = if plan.operation == "delta" {
     limits.max_signature_bytes
+  } else if plan.operation == "reverse-delta" {
+    limits.max_new_bytes
   } else {
     limits.max_old_bytes
   }
@@ -69,6 +83,8 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
       plan.inputs[1],
       if plan.operation == "delta" {
         limits.max_new_bytes
+      } else if plan.operation == "reverse-delta" {
+        limits.max_old_bytes
       } else {
         limits.max_delta_bytes
       },
@@ -77,8 +93,20 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
   let data = try {
     match plan.operation {
       "signature" =>
-        @lib.signature(first, signature_options(plan, first, limits), limits)
+        @lib.signature_with_profile(
+          first,
+          signature_options(plan, first, limits),
+          plan.sig_profile,
+          limits,
+        )
       "delta" => @lib.delta(first, second, limits)
+      "reverse-delta" =>
+        @lib.create_reverse_delta(
+          first,
+          second,
+          signature_options(plan, second, limits),
+          limits,
+        )
       _ => @lib.patch(first, second, limits)
     }
   } catch {
@@ -97,6 +125,8 @@ async fn execute_write(plan : Plan, output_path : String) -> Unit {
     plan,
     if plan.operation == "signature" {
       first.length().to_int64()
+    } else if plan.operation == "reverse-delta" {
+      first.length().to_int64() + second.length().to_int64()
     } else {
       second.length().to_int64()
     },
@@ -117,7 +147,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.5.0\n")
+      @stdio.stdout.write(b"MoonLibSync 0.6.0\n")
     } else {
       execute(parse_plan(args[1:]))
     }

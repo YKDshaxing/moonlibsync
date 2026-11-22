@@ -14,10 +14,15 @@ fn delta_text(s : @lib.DeltaSummary) -> String {
 
 ///|
 fn format_signature(s : @lib.SignatureSummary, json : Bool) -> String {
-  if json {
-    "{\"schema_version\":1,\"command\":\"inspect-signature\",\"summary\":{\"magic\":\"0x72730147\",\"profile\":\"RS_RK_BLAKE2_SIG_MAGIC\",\"block_len\":\"\{s.block_len}\",\"strong_sum_len\":\"\{s.strong_sum_len}\",\"record_count\":\"\{s.record_count}\",\"signature_bytes\":\"\{s.signature_bytes}\"}}\n"
+  let (magic_hex, profile_name) = if s.magic == 0x72730137U {
+    ("0x72730137", "RS_BLAKE2_SIG_MAGIC")
   } else {
-    "inspect-signature\nmagic: 0x72730147\nprofile: RS_RK_BLAKE2_SIG_MAGIC\nblock_len: \{s.block_len} bytes\nstrong_sum_len: \{s.strong_sum_len} bytes\nrecord_count: \{s.record_count}\nsignature_bytes: \{s.signature_bytes} bytes\nActual basis and final-block lengths are not encoded.\n"
+    ("0x72730147", "RS_RK_BLAKE2_SIG_MAGIC")
+  }
+  if json {
+    "{\"schema_version\":1,\"command\":\"inspect-signature\",\"summary\":{\"magic\":\"\{magic_hex}\",\"profile\":\"\{profile_name}\",\"block_len\":\"\{s.block_len}\",\"strong_sum_len\":\"\{s.strong_sum_len}\",\"record_count\":\"\{s.record_count}\",\"signature_bytes\":\"\{s.signature_bytes}\"}}\n"
+  } else {
+    "inspect-signature\nmagic: \{magic_hex}\nprofile: \{profile_name}\nblock_len: \{s.block_len} bytes\nstrong_sum_len: \{s.strong_sum_len} bytes\nrecord_count: \{s.record_count}\nsignature_bytes: \{s.signature_bytes} bytes\nActual basis and final-block lengths are not encoded.\n"
   }
 }
 
@@ -136,16 +141,20 @@ fn format_manifest(parsed : ParsedManifest, json : Bool) -> String {
 
 ///|
 fn inspect_error_tag(error : Error) -> String {
-  match error {
-    @lib.ManifestError::Core(_)
-    | @lib.ManifestError::BindingMismatch(_)
-    | @lib.ManifestError::InvalidField(_)
-    | @lib.ManifestError::ResourceLimit(_)
-    | @lib.ManifestError::InvalidUtf8
-    | @lib.ManifestError::InvalidJson
-    | @lib.ManifestError::InvalidSchema
-    | @lib.ManifestError::HashFailure => manifest_error_tag(error)
-    _ => core_error_tag(error)
+  match crypto_error_tag_of(error) {
+    Some(tag) => tag
+    None =>
+      match error {
+        @lib.ManifestError::Core(_)
+        | @lib.ManifestError::BindingMismatch(_)
+        | @lib.ManifestError::InvalidField(_)
+        | @lib.ManifestError::ResourceLimit(_)
+        | @lib.ManifestError::InvalidUtf8
+        | @lib.ManifestError::InvalidJson
+        | @lib.ManifestError::InvalidSchema
+        | @lib.ManifestError::HashFailure => manifest_error_tag(error)
+        _ => core_error_tag(error)
+      }
   }
 }
 
@@ -288,4 +297,204 @@ async fn write_inspection(
   writer~ : async (Bytes) -> Unit = stdout_bytes,
 ) -> Unit {
   writer(@utf8.encode(text))
+}
+
+///|
+fn format_inspect_bundle(
+  manifest : @lib.DirBundleManifest,
+  archive_size : Int64,
+  gzip : Bool,
+  dir_limits : @lib.DirLimits,
+  limits : @lib.Limits,
+  json : Bool,
+) -> String raise @lib.ManifestError {
+  if json {
+    let encoded = @lib.encode_dir_bundle_manifest(manifest, dir_limits, limits)
+    let raw_str = @utf8.decode(encoded, ignore_bom=false) catch {
+      _ => raise @lib.ManifestError::InvalidUtf8
+    }
+    let manifest_json = trim_trailing_newline(raw_str)
+    "{\"schema_version\":1,\"command\":\"inspect-bundle\",\"archive_bytes\":\"\{archive_size}\",\"gzip\":\{gzip},\"manifest\":\{manifest_json}}\n"
+  } else {
+    let out = StringBuilder()
+    out.write_string("inspect-bundle\n")
+    out.write_string("archive_bytes: \{archive_size} bytes\n")
+    out.write_string("gzip: \{gzip}\n")
+    out.write_string("unchanged: \{manifest.unchanged_count}\n")
+    out.write_string("add_full: \{manifest.add_full_count}\n")
+    out.write_string("update_delta: \{manifest.update_delta_count}\n")
+    out.write_string("update_full: \{manifest.update_full_count}\n")
+    out.write_string("delete: \{manifest.delete_count}\n")
+    out.write_string("copy_from_basis: \{manifest.copy_from_basis_count}\n")
+    out.write_string(
+      "total_payload_bytes: \{manifest.total_payload_bytes} bytes\n",
+    )
+    out.write_string("entries: \{manifest.entries.length()}\n")
+    for entry in manifest.entries {
+      match entry.action {
+        Unchanged(_) => out.write_string("  unchanged: \{entry.path}\n")
+        AddFull(_, _) => out.write_string("  add-full: \{entry.path}\n")
+        UpdateDelta(_, _) => out.write_string("  update-delta: \{entry.path}\n")
+        UpdateFull(_, _, _) =>
+          out.write_string("  update-full: \{entry.path}\n")
+        Delete(_) => out.write_string("  delete: \{entry.path}\n")
+        CopyFromBasis(src, _) =>
+          out.write_string("  copy-from-basis: \{entry.path} <- \{src}\n")
+        UpdateDeltaFrom(src, _, _) =>
+          out.write_string("  update-delta-from: \{entry.path} <- \{src}\n")
+      }
+    }
+    out.write_string(
+      "Read-only bundle archive inspection; no filesystem entries were modified.\n",
+    )
+    out.to_string()
+  }
+}
+
+///|
+async fn execute_inspect_bundle(
+  plan : Plan,
+  json : Bool,
+  writer~ : async (Bytes) -> Unit = stdout_bytes,
+) -> Unit {
+  let limits = plan.limits
+  let dir_limits = plan.dir_limits
+  let progress = make_progress(plan, -1L)
+  let text = try {
+    limits.validate()
+    dir_limits.validate()
+    let archive_path = plan.inputs[0]
+    let archive_file = open_regular_input(archive_path)
+    defer archive_file.close()
+    let archive_size = check_open_regular_sized(
+      archive_file, archive_path, 2147483647L,
+    )
+    match progress {
+      Some(p) => if p.total < 0L { p.total = archive_size }
+      None => ()
+    }
+    let arch_dec = @lib.BundleArchiveDecoder::new(dir_limits, limits)
+    let expected_digests : Map[String, @lib.FileDigest] = Map([])
+    let mut active_hasher : @lib.Sha256Hasher? = None
+    let mut active_expected : @lib.FileDigest? = None
+    let mut active_path = ""
+    fn feed_archive(view : BytesView) -> Unit raise @lib.ManifestError {
+      let mut pos = 0
+      while pos < view.length() || arch_dec.has_pending_event() {
+        let (consumed, step) = arch_dec.step(view[pos:])
+        pos = pos + consumed
+        match step {
+          NeedInput => ()
+          Manifest(m) =>
+            for entry in m.entries {
+              match entry.action {
+                Unchanged(_) | Delete(_) | CopyFromBasis(_, _) => ()
+                AddFull(p, target) => expected_digests[p] = target
+                UpdateFull(p, _, target) => expected_digests[p] = target
+                UpdateDelta(p, um) | UpdateDeltaFrom(_, p, um) =>
+                  expected_digests[p] = um.delta
+              }
+            }
+          BeginPayload(rel_payload, payload_len) => {
+            guard active_hasher is None else {
+              raise @lib.ManifestError::InvalidSchema
+            }
+            let exp = match expected_digests.get(rel_payload) {
+              Some(d) => d
+              None =>
+                raise @lib.ManifestError::BindingMismatch(
+                  "archive_payload_path",
+                )
+            }
+            guard exp.byte_length == payload_len else {
+              raise @lib.ManifestError::BindingMismatch(
+                "archive_payload_length",
+              )
+            }
+            active_hasher = Some(@lib.Sha256Hasher::new(payload_len))
+            active_expected = Some(exp)
+            active_path = rel_payload
+          }
+          PayloadChunk(data_view) =>
+            match active_hasher {
+              Some(h) => h.update(data_view)
+              None => raise @lib.ManifestError::InvalidSchema
+            }
+          EndPayload(rel_payload) => {
+            guard rel_payload == active_path else {
+              raise @lib.ManifestError::InvalidSchema
+            }
+            match (active_hasher, active_expected) {
+              (Some(h), Some(exp)) => {
+                active_hasher = None
+                active_expected = None
+                active_path = ""
+                let actual = h.finish()
+                guard actual.byte_length == exp.byte_length else {
+                  raise @lib.ManifestError::BindingMismatch("payload_length")
+                }
+                guard actual.sha256 == exp.sha256 else {
+                  raise @lib.ManifestError::BindingMismatch("payload_sha256")
+                }
+              }
+              _ => raise @lib.ManifestError::InvalidSchema
+            }
+          }
+        }
+      }
+    }
+    if plan.gzip {
+      let gz_dec = @compress.GzipDecoder::new(2147483647L, 2147483647L)
+      let out_buf = FixedArray::make(65536, b'\x00')
+      stream_open_chunks(archive_file, archive_path, archive_size, progress~, chunk => {
+        let mut pos = 0
+        while true {
+          let step = gz_dec.step(chunk[pos:], out_buf)
+          pos = pos + step.consumed
+          if step.produced > 0 {
+            let plain = Bytes::from_array(out_buf[0:step.produced])
+            feed_archive(plain[:])
+          }
+          match step.status {
+            NeedMoreOutput => continue
+            NeedMoreInput => if pos >= chunk.length() { break }
+            Done => break
+          }
+        }
+      })
+      let _ = gz_dec.finish()
+    } else {
+      stream_open_chunks(archive_file, archive_path, archive_size, progress~, chunk => {
+        feed_archive(chunk)
+      })
+    }
+    if arch_dec.has_pending_event() {
+      feed_archive(b""[:])
+    }
+    let manifest = arch_dec.finish()
+    guard active_hasher is None else { raise @lib.ManifestError::InvalidSchema }
+    format_inspect_bundle(
+      manifest,
+      archive_size,
+      plan.gzip,
+      dir_limits,
+      limits,
+      json,
+    )
+  } catch {
+    error => {
+      let detail = inspect_error_tag(error)
+      raise FileFailure(
+        "inspect-bundle inputs '\{plan.inputs.join("', '")}': " + detail,
+      )
+    }
+  }
+  write_inspection(text, writer~) catch {
+    error =>
+      raise FileFailure(
+        "stdout inspect-bundle inputs '\{plan.inputs.join("', '")}': " +
+        cli_error_text(error),
+      )
+  }
+  finish_progress(progress)
 }

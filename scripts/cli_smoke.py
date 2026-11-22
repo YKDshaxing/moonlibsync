@@ -150,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(36,36,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(44,44,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -453,13 +453,15 @@ try:
     v040_exercise(root, case, report, not any(item['feature']=='symbolic links' for item in report['unsupported']))
     from cli_v050_cases import exercise as v050_exercise
     v050_exercise(root, case, report, not any(item['feature']=='symbolic links' for item in report['unsupported']))
+    from cli_v060_cases import exercise as v060_exercise
+    v060_exercise(root, case, report, not any(item['feature']=='symbolic links' for item in report['unsupported']))
     assert foreign.read_bytes()==b'FOREIGN' and temps()=={foreign.name}
     # Delete only this verified fresh run directory, after restoring permissions.
     assert root.is_relative_to(run_parent) and root.name.startswith('run-')
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 36 Native helper tests (32 previous + 4 v050); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 44 Native helper tests (36 previous + 8 v060); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:
@@ -476,7 +478,8 @@ finally:
     report['v032_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v032_added'))
     report['v040_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v040_added'))
     report['v050_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v050_added'))
-    report['original_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if not c.get('inspection_added') and not c.get('manifest_added') and not c.get('auto_added') and not c.get('transfer_added') and not c.get('v032_added') and not c.get('v040_added') and not c.get('v050_added'))
+    report['v060_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if c.get('v060_added'))
+    report['original_cases_passed']=sum(c.get('passed',False) for c in report['cases'] if not c.get('inspection_added') and not c.get('manifest_added') and not c.get('auto_added') and not c.get('transfer_added') and not c.get('v032_added') and not c.get('v040_added') and not c.get('v050_added') and not c.get('v060_added'))
     (OUTPUT/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     log.close()
 sys.exit(code)

@@ -20,18 +20,33 @@ priv enum BlockChoice {
 }
 
 ///|
+priv enum ExcludeSource {
+  Pattern(String)
+  File(String)
+}
+
+///|
 priv struct Plan {
   operation : String
   inputs : Array[String]
   mode : RunMode
   block_choice : BlockChoice
+  sig_profile : @lib.SignatureProfile
   min_savings : Int64
   basis_path : String?
   streaming : Bool
   archive : Bool
   gzip : Bool
   progress : Bool
+  detect_moves : Bool
   excludes : Array[String]
+  exclude_sources : Array[ExcludeSource]
+  verify_sig : String?
+  verify_keys : Array[String]
+  save_rollback : String?
+  key_file : String?
+  passphrase_file : String?
+  seal_options : @crypto.SealOptions
   options : @lib.SignatureOptions
   limits : @lib.Limits
   dir_limits : @lib.DirLimits
@@ -39,52 +54,67 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.5.0; streaming pipelines, directory sync bundles & archives, verification, exclude filters, gzip framing, manifests and transfer workflows
+  #|MoonLibSync 0.6.0; streaming pipelines, directory sync bundles & archives, move detection, rollback, Ed25519 signing, AEAD encryption, verification, exclude filters, gzip framing, manifests and transfer workflows
   #|Usage:
-  #|  moonlibsync signature OLD SIG [--streaming] [--block-size N|auto] [--sum-size N] [--progress] [LIMITS]
+  #|  moonlibsync signature OLD SIG [--profile rk-blake2|rollsum-blake2] [--streaming] [--block-size N|auto] [--sum-size N] [--progress] [LIMITS]
   #|  moonlibsync delta SIG NEW DELTA [--streaming] [--progress] [LIMITS]
   #|  moonlibsync patch OLD DELTA OUT [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync reverse-delta OLD NEW OUT_REV_DELTA [--block-size N|auto] [--sum-size N] [--streaming] [--progress] [LIMITS]
   #|  moonlibsync basis-info OLD SIG INFO [--streaming] [--progress] [LIMITS]
   #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [--streaming] [--progress] [LIMITS]
-  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [--streaming] [--progress] [--verify-sig SIG_FILE --verify-key PUB_KEY]... [LIMITS]
   #|  moonlibsync inspect-signature SIG [--json] [--progress] [LIMITS]
   #|  moonlibsync inspect-delta DELTA [--json] [--streaming] [--progress] [LIMITS]
   #|  moonlibsync check-patch OLD DELTA [--json] [--streaming] [--progress] [LIMITS]
   #|  moonlibsync inspect-manifest MANIFEST [--json] [--progress] [LIMITS]
+  #|  moonlibsync inspect-bundle ARCHIVE [--gzip] [--json] [--progress] [LIMITS] [DIR_LIMITS]
   #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [--streaming] [--progress] [LIMITS]
-  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [--streaming] [--progress] [--verify-sig SIG_FILE --verify-key PUB_KEY]... [LIMITS]
   #|  moonlibsync compress IN OUT [--streaming] [--progress] [LIMITS]
   #|  moonlibsync decompress IN OUT [--streaming] [--progress] [LIMITS]
-  #|  moonlibsync dir-snapshot DIR OUT [--exclude PATTERN]... [--progress] [DIR_LIMITS]
-  #|  moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--json] [--progress] [DIR_LIMITS]
-  #|  moonlibsync dir-verify DIR SNAPSHOT [--json] [--exclude PATTERN]... [--progress] [DIR_LIMITS]
-  #|  moonlibsync dir-signatures DIR SNAPSHOT SIG_DIR [--block-size N|auto] [--sum-size N] [--streaming] [--progress] [LIMITS] [DIR_LIMITS]
-  #|  moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR BUNDLE [--archive] [--gzip] [--exclude PATTERN]... [--streaming] [--min-savings N] [--progress] [LIMITS] [DIR_LIMITS]
-  #|  moonlibsync dir-apply BASIS_DIR BUNDLE OUT_DIR [--archive] [--gzip] [--streaming] [--progress] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync keygen OUT_PRIV OUT_PUB
+  #|  moonlibsync sign IN PRIV_KEY OUT_SIG [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync verify IN SIG_FILE PUB_KEY [--pub-key EXTRA_PUB_KEY]... [--json] [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync seal IN OUT (--key-file FILE | --passphrase-file FILE) [--chunk-size N] [--argon2-memory N] [--argon2-passes N] [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync unseal IN OUT (--key-file FILE | --passphrase-file FILE) [--streaming] [--progress] [LIMITS]
+  #|  moonlibsync dir-snapshot DIR OUT [--exclude PATTERN]... [--exclude-from FILE]... [--progress] [DIR_LIMITS]
+  #|  moonlibsync dir-plan BASIS_SNAP TARGET_SNAP [--detect-moves] [--json] [--progress] [DIR_LIMITS]
+  #|  moonlibsync dir-verify DIR SNAPSHOT [--json] [--exclude PATTERN]... [--exclude-from FILE]... [--progress] [DIR_LIMITS]
+  #|  moonlibsync dir-signatures DIR SNAPSHOT SIG_DIR [--profile rk-blake2|rollsum-blake2] [--block-size N|auto] [--sum-size N] [--streaming] [--progress] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync dir-pack BASIS_SNAP SIG_DIR TARGET_DIR BUNDLE [--detect-moves] [--archive] [--gzip] [--exclude PATTERN]... [--exclude-from FILE]... [--streaming] [--min-savings N] [--progress] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync dir-apply BASIS_DIR BUNDLE OUT_DIR [--archive] [--gzip] [--streaming] [--progress] [--verify-sig SIG_FILE --verify-key PUB_KEY]... [--save-rollback ROLLBACK_ARCHIVE] [LIMITS] [DIR_LIMITS]
+  #|  moonlibsync completions bash|zsh|powershell
   #|  moonlibsync --help
   #|  moonlibsync --version
   #|Options may appear anywhere after the command before --; -- ends option parsing.
-  #|--streaming uses bounded 64 KiB chunks (all file/bundle commands except inspect-signature, inspect-manifest, dir-snapshot, dir-plan, dir-verify).
+  #|--profile selects signature wire profile: rk-blake2 (0x72730147, default) or rollsum-blake2 (0x72730137).
+  #|--streaming uses bounded 64 KiB chunks (all file/bundle/crypto commands except inspect-signature, inspect-manifest, inspect-bundle, dir-snapshot, dir-plan, dir-verify, keygen, completions).
   #|--archive packs/applies a single-file MLSBDL01 .mbundle container (dir-pack and dir-apply only).
-  #|--gzip wraps/unwraps a --archive bundle with bounded single-member RFC 1952 gzip (requires --archive).
+  #|--gzip wraps/unwraps a --archive bundle with bounded single-member RFC 1952 gzip (requires --archive on dir-pack/dir-apply; standalone on inspect-bundle).
+  #|--detect-moves reuses identical moved/renamed basis files (0-byte copy-from-basis) and deltas moved+edited files (dir-plan and dir-pack).
   #|--exclude PATTERN skips matching POSIX paths/subtrees (repeatable up to 64; dir-snapshot, dir-pack, dir-verify).
+  #|--exclude-from FILE reads ignore patterns from FILE (UTF-8 without BOM; repeatable; dir-snapshot, dir-pack, dir-verify).
+  #|--verify-sig SIG_FILE --verify-key PUB_KEY verifies an Ed25519 publisher signature before applying (repeatable --verify-key; patch-verified, apply-update, dir-apply --archive).
+  #|--save-rollback ROLLBACK_ARCHIVE atomically saves a .mbundle.gz rollback archive (OUT_DIR -> BASIS_DIR) on dir-apply.
   #|--progress emits throttled progress lines to stderr without polluting stdout (disabled by default).
   #|Optional [LIMITS] overrides (default Limits::default()):
   #|  --max-old-bytes N  --max-new-bytes N  --max-signature-bytes N
   #|  --max-signature-records N  --max-block-bytes N  --max-delta-bytes N
   #|  --max-output-bytes N  --max-instructions N  --max-match-work N
-  #|Optional [DIR_LIMITS] overrides for dir-* commands (default DirLimits::default()):
+  #|Optional [DIR_LIMITS] overrides for dir-* and inspect-bundle commands (default DirLimits::default()):
   #|  --max-entries N  --max-path-bytes N  --max-depth N
   #|  --max-snapshot-bytes N  --max-file-bytes N
-  #|--json is inspection-only (inspect-*, dir-plan, and dir-verify). Int64 fields are decimal strings.
+  #|--json is inspection-only (inspect-*, verify, dir-plan, and dir-verify). Int64 fields are decimal strings.
   #|inspect-manifest validates schema1/schema2 JSON structure without reading payload files.
+  #|inspect-bundle streams and validates an MLSBDL01 archive (.mbundle / .mbundle.gz) read-only.
   #|compress/decompress use bounded single-member RFC 1952 gzip (zip-bomb and trailing-data safe).
+  #|seal/unseal use chunked MLSENC01 ChaCha20-Poly1305 AEAD with raw 32-byte key or Argon2id passphrase KDF.
   #|dir-* commands reject all symlinks and unsafe/colliding paths; dir-apply never modifies BASIS_DIR.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
-  #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..max-block-bytes, sum 1..32.
+  #|Defaults: block-size 2048, sum-size 32, profile rk-blake2. Decimal digits only; block 1..max-block-bytes, sum 1..32.
   #|Only stable regular input files are supported; leaf symlinks are rejected.
   #|Existing output entries (including links and directories) are refused; no overwrite option.
-  #|Exit codes: 0 success/help/version; 2 usage; 1 file, verification mismatch, or core error.
+  #|Exit codes: 0 success/help/version; 2 usage; 1 file, verification mismatch, or core/crypto error.
 
 ///|
 fn positive_decimal(text : String, maximum : Int64) -> Int64 raise CliError {
@@ -204,6 +234,7 @@ fn supports_streaming(operation : String) -> Bool {
   operation == "signature" ||
   operation == "delta" ||
   operation == "patch" ||
+  operation == "reverse-delta" ||
   operation == "basis-info" ||
   operation == "make-manifest" ||
   operation == "patch-verified" ||
@@ -215,7 +246,25 @@ fn supports_streaming(operation : String) -> Bool {
   operation == "decompress" ||
   operation == "dir-signatures" ||
   operation == "dir-pack" ||
-  operation == "dir-apply"
+  operation == "dir-apply" ||
+  operation == "sign" ||
+  operation == "verify" ||
+  operation == "seal" ||
+  operation == "unseal"
+}
+
+///|
+fn parse_sig_profile(text : String) -> @lib.SignatureProfile raise CliError {
+  match text {
+    "rk-blake2" => @lib.SignatureProfile::RkBlake2
+    "rollsum-blake2" => @lib.SignatureProfile::RollsumBlake2
+    _ =>
+      raise Usage(
+        "unknown signature profile: " +
+        text +
+        " (expected rk-blake2 or rollsum-blake2)",
+      )
+  }
 }
 
 ///|
@@ -228,36 +277,53 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   let dir_bundle_op = operation == "dir-signatures" ||
     operation == "dir-pack" ||
     operation == "dir-apply"
-  let accepts_dir_limits = dir_only_op || dir_bundle_op
-  let accepts_file_limits = !dir_only_op
+  let accepts_dir_limits = dir_only_op ||
+    dir_bundle_op ||
+    operation == "inspect-bundle"
+  let accepts_file_limits = !dir_only_op &&
+    operation != "keygen" &&
+    operation != "completions"
+  let accepts_progress = operation != "keygen" && operation != "completions"
   let inspection = operation == "inspect-signature" ||
     operation == "inspect-delta" ||
     operation == "check-patch" ||
     operation == "inspect-manifest" ||
+    operation == "inspect-bundle" ||
     operation == "dir-plan" ||
-    operation == "dir-verify"
+    operation == "dir-verify" ||
+    operation == "verify"
+  let is_completions = operation == "completions"
   guard inspection ||
+    is_completions ||
     accepts_dir_limits ||
     operation == "signature" ||
     operation == "delta" ||
     operation == "patch" ||
+    operation == "reverse-delta" ||
     operation == "basis-info" ||
     operation == "make-manifest" ||
     operation == "patch-verified" ||
     operation == "make-transfer-manifest" ||
     operation == "apply-update" ||
     operation == "compress" ||
-    operation == "decompress" else {
+    operation == "decompress" ||
+    operation == "keygen" ||
+    operation == "sign" ||
+    operation == "seal" ||
+    operation == "unseal" else {
     raise Usage("unknown command: " + operation)
   }
   let mut limits = @lib.Limits::default()
   let mut dir_limits = @lib.DirLimits::default()
+  let mut seal_options = @crypto.SealOptions::default()
   let seen_limits : Map[String, Bool] = Map([])
-  let needed = if operation == "dir-plan" ||
+  let needed = if operation == "verify" {
+    3
+  } else if operation == "dir-plan" ||
     operation == "dir-verify" ||
     operation == "check-patch" {
     2
-  } else if inspection {
+  } else if inspection || is_completions {
     1
   } else if operation == "make-manifest" ||
     operation == "make-transfer-manifest" {
@@ -267,14 +333,29 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   } else if operation == "signature" ||
     operation == "dir-snapshot" ||
     operation == "compress" ||
-    operation == "decompress" {
+    operation == "decompress" ||
+    operation == "keygen" ||
+    operation == "seal" ||
+    operation == "unseal" {
     2
   } else {
     3
   }
   let paths : Array[String] = []
   let excludes : Array[String] = []
+  let exclude_sources : Array[ExcludeSource] = []
+  let mut exclude_file_count = 0
+  let verify_keys : Array[String] = []
+  let mut verify_sig : String? = None
+  let mut save_rollback : String? = None
+  let mut key_file : String? = None
+  let mut passphrase_file : String? = None
+  let mut saw_chunk_size = false
+  let mut saw_argon2_memory = false
+  let mut saw_argon2_passes = false
   let mut block_choice : BlockChoice = Explicit(2048L)
+  let mut sig_profile : @lib.SignatureProfile = RkBlake2
+  let mut saw_profile = false
   let mut min_savings = 0L
   let mut saw_savings = false
   let mut basis_path : String? = None
@@ -282,6 +363,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   let mut archive = false
   let mut gzip = false
   let mut progress = false
+  let mut detect_moves = false
   let mut sum = 32L
   let mut saw_block = false
   let mut saw_sum = false
@@ -305,11 +387,21 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       guard !archive else { raise Usage("duplicate option: --archive") }
       archive = true
     } else if options && arg == "--gzip" {
-      guard operation == "dir-pack" || operation == "dir-apply" else {
-        raise Usage("dir-pack/dir-apply-only option: --gzip")
+      guard operation == "dir-pack" ||
+        operation == "dir-apply" ||
+        operation == "inspect-bundle" else {
+        raise Usage("dir-pack/dir-apply/inspect-bundle-only option: --gzip")
       }
       guard !gzip else { raise Usage("duplicate option: --gzip") }
       gzip = true
+    } else if options && arg == "--detect-moves" {
+      guard operation == "dir-plan" || operation == "dir-pack" else {
+        raise Usage("dir-plan/dir-pack-only option: --detect-moves")
+      }
+      guard !detect_moves else {
+        raise Usage("duplicate option: --detect-moves")
+      }
+      detect_moves = true
     } else if options && arg == "--exclude" {
       guard operation == "dir-snapshot" ||
         operation == "dir-pack" ||
@@ -323,8 +415,148 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
         raise Usage("too many --exclude patterns (max 64)")
       }
       excludes.push(args[i + 1])
+      exclude_sources.push(Pattern(args[i + 1]))
+      i = i + 1
+    } else if options && arg == "--exclude-from" {
+      guard operation == "dir-snapshot" ||
+        operation == "dir-pack" ||
+        operation == "dir-verify" else {
+        raise Usage(
+          "dir-snapshot/dir-pack/dir-verify-only option: --exclude-from",
+        )
+      }
+      guard i + 1 < args.length() && args[i + 1].length() > 0 else {
+        raise Usage("missing or empty --exclude-from path")
+      }
+      guard exclude_file_count < 64 else {
+        raise Usage("too many --exclude-from files (max 64)")
+      }
+      exclude_file_count = exclude_file_count + 1
+      exclude_sources.push(File(args[i + 1]))
+      i = i + 1
+    } else if options && arg == "--verify-sig" {
+      guard operation == "dir-apply" ||
+        operation == "patch-verified" ||
+        operation == "apply-update" else {
+        raise Usage(
+          "dir-apply/patch-verified/apply-update-only option: --verify-sig",
+        )
+      }
+      guard verify_sig is None &&
+        i + 1 < args.length() &&
+        args[i + 1].length() > 0 else {
+        raise Usage("duplicate or missing --verify-sig")
+      }
+      verify_sig = Some(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--verify-key" {
+      guard operation == "dir-apply" ||
+        operation == "patch-verified" ||
+        operation == "apply-update" else {
+        raise Usage(
+          "dir-apply/patch-verified/apply-update-only option: --verify-key",
+        )
+      }
+      guard i + 1 < args.length() && args[i + 1].length() > 0 else {
+        raise Usage("missing or empty --verify-key")
+      }
+      guard verify_keys.length() < 64 else {
+        raise Usage("too many --verify-key files (max 64)")
+      }
+      verify_keys.push(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--pub-key" {
+      guard operation == "verify" else {
+        raise Usage("verify-only option: --pub-key")
+      }
+      guard i + 1 < args.length() && args[i + 1].length() > 0 else {
+        raise Usage("missing or empty --pub-key")
+      }
+      guard verify_keys.length() < 64 else {
+        raise Usage("too many --pub-key files (max 64)")
+      }
+      verify_keys.push(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--save-rollback" {
+      guard operation == "dir-apply" else {
+        raise Usage("dir-apply-only option: --save-rollback")
+      }
+      guard save_rollback is None &&
+        i + 1 < args.length() &&
+        args[i + 1].length() > 0 else {
+        raise Usage("duplicate or missing --save-rollback")
+      }
+      save_rollback = Some(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--key-file" {
+      guard operation == "seal" || operation == "unseal" else {
+        raise Usage("seal/unseal-only option: --key-file")
+      }
+      guard key_file is None &&
+        i + 1 < args.length() &&
+        args[i + 1].length() > 0 else {
+        raise Usage("duplicate or missing --key-file")
+      }
+      key_file = Some(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--passphrase-file" {
+      guard operation == "seal" || operation == "unseal" else {
+        raise Usage("seal/unseal-only option: --passphrase-file")
+      }
+      guard passphrase_file is None &&
+        i + 1 < args.length() &&
+        args[i + 1].length() > 0 else {
+        raise Usage("duplicate or missing --passphrase-file")
+      }
+      passphrase_file = Some(args[i + 1])
+      i = i + 1
+    } else if options && arg == "--chunk-size" {
+      guard operation == "seal" else {
+        raise Usage("seal-only option: --chunk-size")
+      }
+      guard !saw_chunk_size && i + 1 < args.length() else {
+        raise Usage("duplicate or missing --chunk-size")
+      }
+      let v = bounded_decimal(args[i + 1], 1024L, 1048576L).to_int()
+      seal_options = { ..seal_options, chunk_size: v, }
+      saw_chunk_size = true
+      i = i + 1
+    } else if options && arg == "--argon2-memory" {
+      guard operation == "seal" else {
+        raise Usage("seal-only option: --argon2-memory")
+      }
+      guard !saw_argon2_memory && i + 1 < args.length() else {
+        raise Usage("duplicate or missing --argon2-memory")
+      }
+      let v = bounded_decimal(args[i + 1], 64L, 65536L).to_int()
+      seal_options = { ..seal_options, argon2_memory_kib: v, }
+      saw_argon2_memory = true
+      i = i + 1
+    } else if options && arg == "--argon2-passes" {
+      guard operation == "seal" else {
+        raise Usage("seal-only option: --argon2-passes")
+      }
+      guard !saw_argon2_passes && i + 1 < args.length() else {
+        raise Usage("duplicate or missing --argon2-passes")
+      }
+      let v = bounded_decimal(args[i + 1], 1L, 8L).to_int()
+      seal_options = { ..seal_options, argon2_passes: v, }
+      saw_argon2_passes = true
+      i = i + 1
+    } else if options && arg == "--profile" {
+      guard operation == "signature" || operation == "dir-signatures" else {
+        raise Usage("signature-only option: --profile")
+      }
+      guard !saw_profile && i + 1 < args.length() else {
+        raise Usage("duplicate or missing --profile")
+      }
+      sig_profile = parse_sig_profile(args[i + 1])
+      saw_profile = true
       i = i + 1
     } else if options && arg == "--progress" {
+      guard accepts_progress else {
+        raise Usage("progress is not supported for command: " + operation)
+      }
       guard !progress else { raise Usage("duplicate option: --progress") }
       progress = true
     } else if options && is_limit_flag(arg) {
@@ -375,7 +607,9 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       guard !json else { raise Usage("duplicate option: --json") }
       json = true
     } else if options && (arg == "--block-size" || arg == "--sum-size") {
-      guard operation == "signature" || operation == "dir-signatures" else {
+      guard operation == "signature" ||
+        operation == "dir-signatures" ||
+        operation == "reverse-delta" else {
         raise Usage("options are signature-only: " + arg)
       }
       guard i + 1 < args.length() else {
@@ -407,8 +641,35 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     }
     i = i + 1
   }
-  if gzip && !archive {
+  if gzip && !archive && operation != "inspect-bundle" {
     raise Usage("--gzip requires --archive")
+  }
+  if operation == "dir-apply" ||
+    operation == "patch-verified" ||
+    operation == "apply-update" {
+    let has_sig = verify_sig is Some(_)
+    let has_keys = verify_keys.length() > 0
+    if has_sig != has_keys {
+      raise Usage("--verify-sig and --verify-key must be provided together")
+    }
+    if operation == "dir-apply" && has_sig && !archive {
+      raise Usage("--verify-sig on dir-apply requires --archive")
+    }
+  }
+  if operation == "seal" || operation == "unseal" {
+    match (key_file, passphrase_file) {
+      (None, None) =>
+        raise Usage(operation + " requires --key-file or --passphrase-file")
+      (Some(_), Some(_)) =>
+        raise Usage("--key-file and --passphrase-file are mutually exclusive")
+      (Some(_), None) =>
+        if saw_argon2_memory || saw_argon2_passes {
+          raise Usage(
+            "--argon2-memory and --argon2-passes require --passphrase-file",
+          )
+        }
+      (None, Some(_)) => ()
+    }
   }
   match block_choice {
     Explicit(value) =>
@@ -420,28 +681,47 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard paths.length() == needed else {
     raise Usage("wrong number of paths for " + operation)
   }
+  if is_completions {
+    let shell = paths[0]
+    guard shell == "bash" || shell == "zsh" || shell == "powershell" else {
+      raise Usage(
+        "unsupported shell: " + shell + " (expected bash, zsh, or powershell)",
+      )
+    }
+  }
   {
     operation,
-    inputs: if inspection {
+    inputs: if inspection || is_completions {
       paths
     } else {
       paths[0:needed - 1].to_owned()
     },
     mode: if inspection {
       Inspect(json)
+    } else if is_completions {
+      Inspect(false)
     } else if dir_bundle_op && !(operation == "dir-pack" && archive) {
       WriteDir(paths[needed - 1])
     } else {
       WriteFile(paths[needed - 1])
     },
     block_choice,
+    sig_profile,
     min_savings,
     basis_path,
     streaming,
     archive,
     gzip,
     progress,
+    detect_moves,
     excludes,
+    exclude_sources,
+    verify_sig,
+    verify_keys,
+    save_rollback,
+    key_file,
+    passphrase_file,
+    seal_options,
     // Keep legacy numeric options valid; Auto is represented only by its enum.
     // The execution path resolves it from the actual bounded file size.
     options: {

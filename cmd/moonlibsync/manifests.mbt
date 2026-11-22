@@ -2,16 +2,20 @@
 
 ///|
 fn manifest_error_tag(error : Error) -> String {
-  match error {
-    @lib.ManifestError::Core(core) => "Core:" + core_error_tag(core)
-    @lib.ManifestError::BindingMismatch(field) => "BindingMismatch:" + field
-    @lib.ManifestError::InvalidField(field) => "InvalidField:" + field
-    @lib.ManifestError::ResourceLimit(field) => "ResourceLimit:" + field
-    @lib.ManifestError::InvalidUtf8 => "InvalidUtf8"
-    @lib.ManifestError::InvalidJson => "InvalidJson"
-    @lib.ManifestError::InvalidSchema => "InvalidSchema"
-    @lib.ManifestError::HashFailure => "HashFailure"
-    _ => cli_error_text(error)
+  match crypto_error_tag_of(error) {
+    Some(tag) => tag
+    None =>
+      match error {
+        @lib.ManifestError::Core(core) => "Core:" + core_error_tag(core)
+        @lib.ManifestError::BindingMismatch(field) => "BindingMismatch:" + field
+        @lib.ManifestError::InvalidField(field) => "InvalidField:" + field
+        @lib.ManifestError::ResourceLimit(field) => "ResourceLimit:" + field
+        @lib.ManifestError::InvalidUtf8 => "InvalidUtf8"
+        @lib.ManifestError::InvalidJson => "InvalidJson"
+        @lib.ManifestError::InvalidSchema => "InvalidSchema"
+        @lib.ManifestError::HashFailure => "HashFailure"
+        _ => cli_error_text(error)
+      }
   }
 }
 
@@ -44,12 +48,11 @@ async fn execute_manifest_write(
         )
       }
       _ => {
+        let manifest_bytes = bounded_read(p[2], 65536L)
+        verify_attached_signature_bytes(plan, manifest_bytes)
+        let manifest = @lib.parse_update_manifest(manifest_bytes, limits)
         let old = bounded_read(p[0], limits.max_old_bytes)
         let delta = bounded_read(p[1], limits.max_delta_bytes)
-        let manifest = @lib.parse_update_manifest(
-          bounded_read(p[2], 65536L),
-          limits,
-        )
         @lib.verified_patch(old, delta, manifest, limits)
       }
     }
