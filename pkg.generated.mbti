@@ -8,6 +8,8 @@ pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
 pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
 
+pub fn create_dir_snapshot(Array[DirEntry], DirLimits) -> DirSnapshot raise ManifestError
+
 pub fn create_transfer_manifest(BasisInfo, Bytes, Bytes, Bytes, UpdateOptions, Limits) -> TransferManifest raise ManifestError
 
 pub fn create_update_manifest(BasisInfo, Bytes, Bytes, Bytes, Limits) -> UpdateManifest raise ManifestError
@@ -15,6 +17,10 @@ pub fn create_update_manifest(BasisInfo, Bytes, Bytes, Bytes, Limits) -> UpdateM
 pub fn delta(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn encode_basis_info(BasisInfo, Limits) -> Bytes raise ManifestError
+
+pub fn encode_dir_plan(DirSyncPlan, DirLimits) -> Bytes raise ManifestError
+
+pub fn encode_dir_snapshot(DirSnapshot, DirLimits) -> Bytes raise ManifestError
 
 pub fn encode_transfer_manifest(TransferManifest, Limits) -> Bytes raise ManifestError
 
@@ -26,11 +32,17 @@ pub fn inspect_signature(Bytes, Limits) -> SignatureSummary raise SyncError
 
 pub fn parse_basis_info(Bytes, Limits) -> BasisInfo raise ManifestError
 
+pub fn parse_dir_plan(Bytes, DirLimits) -> DirSyncPlan raise ManifestError
+
+pub fn parse_dir_snapshot(Bytes, DirLimits) -> DirSnapshot raise ManifestError
+
 pub fn parse_transfer_manifest(Bytes, Limits) -> TransferManifest raise ManifestError
 
 pub fn parse_update_manifest(Bytes, Limits) -> UpdateManifest raise ManifestError
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
+pub fn plan_dir_sync(DirSnapshot, DirSnapshot, DirLimits) -> DirSyncPlan raise ManifestError
 
 pub fn plan_update(Bytes, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 
@@ -91,6 +103,48 @@ pub(all) struct DeltaSummary {
   output_bytes : Int64
 }
 
+pub(all) enum DirActionKind {
+  Unchanged
+  AddFull
+  UpdateCandidate
+  Delete
+}
+
+pub(all) struct DirEntry {
+  path : String
+  digest : FileDigest
+}
+
+pub(all) struct DirLimits {
+  max_entries : Int64
+  max_path_bytes : Int64
+  max_depth : Int64
+  max_snapshot_bytes : Int64
+  max_file_bytes : Int64
+}
+pub fn DirLimits::default() -> Self
+pub fn DirLimits::validate(Self) -> Unit raise ManifestError
+
+pub(all) struct DirSnapshot {
+  entries : Array[DirEntry]
+}
+
+pub(all) struct DirSyncAction {
+  path : String
+  kind : DirActionKind
+  basis : FileDigest?
+  target : FileDigest?
+}
+
+pub(all) struct DirSyncPlan {
+  actions : Array[DirSyncAction]
+  unchanged_count : Int64
+  add_count : Int64
+  update_count : Int64
+  delete_count : Int64
+  transfer_upper_bound_bytes : Int64
+}
+
 pub(all) struct FileDigest {
   byte_length : Int64
   sha256 : String
@@ -122,12 +176,33 @@ pub(all) struct PatchCheck {
   summary : DeltaSummary
 }
 
+pub struct PatchDecoder {
+  // private fields
+}
+pub fn PatchDecoder::finish(Self) -> DeltaSummary raise SyncError
+pub fn PatchDecoder::has_pending_copy(Self) -> Bool
+pub fn PatchDecoder::new(Int64, Limits) -> Self raise SyncError
+pub fn PatchDecoder::step(Self, BytesView) -> (Int32, PatchStep) raise SyncError
+
+pub(all) enum PatchStep {
+  NeedInput
+  EmitLiteral(BytesView)
+  CopyBasis(UInt64, Int32)
+}
+
 pub struct PreparedSignature {
   // private fields
 }
 pub fn PreparedSignature::delta(Self, Bytes, Limits) -> Bytes raise SyncError
 pub fn PreparedSignature::plan_update(Self, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 pub fn PreparedSignature::summary(Self) -> SignatureSummary
+
+pub struct Sha256Hasher {
+  // private fields
+}
+pub fn Sha256Hasher::finish(Self) -> FileDigest raise ManifestError
+pub fn Sha256Hasher::new(Int64) -> Self raise ManifestError
+pub fn Sha256Hasher::update(Self, BytesView) -> Unit raise ManifestError
 
 pub struct SignatureHasher {
   // private fields
