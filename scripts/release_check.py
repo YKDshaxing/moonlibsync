@@ -28,6 +28,7 @@ OUT = ROOT / os.environ.get('MOONLIBSYNC_RELEASE_DIR', '_build/release-'+VERSION
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.1.0').resolve()), 'Historical 0.1.0 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.2.0').resolve()), 'Historical 0.2.0 evidence is read-only'
 assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.0').resolve()), 'Historical 0.3.0 evidence is read-only'
+assert not OUT.resolve().is_relative_to((ROOT / '_build/release-0.3.1').resolve()), 'Historical 0.3.1 evidence is read-only'
 
 
 def digest(data):
@@ -139,6 +140,7 @@ def audit_package():
                  'examples/prepared/main.mbt','examples/verified/main.mbt','tests/stage-a/plan.json',
                  'tests/stage-a/consumer.mbt.txt','scripts/release_version.py','docs/release-0.2.0.md'}
     required |= {'update.mbt','transfer.mbt','examples/transfer/main.mbt','examples/transfer/pkg.generated.mbti','docs/updates.md','tests/stage-b/consumer.mbt.txt','tests/stage-b/plan.json','docs/release-0.3.0.md'}
+    required |= {'stream_signature.mbt','stream_delta.mbt','stream_patch.mbt','examples/streaming/main.mbt','examples/streaming/moon.pkg','examples/streaming/pkg.generated.mbti','examples/streaming/run-node.mjs'}
     assert required <= actual.keys()
     forbidden_names={'credentials.json','id_rsa','id_ed25519','.env'}
     assert all(PurePosixPath(n).name.lower() not in forbidden_names and not n.endswith(('.exe','.dll','.so','.pem','.key')) for n in actual), 'Unexpected credentials or executable in source archive'
@@ -292,6 +294,7 @@ def candidate(actual):
         for target in ('native', 'js', 'wasm-gc'):
             run(['moon', 'run', 'examples/basic', '--target', target], 'candidate-basic-' + target, cwd=package)
             run(['moon','run','examples/auto','--target',target],'candidate-auto-'+target,cwd=package)
+            run(['moon','run','examples/streaming','--target',target],'candidate-streaming-'+target,cwd=package)
         cli = cli_flow(package, 'candidate-cli')
         from stage_a_candidate import validate
         stage_results = validate(stage, package, Path(cli['path']), run, OUT)
@@ -336,7 +339,7 @@ def clean_source(actual):
             run(['moon', 'run', 'examples/basic', '--target', target], 'clean-example-' + target, cwd=fresh, env=env)
         cli = cli_flow(fresh, 'clean-cli', env)
         for target in ('native','js','wasm-gc'):
-            for example in ('prepared','verified','auto','transfer'):
+            for example in ('prepared','verified','auto','transfer','streaming'):
                 run(['moon','run','examples/'+example,'--target',target],'clean-'+example+'-'+target,cwd=fresh,env=env)
         unchanged_bytes(actual, fresh)
         return {'status': 'passed', 'fresh_toolchain_install': True, 'fresh_build_outputs': True, 'registry_api_mode': True, 'sdk_archive_cache': sdk_archives, 'source_unchanged': True, 'environment': environment(top), 'cli': cli}

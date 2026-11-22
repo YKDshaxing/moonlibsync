@@ -1,3 +1,21 @@
+# MoonLibSync 0.3.2：核心资源契约与流式契约
+
+0.3.2 保持全部九项 `Limits` 默认值（`OLD/NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB、`records/instructions` `1,000,000`、`block` `1 MiB`、`match_work` `256M`）与合法区间（`0..2147483647`，`max_block_bytes` `1..2147483647`）及校验优先级完全不变。以下补充 0.3.2 的三项核心更新：
+
+1. **`MatchWork` v2 计量模型与 `SignatureIndex` 存储**：
+   - `SignatureIndex` 在既有 `sorted_weaks` / `sorted_indices` 基础上增加 `bucket_weak : FixedArray[UInt32]` 与 `bucket_start : FixedArray[Int32]`（`M = next_pow2(max(2, 2 * u))`，装载因子 `<= 0.50`，`O(n)` 线性空间，永不按 `2^32` 分配）。
+   - `MatchWork` v2 将 `build_signature_index`（预收 `2 * M` + 每次插入探测 `1`）、开放定址查询探测（每探测 `1`）、以及 Pending Literal Run 延迟刷出纳入同一共享工作账本；所有收费均在对应分配或计算动作之前完成，失败不退款且不更改已有签名/`PreparedSignature` 状态。精确公式与边界值见 [matching.md](matching.md)。
+2. **零 IO 分块流式状态机契约（兼容 `native` / `js` / `wasm-gc`）**：
+   - **`SignatureHasher`**（[stream_signature.mbt](../stream_signature.mbt)）：仅保存单块滚动弱校验状态（`UInt32`）与单个 `@blake2.Hasher` 状态（O(1) 常量哈希工作区）及待取出的签名字节；每次 `update` 在修改状态前先用 `signature_plan` 校验累计总长，配合 `take_ready` 逐块排出记录可保持缓冲输出为 O(1)，`finish` 输出未补零尾块并产生与 `signature()` 逐字节一致的结果。
+   - **`DeltaScanner`**（[stream_delta.mbt](../stream_delta.mbt)）：复用只读共享 `PreparedSignature`；内部仅持有 O(`block_len`) 滑动窗口缓冲（压缩阈值随 `step = max(block_len, 4096)` 有界回收）以及至多 **64 KiB（`65536` 字节）** 的 Pending Literal 暂存缓冲（达到 64 KiB 即封装为标准 `Literal` 指令写往 `ready` 并支持 `take_ready` 排出），同时对跨块连续匹配的 `COPY` 自动合并；`finish` 完成 EOF 短尾逐字节 rollout 匹配与 `END` 编码；任意错误通过 `errdefer { self.failed = true }` 永久失效（fail-closed），不影响调用方持有只读的 `PreparedSignature`。
+   - **`PatchApplier` + `BasisReader`**（[stream_patch.mbt](../stream_patch.mbt)）：逐字节流式解析 `0x72730236` delta，不缓冲整份 delta 或恢复输出；对 `Literal` 负载即收即通过回调切片写出；对每个 `COPY` 先在 `UInt64` 域验证 `offset <= basis_len && length <= basis_len - offset` 与 `Limits`，再以不超过 **64 KiB（`65536` 字节）** 的分块从 `BasisReader::read_at` 拉取并回调输出，严格校验 `END`（`TruncatedInput` / `TrailingData`），并在错误发生时通过 `errdefer` 置为不可复用失效态。**安全提醒**：向磁盘写恢复输出时，流式调用方仍须写入隔离临时文件，并在 `PatchApplier::finish()` 及外部完整性校验（如 SHA-256）全部通过后再执行原子提交。
+3. **CLI 预算覆盖选项（可选 `[LIMITS]`）**：
+   - `cmd/moonlibsync` 允许在命令行显式传入 9 项 `--max-*` 整数参数以缩小或有界放大运行预算；未显式传入时完全保持 `Limits::default()` 不变，且 `inspect-manifest` 始终额外受 64 KiB 元数据文本读入上限约束。详见 [cli.md](cli.md)。
+
+以下保留 0.1.0–0.3.1 历史资源与内存模型文档。
+
+---
+
 # MoonLibSync 0.3.1 / 0.3.0 当前契约
 
 0.3.1 保持全部九项 `Limits` 默认值、校验顺序与 `MatchWork` 计量单位完全不变；`inspect_signature` 现改为 O(1) 头/对齐/预算校验（不再分配每条记录的 `SignatureRecord` 与摘要副本），`PreparedSignature::summary` 为 O(1) 只读标量返回，`PreparedSignature::plan_update` 复用 `PreparedSignature::delta` 的预算重检与独立 `MatchWork`。

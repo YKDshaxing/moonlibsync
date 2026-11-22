@@ -1,3 +1,14 @@
+# MoonLibSync 0.3.2：设计与使用
+
+0.3.2 在保持 0.3.0 / 0.3.1 全部公开 API、CLI 命令与退出码、schema1/schema2 格式、错误优先级、`Limits::default()` 与标准 `librsync` (`0x72730147` / `0x72730236`) 互操作性 100% 兼容的基础上，新增：
+- **O(1) 弱校验开放定址哈希索引与 Pending Literal Run**：`SignatureIndex` 新增 `O(n)` 空间、`<= 0.50` 装载因子的开放定址快速过滤表（保留弱校验与原块序号最小确定的严格次序），`scan_signature_delta` 引入基于整型区间的 Pending Literal Run 与延迟窗口切片（仅弱命中时生成 `BytesView` 并算一次 BLAKE2b）；配套 `MatchWork` v2 计量同步更新于 [matching.md](matching.md) 与 [resources.md](resources.md)。
+- **零 IO 分块流式状态机（Native / JS / Wasm-GC）**：公开 `SignatureHasher`（基于 `@blake2.Hasher` 的增量哈希，O(1) 摘要状态）、`DeltaScanner`（复用 `PreparedSignature`、O(`block_len`) 滑动窗口 + 64 KiB Pending Literal 刷出）与 `BasisReader` trait + `PatchApplier`（逐字节状态机，UInt64 越界预检 + 64 KiB 分块 COPY + `errdefer` 失效保护），详见 [examples/streaming/main.mbt](../examples/streaming/main.mbt) 与 [examples/streaming/run-node.mjs](../examples/streaming/run-node.mjs)。
+- **CLI 增强（12 子命令 + 可选预算覆盖）**：新增只读检查子命令 `inspect-manifest MANIFEST [--json] [LIMITS]` 与全部 9 项 `--max-*` `Limits` 覆盖参数（详见 [cli.md](cli.md)）。
+
+下文保留 0.3.1 / 0.2.0 / 0.1.0 历史设计归属。
+
+---
+
 # MoonLibSync 0.3.1：设计与使用
 
 0.3.1 在保持 0.3.0 全部公开 API、CLI 语义、schema1/schema2 格式、错误优先级、默认 `Limits` 及 `MatchWork` 计量完全兼容的基础上，提供：

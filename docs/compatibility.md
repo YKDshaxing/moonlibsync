@@ -1,3 +1,14 @@
+# MoonLibSync 0.3.2 当前契约
+
+0.3.2 在完全保持 0.3.0 / 0.3.1 所有既有公开 API、CLI 命令、schema1/schema2 JSON、标准 `0x72730147` / `0x72730236` 线缆格式、最小块序号确定性及 `Limits::default()` 100% 向前兼容的前提下，进行如下增量化演进：
+- **核心算法与 `MatchWork` v2**：开放定址弱校验快速过滤表与 Pending Literal Run 仅改进索引查询与未匹配字节累积机制（产出字节与 0.3.1 完全逐字节相同）；`MatchWork` 计量同步演进至 v2（见 [matching.md](matching.md) 与 [resources.md](resources.md)），默认值与错误分类完全不变。
+- **零 IO 流式扩展**：新增不透明类型 `SignatureHasher`、`DeltaScanner`、`PatchApplier` 与开放 trait `BasisReader`（及 `Bytes` 的内置实现），全部在 `native` / `js` / `wasm-gc` 三目标验证通过。
+- **Native CLI 扩展**：新增只读 `inspect-manifest MANIFEST [--json] [LIMITS]` 及 9 项 `--max-*` 预算覆盖参数（不传时完全等价于 `Limits::default()`，保持 `0`/`1`/`2` 退出码及无覆盖原子发布契约）。
+
+以下保留 0.3.1 / 0.3.0 / 0.2.0 / 0.1.0 历史契约记录。
+
+---
+
 # MoonLibSync 0.3.1 / 0.3.0 当前契约
 
 0.3.1 与 0.3.0 保持 100% 向前兼容：所有既有公开 API、CLI 命令、schema1/schema2 JSON、标准 SIG/DELTA 格式、默认 2048/32、`Limits` 与 `MatchWork` 计量单位均不变；新增 `PreparedSignature::summary` 与 `PreparedSignature::plan_update`，并在内部落地 `inspect_signature` O(1) 头校验、`RabinKarp` 冗余乘法消除、`sorted_weaks` 扁平查询与批量 `blit` 拷贝。

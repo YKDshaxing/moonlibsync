@@ -12,7 +12,7 @@
 <p>
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.1-0ea5e9" alt="Version 0.3.1"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.2-0ea5e9" alt="Version 0.3.2"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -27,13 +27,14 @@
 
 | Layer | Public Entry Points | Purpose |
 | --- | --- | --- |
-| **Core Binary Delta** | `signature`, `delta`, `patch` | Wire-compatible with `librsync` (`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`, delta `0x72730236`); sender only needs remote signature + `NEW` |
+| **Core Binary Delta** | `signature`, `delta`, `patch` | Wire-compatible with `librsync` (`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`, delta `0x72730236`); O(1) open-addressed weak-hash lookup (`<= 0.50` load) and Pending Literal Run |
+| **Streaming State Machines** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `BasisReader` | Pure zero-IO chunked pipelines across Native, JS, and Wasm-GC with O(1) hash state, O(`block_len`) + 64 KiB literal windowing, and fail-closed `errdefer` poisoning |
 | **Inspection & Preflight** | `inspect_signature`, `inspect_delta`, `check_patch` | O(1) zero-record-allocation signature metadata inspection, delta statistics, and COPY range preflight |
 | **Reusable Prepared Index** | `prepare_signature`, `PreparedSignature::{delta, summary, plan_update}` | Parse and index a signature once; reuse across multiple targets with per-call `Limits` re-checks and independent work budgets |
 | **Auto Block Sizing** | `recommend_block_len`, `signature --block-size auto` | Explicit integer policy v1 (targeting ~512 records, power-of-two rounding, bounded by `Limits`) |
 | **Integrity Manifests** | `create/parse/encode_basis_info`, `create/parse/encode_update_manifest`, `verified_patch` | Strict bounded JSON (schema 1) binding `OLD`, `SIG`, `DELTA`, and `RESULT` via SHA-256 before returning or committing output |
 | **Transfer Planning** | `plan_update`, `create/parse/encode_transfer_manifest`, `apply_update` | Schema 2 `Delta` vs. `Full` payload selection (chooses `Delta` only when strictly smaller and meeting `min_savings_bytes`) |
-| **Native Single-File CLI** | `cmd/moonlibsync` (11 subcommands) | Bounded regular-file reads, leaf-symlink rejection, `fsync`, and atomic `rename(replace=false)` publication on Windows/NTFS & Linux/ext4 |
+| **Native Single-File CLI** | `cmd/moonlibsync` (12 subcommands) | Bounded regular-file reads (`Limits::default()` or optional `--max-*` overrides), `inspect-manifest`, leaf-symlink rejection, `fsync`, and atomic `rename(replace=false)` |
 
 ## Quick Start
 
@@ -86,6 +87,7 @@ More runnable examples (all verified on `native`, `js`, and `wasm-gc`):
 - [examples/verified](examples/verified/main.mbt) — schema 1 integrity manifests & `verified_patch`
 - [examples/auto](examples/auto/main.mbt) — explicit `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` vs. `Full` transfer workflow
+- [examples/streaming](examples/streaming/main.mbt) — zero-IO streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` (plus zero-dependency JS runner: `node examples/streaming/run-node.mjs`)
 
 ## Native Single-File CLI
 
@@ -114,6 +116,10 @@ moonlibsync patch old.bin update.delta restored.bin
 moonlibsync inspect-signature old.sig --json
 moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
+moonlibsync inspect-manifest manifest.json --json
+
+# 5. Optional resource budget overrides (defaults to Limits::default() when omitted)
+moonlibsync signature old.bin bigblock.sig --block-size 1048577 --max-block-bytes 2097152
 ```
 
 ### Integrity & Transfer Workflows
@@ -144,10 +150,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # Format, deps, 200 core tests × 3 targets, 5 examples, mbti guard
+python scripts/check.py            # Format, deps, 210 core tests × 3 targets, 6 examples, mbti guard
 python scripts/verify_fixtures.py  # Reference & opcode fixture integrity
 python scripts/failure_gates.py    # Isolated corruption & assertion failure gates
-./scripts/cli-smoke.ps1            # 19 Native helper tests + Windows CLI integration suite
+./scripts/cli-smoke.ps1            # 24 Native helper tests + Windows CLI integration suite
+node examples/streaming/run-node.mjs --rebuild
 python scripts/release_check.py --clean
 ```
 
@@ -180,18 +187,19 @@ python3 scripts/file_exchange.py
 ## Compatibility, Security & Boundaries
 
 - **Wire profile**: Supports `RS_RK_BLAKE2_SIG_MAGIC` (`0x72730147`, BLAKE2b-256 truncated to `1..32` bytes, default `2048/32`) and full standard delta opcodes (`0x72730236`, 1/2/4/8-byte parameters, strict `END` with no trailing data). Other signature magics return `UnsupportedSignatureProfile`.
-- **Full-buffer model**: All operations work on bounded in-memory `Bytes` buffers (`Limits::default()` caps `OLD`/`NEW` at 64 MiB, `SIG` at 16 MiB, `DELTA` at 80 MiB). Limits are logical bounds, not process-wide RSS guarantees.
+- **Full-buffer & streaming memory models**: One-shot operations work on bounded in-memory `Bytes` buffers (`Limits::default()` caps `OLD`/`NEW` at 64 MiB, `SIG` at 16 MiB, `DELTA` at 80 MiB), while streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` keep internal buffers O(1) / O(`block_len`) + 64 KiB across chunks. Limits are logical bounds, not process-wide RSS guarantees.
 - **Integrity vs. authentication**: Standard `delta`/`patch` do not verify basis identity; `verified_patch` / `apply_update` verify SHA-256 digests against a **trusted** manifest (no built-in publisher signing). See [SECURITY.md](SECURITY.md).
 - **Filesystems**: CLI atomic no-overwrite publication is validated on Windows/NTFS and Linux/ext4. WSL DrvFS (`/mnt/*`) lacks atomic no-replace rename and fails explicitly without falling back to overwrite (set `MOONLIBSYNC_CLI_TMP_PARENT=/tmp` for positive Linux CLI smoke runs under WSL).
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design
-- [docs/cli.md](docs/cli.md) — Native CLI reference, JSON schemas, and filesystem guarantees
+- [docs/cli.md](docs/cli.md) — Native CLI reference, JSON schemas, `--max-*` budgets, and filesystem guarantees
 - [docs/compatibility.md](docs/compatibility.md) — Protocol compatibility and version contracts
-- [docs/resources.md](docs/resources.md) — `Limits`, `MatchWork`, and memory model
+- [docs/matching.md](docs/matching.md) — Open-addressed weak-hash index, Pending Literal Run, and `MatchWork` v2 metering
+- [docs/resources.md](docs/resources.md) — `Limits`, `MatchWork` v2, and streaming/full-buffer memory contracts
 - [docs/auto-block.md](docs/auto-block.md) — Auto block sizing (`policy v1`) rules and volume comparisons
 - [docs/updates.md](docs/updates.md) — Delta vs. Full update planning and schema 2 specification
 - [docs/manifests.md](docs/manifests.md) — Schema 1 integrity manifest specification

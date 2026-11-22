@@ -1,3 +1,29 @@
+# MoonLibSync 0.3.2 Native 单文件 CLI 手册
+
+0.3.2 保留既有全部 11 条命令、参数语法、schema 1/schema 2 输出格式、退出码（`0` 成功 / `2` 用法 / `1` 文件与核心错误）及无覆盖原子提交流程 100% 向前兼容，并新增两项实用能力：
+
+1. **新增只读检查子命令 `inspect-manifest MANIFEST [--json] [LIMITS]`**：
+   - 自动识别并校验全部四种清单结构（schema 1 `moonlibsync-basis-info` / `librsync-delta`，schema 2 `librsync-delta` / `full-file`），复核严格 UTF-8、无 BOM、禁止重复 JSON 键、容器深度 `<= 2`、总对象字段 `<= 16`、正十进制 `Int64 byte_length`、64 位小写 hex `sha256` 以及适用 `Limits`；
+   - **只读与不读载荷**：仅用 64 KiB（`65536` 字节）上限有界读取 `MANIFEST` 本身，拒绝叶符号链接，不读取或认证清单内引用的 `basis`/`signature`/`delta`/`payload`/`result` 实际文件，不在磁盘创建临时或输出文件（可在只读目录执行）；
+   - `--json` 输出单行稳定 JSON（顶层 `schema_version: 1`, `command: "inspect-manifest"`, `manifest: { manifest_schema_version, kind, ... }`），其中 `manifest_schema_version` 为整数（`1` 或 `2`），所有 `byte_length` 保持精确十进制字符串。人类可读文本输出末尾声明实际引用文件未被读取或认证。
+
+2. **全命令支持可选 `[LIMITS]` 预算覆盖参数（默认保持 `Limits::default()`）**：
+   - 全部 12 条写文件或只读检查子命令在 `--` 之前均支持任意顺序传入下列 9 个 `Limits` 覆盖选项（不允许重复传递同名参数；默认完全沿用 `Limits::default()`）：
+     - `--max-old-bytes N`、`--max-new-bytes N`、`--max-signature-bytes N`、`--max-signature-records N`
+     - `--max-block-bytes N`（合法值 `1..2147483647`）、`--max-delta-bytes N`、`--max-output-bytes N`
+     - `--max-instructions N`、`--max-match-work N`（除 `--max-block-bytes` 外均允许 `0..2147483647`）
+   - `--block-size N` 与 `--max-block-bytes M` 之间的上界校验在参数遍历结束后统一检查，因此两项选项前后顺序无关（例如 `signature old sig --block-size 1048577 --max-block-bytes 2097152` 与调换顺序均有效；缺少对应提高时退回 exit code `2`）。
+   - 负值、非纯十进制数字、溢出 `2147483647`、`--max-block-bytes 0`、缺值或重复选项统一输出 `usage:` 并以退出码 `2` 结束；`inspect-manifest` 本身的 64 KiB 元数据文本读取上限不受 `--max-*` 放宽，超过 65536 字节仍报 `ReadLimitExceeded`（退出码 `1`）。
+
+```text
+moonlibsync inspect-manifest MANIFEST [--json] [LIMITS]
+moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N] [LIMITS]
+```
+
+以下保留 0.1.0–0.3.1 各阶段详细契约与测试证据。
+
+---
+
 # MoonLibSync 0.3.1 / 0.3.0 当前契约
 
 0.3.1 保留全部 11 条命令、参数语法、JSON schema、退出码与无覆盖原子提交流程不变，仅更新 `--version` / `--help` 版本号为 `MoonLibSync 0.3.1` 并受益于核心库优化。

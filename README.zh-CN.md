@@ -12,7 +12,7 @@
 <p>
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.1-0ea5e9" alt="Version 0.3.1"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.3.2-0ea5e9" alt="Version 0.3.2"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -27,13 +27,14 @@
 
 | 层次 | 公开入口 | 用途说明 |
 | --- | --- | --- |
-| **标准字节差分** | `signature` / `delta` / `patch` | 与 `librsync` 互操作（`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`、delta `0x72730236`）；发送端只需远端签名与 `NEW` |
+| **标准字节差分** | `signature` / `delta` / `patch` | 与 `librsync` 互操作（`RS_RK_BLAKE2_SIG_MAGIC` `0x72730147`、delta `0x72730236`）；O(1) 弱校验开放定址表（`<= 0.50` 装载因子）与 Pending Literal Run |
+| **零 IO 流式状态机** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `BasisReader` | 纯核心分块状态机，兼容 Native / JS / Wasm-GC；O(1) 哈希状态、O(`block_len`) + 64 KiB 字面窗口及 `errdefer` 失效保护 |
 | **检查与预检** | `inspect_signature` / `inspect_delta` / `check_patch` | O(1) 零记录分配签名头校验、delta 统计以及基于长度的 COPY 范围预检 |
 | **可复用签名索引** | `prepare_signature` / `PreparedSignature::{delta, summary, plan_update}` | 一次解析建索引，跨多个目标复用；每次调用独立重检 `Limits` 并拥有独立工作预算 |
 | **显式自动块长** | `recommend_block_len` / `signature --block-size auto` | 纯整数 `policy v1` 策略（目标约 512 条记录、2 次幂向上舍入并受当前预算约束） |
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
-| **Native 单文件 CLI** | `cmd/moonlibsync`（11 条子命令） | 普通文件有界读取、拒绝叶符号链接、`fsync` 与 `rename(replace=false)` 无覆盖提交（已验证 Windows/NTFS 与 Linux/ext4） |
+| **Native 单文件 CLI** | `cmd/moonlibsync`（12 条子命令） | 普通文件有界读取（支持可选 `--max-*` 预算覆盖）、`inspect-manifest`、拒绝叶符号链接、`fsync` 与 `rename(replace=false)` 无覆盖提交 |
 
 ## 快速开始
 
@@ -86,6 +87,7 @@ fn sync_demo() -> Unit raise {
 - [examples/verified](examples/verified/main.mbt) — schema 1 完整性清单与 `verified_patch`
 - [examples/auto](examples/auto/main.mbt) — 显式自动块长 `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` / `Full` 更新规划与应用
+- [examples/streaming](examples/streaming/main.mbt) — 零 IO 分块流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier`（含零依赖 Node.js 运行脚本：`node examples/streaming/run-node.mjs`）
 
 ## Native 单文件 CLI
 
@@ -114,6 +116,10 @@ moonlibsync patch old.bin update.delta restored.bin
 moonlibsync inspect-signature old.sig --json
 moonlibsync inspect-delta update.delta --json
 moonlibsync check-patch old.bin update.delta --json
+moonlibsync inspect-manifest manifest.json --json
+
+# 5. 可选资源预算覆盖参数（不传时完全保持 Limits::default()）
+moonlibsync signature old.bin bigblock.sig --block-size 1048577 --max-block-bytes 2097152
 ```
 
 ### 完整性校验与传输规划流程
@@ -144,10 +150,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、200 项库测试 × 三目标、5 示例、接口守卫
+python scripts/check.py            # 格式、依赖、210 项库测试 × 三目标、6 示例、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 19 项 Native 辅助测试 + Windows CLI 集成测试
+./scripts/cli-smoke.ps1            # 24 项 Native 辅助测试 + Windows CLI 集成测试
+node examples/streaming/run-node.mjs --rebuild
 python scripts/release_check.py --clean
 ```
 
@@ -180,18 +187,19 @@ python3 scripts/file_exchange.py
 ## 兼容范围与安全边界
 
 - **标准协议支持**：支持 `RS_RK_BLAKE2_SIG_MAGIC`（`0x72730147`，BLAKE2b-256 取 `1..32` 字节前缀，默认 `2048/32`）以及标准 delta 全宽度指令（`0x72730236`，严格 `END` 校验且拒绝尾随数据）；其余签名 profile 返回 `UnsupportedSignatureProfile`。
-- **全量缓冲模型**：所有入口均工作在有界内存 `Bytes` 缓冲上（默认 `Limits` 上限：`OLD`/`NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB）。预算为逻辑上限，不承诺进程级峰值 RSS 或 OOM 恢复，详见 [docs/resources.md](docs/resources.md)。
+- **全量缓冲与分块流式内存模型**：一次性入口工作在有界内存 `Bytes` 缓冲上（默认 `Limits` 上限：`OLD`/`NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB），而流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier` 在分块处理期间仅维持 O(1) / O(`block_len`) + 64 KiB 内部暂存缓冲。预算为逻辑上限，不承诺进程级峰值 RSS 或 OOM 恢复，详见 [docs/resources.md](docs/resources.md)。
 - **完整性 vs 发布者认证**：标准 `delta` / `patch` 不认证旧文件身份；`verified_patch` / `apply_update` 对**可信来源**清单做 SHA-256 完整性校验，不内置发布者数字签名。详见 [SECURITY.md](SECURITY.md)。
 - **文件系统边界**：CLI 无覆盖提交已验证 Windows/NTFS 与 Linux/ext4。WSL DrvFS（`/mnt/*`）不支持无覆盖 `renameat2` 时会明确失败并清理临时文件，不降级覆盖（WSL 下运行正向 CLI 烟雾测试请设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`）。
 
 ## 文档导航
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明
-- [docs/cli.md](docs/cli.md) — Native CLI 手册、JSON Schema 与原子提交说明
+- [docs/cli.md](docs/cli.md) — Native CLI 手册、JSON Schema、`--max-*` 预算覆盖与原子提交说明
 - [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约
-- [docs/resources.md](docs/resources.md) — `Limits`、`MatchWork` 与内存模型
+- [docs/matching.md](docs/matching.md) — 开放定址弱校验索引、Pending Literal Run 与 `MatchWork` v2 计量
+- [docs/resources.md](docs/resources.md) — `Limits`、`MatchWork` v2 与全量/流式内存模型
 - [docs/auto-block.md](docs/auto-block.md) — 自动块长 `policy v1` 规则与数据量对照
 - [docs/updates.md](docs/updates.md) — Delta/Full 规划与 schema 2 协议规范
 - [docs/manifests.md](docs/manifests.md) — schema 1 完整性清单规范

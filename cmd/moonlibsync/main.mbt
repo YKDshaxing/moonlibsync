@@ -37,7 +37,7 @@ async fn execute(plan : Plan) -> Unit {
 
 ///|
 async fn execute_write(plan : Plan, output_path : String) -> Unit {
-  let limits = @lib.Limits::default()
+  let limits = plan.limits
   limits.validate()
   let output = prepare_output(output_path)
   let first_limit = if plan.operation == "delta" {
@@ -93,7 +93,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.3.1\n")
+      @stdio.stdout.write(b"MoonLibSync 0.3.2\n")
     } else {
       execute(parse_plan(args[1:]))
     }

@@ -27,31 +27,38 @@ priv struct Plan {
   min_savings : Int64
   basis_path : String?
   options : @lib.SignatureOptions
+  limits : @lib.Limits
 }
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.3.1; inspection, reusable signatures, auto block sizing and transfer workflows
+  #|MoonLibSync 0.3.2; inspection, reusable signatures, auto block sizing and transfer workflows
   #|Usage:
-  #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N]
-  #|  moonlibsync delta SIG NEW DELTA
-  #|  moonlibsync patch OLD DELTA OUT
-  #|  moonlibsync basis-info OLD SIG INFO
-  #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST
-  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT
-  #|  moonlibsync inspect-signature SIG [--json]
-  #|  moonlibsync inspect-delta DELTA [--json]
-  #|  moonlibsync check-patch OLD DELTA [--json]
-  #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N]
-  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD]
+  #|  moonlibsync signature OLD SIG [--block-size N|auto] [--sum-size N] [LIMITS]
+  #|  moonlibsync delta SIG NEW DELTA [LIMITS]
+  #|  moonlibsync patch OLD DELTA OUT [LIMITS]
+  #|  moonlibsync basis-info OLD SIG INFO [LIMITS]
+  #|  moonlibsync make-manifest INFO SIG NEW DELTA MANIFEST [LIMITS]
+  #|  moonlibsync patch-verified OLD DELTA MANIFEST OUT [LIMITS]
+  #|  moonlibsync inspect-signature SIG [--json] [LIMITS]
+  #|  moonlibsync inspect-delta DELTA [--json] [LIMITS]
+  #|  moonlibsync check-patch OLD DELTA [--json] [LIMITS]
+  #|  moonlibsync inspect-manifest MANIFEST [--json] [LIMITS]
+  #|  moonlibsync make-transfer-manifest INFO SIG NEW DELTA MANIFEST [--min-savings N] [LIMITS]
+  #|  moonlibsync apply-update PAYLOAD MANIFEST OUT [--basis OLD] [LIMITS]
   #|  moonlibsync --help
   #|  moonlibsync --version
   #|Options may appear anywhere after the command before --; -- ends option parsing.
+  #|Optional [LIMITS] overrides (default Limits::default()):
+  #|  --max-old-bytes N  --max-new-bytes N  --max-signature-bytes N
+  #|  --max-signature-records N  --max-block-bytes N  --max-delta-bytes N
+  #|  --max-output-bytes N  --max-instructions N  --max-match-work N
   #|--json is inspection-only. One schema_version=1 object; Int64 fields are decimal strings.
   #|Inspection never creates output files; check-patch queries OLD metadata only.
+  #|inspect-manifest validates schema1/schema2 JSON structure and limits without reading payload files.
   #|Range checks do not authenticate basis identity or verify recovered content.
   #|After -- every argument is a path. A lone - is a literal filename, never a pipe.
-  #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..1048576, sum 1..32.
+  #|Defaults: block-size 2048, sum-size 32. Decimal digits only; block 1..max-block-bytes, sum 1..32.
   #|auto is explicit policy v1, available since 0.3.0; default remains 2048.
   #|Selected block length is stored normally in SIG; inspect-signature shows it.
   #|Transfer options since 0.3.0: min-savings is nonnegative Int64 (default 0).
@@ -82,12 +89,59 @@ fn positive_decimal(text : String, maximum : Int64) -> Int64 raise CliError {
 }
 
 ///|
+fn is_limit_flag(flag : String) -> Bool {
+  flag == "--max-old-bytes" ||
+  flag == "--max-new-bytes" ||
+  flag == "--max-signature-bytes" ||
+  flag == "--max-signature-records" ||
+  flag == "--max-block-bytes" ||
+  flag == "--max-delta-bytes" ||
+  flag == "--max-output-bytes" ||
+  flag == "--max-instructions" ||
+  flag == "--max-match-work"
+}
+
+///|
+fn parse_limit_value(flag : String, text : String) -> Int64 raise CliError {
+  if flag == "--max-block-bytes" {
+    positive_decimal(text, 2147483647L)
+  } else {
+    let n = nonnegative_decimal(text)
+    guard n <= 2147483647L else {
+      raise Usage("numeric option out of range: " + text)
+    }
+    n
+  }
+}
+
+///|
+fn apply_limit_flag(
+  limits : @lib.Limits,
+  flag : String,
+  value : Int64,
+) -> @lib.Limits raise CliError {
+  match flag {
+    "--max-old-bytes" => { ..limits, max_old_bytes: value, }
+    "--max-new-bytes" => { ..limits, max_new_bytes: value, }
+    "--max-signature-bytes" => { ..limits, max_signature_bytes: value, }
+    "--max-signature-records" => { ..limits, max_signature_records: value, }
+    "--max-block-bytes" => { ..limits, max_block_bytes: value, }
+    "--max-delta-bytes" => { ..limits, max_delta_bytes: value, }
+    "--max-output-bytes" => { ..limits, max_output_bytes: value, }
+    "--max-instructions" => { ..limits, max_instructions: value, }
+    "--max-match-work" => { ..limits, max_match_work: value, }
+    _ => raise Usage("unknown option: " + flag)
+  }
+}
+
+///|
 fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
   guard args.length() > 0 else { raise Usage("missing command") }
   let operation = args[0]
   let inspection = operation == "inspect-signature" ||
     operation == "inspect-delta" ||
-    operation == "check-patch"
+    operation == "check-patch" ||
+    operation == "inspect-manifest"
   guard inspection ||
     operation == "signature" ||
     operation == "delta" ||
@@ -99,7 +153,8 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     operation == "apply-update" else {
     raise Usage("unknown command: " + operation)
   }
-  let limits = @lib.Limits::default()
+  let mut limits = @lib.Limits::default()
+  let seen_limits : Map[String, Bool] = Map([])
   let needed = if inspection {
     if operation == "check-patch" {
       2
@@ -131,6 +186,14 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
     let arg = args[i]
     if options && arg == "--" {
       options = false
+    } else if options && is_limit_flag(arg) {
+      guard !seen_limits.contains(arg) && i + 1 < args.length() else {
+        raise Usage("duplicate or missing value for " + arg)
+      }
+      let value = parse_limit_value(arg, args[i + 1])
+      limits = apply_limit_flag(limits, arg, value)
+      seen_limits[arg] = true
+      i = i + 1
     } else if options && arg == "--min-savings" {
       guard operation == "make-transfer-manifest" else {
         raise Usage("transfer-manifest-only option: " + arg)
@@ -168,7 +231,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
         block_choice = if args[i + 1] == "auto" {
           Auto
         } else {
-          Explicit(positive_decimal(args[i + 1], limits.max_block_bytes))
+          Explicit(positive_decimal(args[i + 1], 2147483647L))
         }
         saw_block = true
       } else {
@@ -188,6 +251,13 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       paths.push(arg)
     }
     i = i + 1
+  }
+  match block_choice {
+    Explicit(value) =>
+      if saw_block && value > limits.max_block_bytes {
+        raise Usage("block-size exceeds max-block-bytes")
+      }
+    Auto => ()
   }
   guard paths.length() == needed else {
     raise Usage("wrong number of paths for " + operation)
@@ -216,6 +286,7 @@ fn parse_plan(args : ArrayView[String]) -> Plan raise CliError {
       },
       strong_sum_len: sum,
     },
+    limits,
   }
 }
 

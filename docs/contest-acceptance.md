@@ -1,5 +1,6 @@
-# 0.3.0 阶段 B 发布验收与 0.3.1 演进
+# MoonLibSync 0.3.2 演进与验收矩阵
 
+- **0.3.2（本地全门禁通过）**：在保持 0.3.0 / 0.3.1 全部互操作与安全不变量的基础上，新增 O(1) 弱校验开放定址表与 Pending Literal Run（本地 Windows Native `--release` 下 1 MiB 全异场景加速 **5.40x–5.60x**，8192 记录签名 `K=16` `PreparedSignature` 复用加速 **2.89x**）、纯核心零 IO 流式状态机 `SignatureHasher` / `DeltaScanner` / `PatchApplier` + `BasisReader`（三目标 **210/210** 测试及 `examples/streaming` + `run-node.mjs` 通过），以及 Native CLI `inspect-manifest` 与 9 项 `--max-*` 选项（**24/24** 私有辅助测试与 **411+** 集成用例通过）。详见 [CHANGELOG.md](../CHANGELOG.md)。
 - **0.3.0 已发布并完成双平台注册表消费验收**（状态 `published-and-consumer-verified`）：正式发布源 `35b2225e56747c0d7568dd117017c25e6c658146`，[发布源同 SHA CI](https://github.com/YKDshaxing/moonlibsync/actions/runs/43025252619) 三任务全部通过，Windows/NTFS 与 Linux/ext4 独立新 SDK 空缓存下载消费通过。完整明细见 [0.3.0 发布记录](release-0.3.0.md)。
 - **0.3.1 仓库整理与零破坏演进**：在完全保持 0.3.0 兼容性与测试矩阵的基础上，落地 `inspect_signature` O(1) 零分配、`RabinKarp` 快速幂/单次摘要、`SignatureIndex` 扁平弱校验缓存与批量 `blit` 拷贝优化，补充 `PreparedSignature::summary` / `PreparedSignature::plan_update`，并完善中英双语 README、历史发布 Tag 与 GitHub Release 自动化。详见 [CHANGELOG.md](../CHANGELOG.md)。
 

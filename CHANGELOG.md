@@ -4,6 +4,31 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-22
+
+### Performance & `MatchWork` v2
+- **O(n)-space O(1)-lookup weak-checksum hash table (`index.mbt`)**: Added linear open-addressed hash arrays (`bucket_weak`, `bucket_start`, capacity `M = next_pow2(max(2, 2 * u))`, load factor `<= 0.50`, never allocating `2^32` entries) pointing directly to sorted record groups while preserving 100% deterministic earliest-ordinal block selection on collisions and duplicate weak checksums.
+- **Pending Literal Run & deferred window slicing (`delta.mbt`, `index.mbt`)**: Replaced per-byte `BytesView` slicing on misses in `scan_signature_delta` with an integer span (`lit_start`, `lit_len`, `lit_cap`) flushed only on matches, length-class encoding boundaries, or EOF, plus zero-view `match_signature_at` weak probing (constructing a `BytesView` and running BLAKE2b only on weak-hash hits).
+- **`MatchWork` v2 accounting**: Precharges `2 * M` before hash table allocation plus `1` per insertion probe, charges `1` per open-addressed lookup probe, and meters pending literal miss appends (`1`) separately from flushed instruction emissions (`docs/matching.md`, `docs/resources.md`, `resources_wbtest.mbt`).
+- **Local Windows Native `--release` micro-benchmark (`v0.3.1` vs `0.3.2`, 1 warmup + 5 formal runs, median)**:
+  - `1 MiB` all-different one-shot `delta` (`block_len=2048, strong_sum_len=32`): `94.18 ms -> 17.44 ms` (**5.40x speedup**; byte-identical `1,048,586`-byte output).
+  - `1 MiB` all-different `PreparedSignature::delta`: `97.10 ms -> 17.33 ms` (**5.60x speedup**).
+  - `K=16` `PreparedSignature` reuse on an `8192`-record signature (`block_len=128, strong_sum_len=16`, `64 KiB` targets in `0.3.2`): `47.35 ms` one-shot total vs `16.41 ms` prepared total (`1.99 ms` prepare) (**2.89x speedup**).
+
+### Added
+- **Pure zero-IO streaming state machines (Native / JS / Wasm-GC)**:
+  - `SignatureHasher` (`new`, `update`, `take_ready`, `finish`) using streaming `@blake2.Hasher` (`mooncrypt@0.4.5`) with O(1) hash state and atomic preflight checks (`stream_signature.mbt`).
+  - `DeltaScanner` (`new`, `feed`, `take_ready`, `finish`) reusing immutable `PreparedSignature` with O(`block_len`) sliding window buffer, 64 KiB (`65536`-byte) pending literal flush, cross-chunk COPY coalescing, EOF rollout, and fail-closed `errdefer { self.failed = true }` poisoning (`stream_delta.mbt`).
+  - `BasisReader` (`pub(open) trait`, plus `pub impl BasisReader for Bytes`) and `PatchApplier` (`new`, `feed`, `finish -> DeltaSummary`) with byte-by-byte delta parsing, UInt64 bounds checks before `read_at`, `<= 65536`-byte COPY chunks, strict `END`/`TrailingData`/`TruncatedInput`, and `errdefer` poisoning (`stream_patch.mbt`).
+- **Native CLI enhancements (`cmd/moonlibsync`)**:
+  - Read-only `inspect-manifest MANIFEST [--json] [LIMITS]` supporting all four schema 1/2 manifest variants (`BasisInfo`, `UpdateManifest`, `TransferManifest::Delta`, `TransferManifest::Full`) with 64 KiB metadata cap and exit codes `0`/`1`/`2`.
+  - All 9 optional `--max-*` `Limits` override flags (`--max-old-bytes`, `--max-new-bytes`, `--max-signature-bytes`, `--max-signature-records`, `--max-block-bytes`, `--max-delta-bytes`, `--max-output-bytes`, `--max-instructions`, `--max-match-work`), keeping `Limits::default()` unchanged when omitted and supporting order independence with `--block-size`.
+- **Cross-target streaming example & JS runner**: `examples/streaming/main.mbt`, `examples/streaming/moon.pkg`, `examples/streaming/run-node.mjs`.
+- **Verification**: 10 new core tests (`index_hash_wbtest.mbt`, `stream_test.mbt`, `stream_wbtest.mbt` -> **210 tests × 3 targets**), 5 new Native CLI unit tests (`cmd/moonlibsync/v032_wbtest.mbt` -> **24 total**), and `scripts/cli_v032_cases.py` integrated into `scripts/cli_smoke.py`.
+
+### Compatibility
+- 100% backward-compatible with `0.3.0`/`0.3.1` public APIs, `librsync` (`0x72730147` / `0x72730236`) wire interoperability, schema 1/2 manifests, `Limits::default()`, and CLI no-overwrite atomic commits. Protected `_build/release-0.3.1` evidence as read-only in `scripts/release_check.py`.
+
 ## [0.3.1] - 2026-11-21
 
 ### Added

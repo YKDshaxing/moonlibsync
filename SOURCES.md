@@ -1,5 +1,11 @@
 # 来源与固定版本
 
+## 0.3.2 增量说明
+
+- `stream_signature.mbt`、`stream_delta.mbt`、`stream_patch.mbt` 与 `examples/streaming/` 均为本项目原创 LGPL-2.1-or-later 代码，无任何新增第三方依赖或 C FFI。
+- `SignatureHasher` 继续调用已固定的 `moonbitstack/mooncrypt@0.4.5` 中的 `@blake2.Hasher::new(kind=Blake2b, len=32)` / `write` / `finish` / `reset` 流式摘要状态（原 Apache-2.0 版权声明保留，未修改依赖包或 `dependencies.lock.json`）。
+- 增量输出缓冲区显式引入已固定标准库 `moonbitlang/core/buffer`（原 Apache-2.0 / NOTICE 保留）。
+
 ## Commit 21 直接使用范围补充
 
 固定moonbitstack/mooncrypt0.4.5的 `src/hash/sha2/sha2.mbt` / `hash/sha2` 现直接用于内部SHA-256适配，实际API为hash(BytesView, kind=Kind::Sha256)，输出检查32字节。该文件原声明 Copyright 2026 Leo Cheng / SPDX-License-Identifier: Apache-2.0；未复制、升级或重写算法，不采用SHA-512/256或BLAKE2替代。完整依赖压缩包与源码哈希仍由原dependencies.lock.json和verify_dependencies.py固定。

@@ -73,8 +73,85 @@ async fn check_patch_file(
 }
 
 ///|
+fn digest_json(d : @lib.FileDigest) -> String {
+  "{\"byte_length\":\"\{d.byte_length}\",\"sha256\":\"\{d.sha256}\"}"
+}
+
+///|
+fn digest_text(name : String, d : @lib.FileDigest) -> String {
+  "\{name}.byte_length: \{d.byte_length} bytes\n\{name}.sha256: \{d.sha256}"
+}
+
+///|
+priv enum ParsedManifest {
+  Transfer(@lib.TransferManifest)
+  Update(@lib.UpdateManifest)
+  Basis(@lib.BasisInfo)
+}
+
+///|
+fn parse_any_manifest(
+  input : Bytes,
+  limits : @lib.Limits,
+) -> ParsedManifest raise @lib.ManifestError {
+  Transfer(@lib.parse_transfer_manifest(input, limits)) catch {
+    @lib.ManifestError::InvalidSchema =>
+      Update(@lib.parse_update_manifest(input, limits)) catch {
+        @lib.ManifestError::InvalidSchema =>
+          Basis(@lib.parse_basis_info(input, limits))
+        other => raise other
+      }
+    other => raise other
+  }
+}
+
+///|
+fn format_manifest(parsed : ParsedManifest, json : Bool) -> String {
+  if json {
+    let body = match parsed {
+      Transfer(Delta(m)) =>
+        "{\"manifest_schema_version\":2,\"kind\":\"librsync-delta\",\"basis\":\{digest_json(m.basis)},\"signature\":\{digest_json(m.signature)},\"payload\":\{digest_json(m.delta)},\"result\":\{digest_json(m.result)}}"
+      Transfer(Full(p, r)) =>
+        "{\"manifest_schema_version\":2,\"kind\":\"full-file\",\"payload\":\{digest_json(p)},\"result\":\{digest_json(r)}}"
+      Update(m) =>
+        "{\"manifest_schema_version\":1,\"kind\":\"librsync-delta\",\"basis\":\{digest_json(m.basis)},\"signature\":\{digest_json(m.signature)},\"delta\":\{digest_json(m.delta)},\"result\":\{digest_json(m.result)}}"
+      Basis(b) =>
+        "{\"manifest_schema_version\":1,\"kind\":\"moonlibsync-basis-info\",\"basis\":\{digest_json(b.basis)},\"signature\":\{digest_json(b.signature)}}"
+    }
+    "{\"schema_version\":1,\"command\":\"inspect-manifest\",\"manifest\":\{body}}\n"
+  } else {
+    let lines = match parsed {
+      Transfer(Delta(m)) =>
+        "manifest_schema_version: 2\nkind: librsync-delta\n\{digest_text("basis", m.basis)}\n\{digest_text("signature", m.signature)}\n\{digest_text("payload", m.delta)}\n\{digest_text("result", m.result)}"
+      Transfer(Full(p, r)) =>
+        "manifest_schema_version: 2\nkind: full-file\n\{digest_text("payload", p)}\n\{digest_text("result", r)}"
+      Update(m) =>
+        "manifest_schema_version: 1\nkind: librsync-delta\n\{digest_text("basis", m.basis)}\n\{digest_text("signature", m.signature)}\n\{digest_text("delta", m.delta)}\n\{digest_text("result", m.result)}"
+      Basis(b) =>
+        "manifest_schema_version: 1\nkind: moonlibsync-basis-info\n\{digest_text("basis", b.basis)}\n\{digest_text("signature", b.signature)}"
+    }
+    "inspect-manifest\n\{lines}\nFormat and limits only; actual referenced files were not read or authenticated.\n"
+  }
+}
+
+///|
+fn inspect_error_tag(error : Error) -> String {
+  match error {
+    @lib.ManifestError::Core(_)
+    | @lib.ManifestError::BindingMismatch(_)
+    | @lib.ManifestError::InvalidField(_)
+    | @lib.ManifestError::ResourceLimit(_)
+    | @lib.ManifestError::InvalidUtf8
+    | @lib.ManifestError::InvalidJson
+    | @lib.ManifestError::InvalidSchema
+    | @lib.ManifestError::HashFailure => manifest_error_tag(error)
+    _ => core_error_tag(error)
+  }
+}
+
+///|
 async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
-  let limits = @lib.Limits::default()
+  let limits = plan.limits
   // Finish validation and formatting before the first stdout write.
   let text = try {
     limits.validate()
@@ -95,6 +172,11 @@ async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
           ),
           json,
         )
+      "inspect-manifest" =>
+        format_manifest(
+          parse_any_manifest(bounded_read(plan.inputs[0], 65536L), limits),
+          json,
+        )
       _ =>
         format_patch(
           check_patch_file(plan.inputs[0], plan.inputs[1], limits),
@@ -103,7 +185,7 @@ async fn execute_inspection(plan : Plan, json : Bool) -> Unit {
     }
   } catch {
     error => {
-      let detail = core_error_tag(error)
+      let detail = inspect_error_tag(error)
       raise FileFailure(
         plan.operation + " inputs '\{plan.inputs.join("', '")}': " + detail,
       )

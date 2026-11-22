@@ -9,7 +9,7 @@ async fn execute_transfer_write(
   publisher~ : async (String, Bytes) -> Unit = publish_output,
 ) -> Unit {
   try {
-    let limits = @lib.Limits::default()
+    let limits = plan.limits
     limits.validate()
     let output = prepare_output(output_path)
     let p = plan.inputs
