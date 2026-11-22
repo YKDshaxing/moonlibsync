@@ -38,13 +38,14 @@ test "prepared metadata unsigned stable order and duplicate retention" {
 
 ///|
 test "prepared work boundaries use independently derived merge costs" {
-  // Equal sorted keys: init=3n, writes=n per pass, comparisons=n/2 per
-  // pass for powers of two. n=1:3; n=2:9; n=8:60; n=128:1728.
-  // Four unsigned keys [MAX,0,0x80000000,0]: init12+writes8+comparisons5=25.
+  // Equal sorted keys: init=3n, writes=n*pass, comparisons=(n/2)*pass,
+  // plus open-addressed table 2*M + distinct insertion probes.
+  // n=1: 3+4+1=8; n=2: 9+4+1=14; n=8: 60+4+1=65; n=128: 1728+4+1=1733.
+  // Four unsigned keys [MAX,0,0x80000000,0]: sort25 + table16 + inserts4 = 45.
   let cases : Array[(Array[(UInt32, Bytes)], Int64)] = [
     ([], 0L),
-    ([(0U, b"\x00")], 3L),
-    (Array::make(2, (0U, b"\x00")), 9L),
+    ([(0U, b"\x00")], 8L),
+    (Array::make(2, (0U, b"\x00")), 14L),
     (
       [
         (0xffffffffU, b"\xff"),
@@ -52,10 +53,10 @@ test "prepared work boundaries use independently derived merge costs" {
         (0x80000000U, b"\x80"),
         (0U, b"\x00"),
       ],
-      25L,
+      45L,
     ),
-    (Array::make(8, (0U, b"\x00")), 60L),
-    (Array::make(128, (0U, b"\x00")), 1728L),
+    (Array::make(8, (0U, b"\x00")), 65L),
+    (Array::make(128, (0U, b"\x00")), 1733L),
   ]
   for (records, need) in cases {
     let bytes = prepared_test_wire(7, records)
@@ -97,7 +98,7 @@ test "prepared index precharges both arrays before allocation work" {
     "LimitExceeded",
   )
   assert_eq(
-    prepare_signature(bytes, { ..d, max_match_work: 1728L, }).index.order,
+    prepare_signature(bytes, { ..d, max_match_work: 1733L, }).index.order,
     Array::makei(128, i => i),
   )
 }

@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 ///|
-test "prepared delta scan thirty excludes exactly three construction units" {
+test "prepared delta scan twenty-nine excludes exactly eight construction units" {
   let d = Limits::default()
   let sig = signature(b"abc", { block_len: 3L, strong_sum_len: 16L, }, d)
-  let p = prepare_signature(sig, { ..d, max_match_work: 3L, })
+  let p = prepare_signature(sig, { ..d, max_match_work: 8L, })
   let index_before = p.index
   let order_before = p.index.order
   let records_before = p.index.signature.records
   for _ in 0..<3 {
-    let result = p.delta(b"abc", { ..d, max_match_work: 30L, })
+    let result = p.delta(b"abc", { ..d, max_match_work: 29L, })
     assert_eq(result, b"\x72\x73\x02\x36\x45\x00\x03\x00")
     assert_true(physical_equal(p.index, index_before))
     assert_true(physical_equal(p.index.order, order_before))
     assert_true(physical_equal(p.index.signature.records, records_before))
-    let work = index_work(30L)
+    let work = index_work(29L)
     assert_eq(scan_signature_delta(p.index, b"abc", d, work), result)
     assert_eq(work.remaining, 0L)
   }
   expect_sync_error(
     () => {
-      let _ = delta(sig, b"abc", { ..d, max_match_work: 30L, })
+      let _ = delta(sig, b"abc", { ..d, max_match_work: 29L, })
     },
     "LimitExceeded",
   )
   assert_eq(
-    delta(sig, b"abc", { ..d, max_match_work: 33L, }),
+    delta(sig, b"abc", { ..d, max_match_work: 37L, }),
     p.delta(b"abc", d),
   )
 }

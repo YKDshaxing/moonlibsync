@@ -85,8 +85,8 @@ test "prepared delta strict current signature and generation limits exact bounda
     d,
   )
   let p = @moonlibsync.prepare_signature(sig, d)
-  // Single record build=3; shared one-shot=33; scan=30 independently:
-  // window4 + dispatch1 + binary1 + presence1 + hash4 + candidate1 + digest16 + append/capacity2.
+  // Single record build=8 (3 sort + 4 table + 1 insert); shared one-shot=37;
+  // scan=29 independently: window4 + dispatch1 + probe1 + hash4 + visit1 + digest16 + append/slot2.
   for
     (field, need) in [
       ("signature", 32L),
@@ -96,7 +96,7 @@ test "prepared delta strict current signature and generation limits exact bounda
       ("output", 3L),
       ("delta", 8L),
       ("instructions", 1L),
-      ("work", 30L),
+      ("work", 29L),
     ] {
     for cap in [need - 1L, need, need + 1L] {
       let limits = match field {
@@ -217,7 +217,7 @@ test "prepared delta interleaved failures preserve objects previous results and 
   for _ in 0..<3 {
     inspect_error(
       () => {
-        let _ = a.delta(b"abc", { ..d, max_match_work: 29L, })
+        let _ = a.delta(b"abc", { ..d, max_match_work: 28L, })
       },
       "LimitExceeded",
     )

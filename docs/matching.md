@@ -1,5 +1,41 @@
 # 签名索引与候选匹配
 
+## 0.3.2：O(1) 弱校验哈希索引、Pending Literal Run 与 MatchWork v2
+
+在不改变公开 `SignatureOptions` / `Limits` 默认值、最小原始块序号确定性、错误优先级与 `0x72730147` / `0x72730236` 线缆格式的前提下，0.3.2 在索引查询与增量扫描热路径完成两项核心结构升级（对应 `MatchWork` v2 计量模型，详见 [resources.md](resources.md) 与 `resources_wbtest.mbt`）：
+
+### 1. O(n) 空间 O(1) 探测的弱校验开放定址表（`index.mbt`）
+
+- 归并排序保持完全不变，仍按无符号 `UInt32 weak_sum` 主序、原始块序号 `orig_index` 升序排列到 `sorted_weaks` 与 `sorted_indices`；同一弱校验组在连续切片中天然保持原始块序号升序。
+- 紧随排序之后，统计去重后不同弱键数 `u`（`0 <= u <= n`），分配容量 `M = next_pow2(max(2, 2 * u))` 的开放定址哈希表 `bucket_weak : FixedArray[UInt32]` 与 `bucket_start : FixedArray[Int32]`（空槽以 `-1` 标记；装载因子严格 `u / M <= 0.50`），空间严格为 `O(n)`（从不按 `2^32` 分配）。
+- 查询路径（`match_signature_at` / `match_signature_window`）在表上做乘法混合与线性探测，直接定位首个匹配组在 `sorted_weaks` 中的起始下标 `start`，并按 `[start, ...)` 顺序遍历同一弱键组并执行 BLAKE2b 强摘要确认：
+  - 未命中时只需常量次探测，**零强摘要计算、零 `BytesView` 窗口切片分配**（仅在弱校验命中候选组时才从 `new` 切出 `window` 视图做一次强摘要与逐候选比对）；
+  - 弱哈希碰撞（不同 `weak_sum` 落入同探测链）与同 `weak_sum` 多块候选均严格按原块序号升序返回首个强匹配，输出与 `0.3.1` 逐字节一致。
+
+### 2. Pending Literal Run 与延迟切片（`delta.mbt`）
+
+- `scan_signature_delta` 不再在每次未命中时逐字节切片 `BytesView` 并立刻调用 `append_generated_span`，而是用整型起止区间（`lit_start`, `lit_len`）及 1/2/4/8 字节长度编码宽度上界阈值 `lit_cap` 暂存连续未匹配字节。
+- 仅当命中弱+强匹配、累计长度跨越编码宽度边界（例如 `64 -> 65`、`255 -> 256` 等）或到达 EOF 时提交一条合并后的 `Literal` 指令并检查指令/大小/容量预算。
+
+### 3. `MatchWork` v2 计量契约
+
+| 阶段 | `MatchWork` v2 收费（均在动作前预收；失败不退款） |
+| --- | --- |
+| 索引排序阶段 | 与之前一致：分配前预收 `3 * n`，归并每比较 1 单位，每写入 1 单位 |
+| 哈希表构建（`n > 0`） | 两张 `M` 槽数组分配前预收 `2 * M`；每个去重弱键插入探测收费 `1`（至少 1 次插入探测） |
+| 弱校验查询（`n > 0`, 窗口 `1..block_len`） | 开放定址线性探测每探测 1 槽收费 `1`（空签名返回 0） |
+| 强摘要与候选确认（命中组时） | `1 + window_len`（BLAKE2b 初始化/收尾+逐字节），每候选 `1`（含退出下组探测 `1`），每次完整比对预收 `strong_sum_len` |
+| 扫描窗口建立/滚动/调度 | 建立/命中后重建 `1 + actual_len`；每窗口 `1`；`rotate` `3`；EOF `rollout` `2` |
+| Pending Literal miss / 刷出 | 每次 miss 追加仅收费 `1`；仅在刷出提交或收到匹配 `COPY` 时调用 `append_generated_span`（`1` + 按实际扩容触发的容量增长费） |
+
+典型独立边界校验值（与 `index_wbtest.mbt` / `resources_wbtest.mbt` / `prepared_delta_*` / `delta_test.mbt` 一致）：
+- 空签名 build：`0` 单位；单记录 build：`8` 单位；`n = 2` 同键 build：`14` 单位；四键 `[MAX, 0, 0x80000000, 0]` build：`45` 单位；`n = 8` 同键 build：`65` 单位；`n = 128` 同键 build：`1733` 单位。
+- 单记录 `abc` (`3/16`) 命中：`match_signature_window` 查询 `22` 单位，`PreparedSignature::delta` `29` 单位（`4` 窗口初始化 + `1` 调度 + `22` 查询 + `2` 追加/首槽扩容），一次性 `delta` `37` 单位（`8 + 29`）；`n = 3` 同键末条命中一次性 `delta` `79` 单位；`n = 128` 恶意同弱键 `31` 字节前缀查询 `4229` 单位；`512` 字节纯 miss（`block=64`）总计 `2051` 单位；空签名 `b"abc"` `delta` 总计 `15` 单位。
+
+以下保留 0.1.0–0.3.1 历史演进记录。
+
+---
+
 ## Commit 20：使用既有索引生成
 
 PreparedSignature::delta 只重检当前限制，创建新的MatchWork，再调用原scan_signature_delta；不会解析/排序/复制已准备索引。所有扫描、匹配、EOF收缩、哈希实际输入收费、候选比较、累积与容量搬移仍在本次同一预算中。每次都独立创建窗口/累积器，返回结果与下次调用无共享可变状态，PreparedSignature不持有余额或输出。空目标仍检查签名字节、块长和记录限制，再以零扫描工作编码空delta；max_old_bytes合法零值不会阻止发送端生成。

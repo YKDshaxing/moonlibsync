@@ -332,7 +332,38 @@ fn generation_window(
 }
 
 ///|
+/// Compute the maximum literal length valid before either a header-width jump
+/// or exceeding max_delta_bytes. Assumes current_len >= 1.
+fn literal_run_limit(
+  builder_size : UInt64,
+  current_len : Int32,
+  max_delta : UInt64,
+) -> Int32 raise SyncError {
+  let len = current_len.to_uint64()
+  let hdr = literal_header_size(len).to_uint64()
+  guard builder_size <= max_delta &&
+    hdr <= max_delta - builder_size &&
+    len <= max_delta - builder_size - hdr else {
+    raise LimitExceeded
+  }
+  let avail = max_delta - builder_size - hdr
+  let width_cap = if len <= 64UL {
+    64UL
+  } else if len <= 255UL {
+    255UL
+  } else if len <= 65535UL {
+    65535UL
+  } else {
+    2147483647UL
+  }
+  let cap = if avail < width_cap { avail } else { width_cap }
+  checked_index(cap)
+}
+
+///|
 /// Only the verified signature index and new bytes enter this rolling scan.
+/// Contiguous unmatched bytes are tracked as an integer slice [lit_start, lit_len)
+/// and flushed as one Literal only on match or EOF.
 fn scan_signature_delta(
   index : SignatureIndex,
   input : BytesView,
@@ -340,7 +371,11 @@ fn scan_signature_delta(
   work : MatchWork,
 ) -> Bytes raise SyncError {
   let builder : DeltaBuilder = { commands: [], size: 5UL, }
+  let max_delta = limits.max_delta_bytes.reinterpret_as_uint64()
   let mut position = 0
+  let mut lit_start = 0
+  let mut lit_len = 0
+  let mut lit_cap = 0
   if input.length() > 0 {
     let mut weak = generation_window(
       input,
@@ -351,14 +386,29 @@ fn scan_signature_delta(
     while position < input.length() {
       work.spend(1L) // window dispatch and bounded progress/position bookkeeping
       let length = weak.count
-      let matched = match_signature_window(
+      let matched = match_signature_at(
         index,
-        input[position:position + length],
+        input,
+        position,
+        length,
         weak.digest(),
         work,
       )
       match matched {
         Some(found) => {
+          if lit_len > 0 {
+            append_generated_span(
+              builder,
+              input,
+              lit_start,
+              lit_start + lit_len,
+              None,
+              limits,
+              work,
+            )
+            lit_len = 0
+            lit_cap = 0
+          }
           append_generated_span(
             builder,
             input,
@@ -379,15 +429,19 @@ fn scan_signature_delta(
           }
         }
         None => {
-          append_generated_span(
-            builder,
-            input,
-            position,
-            position + 1,
-            None,
-            limits,
-            work,
-          )
+          if lit_len == 0 {
+            guard builder.commands.length().to_int64() < limits.max_instructions else {
+              raise LimitExceeded
+            }
+            lit_start = position
+            lit_len = 1
+            lit_cap = literal_run_limit(builder.size, 1, max_delta)
+          } else {
+            lit_len = lit_len + 1
+            if lit_len > lit_cap {
+              lit_cap = literal_run_limit(builder.size, lit_len, max_delta)
+            }
+          }
           if length < input.length() - position {
             work.spend(3L) // one rotation, outgoing byte and incoming byte
             weak.rotate(input[position], input[position + length])
@@ -398,6 +452,17 @@ fn scan_signature_delta(
           position = position + 1
         }
       }
+    }
+    if lit_len > 0 {
+      append_generated_span(
+        builder,
+        input,
+        lit_start,
+        lit_start + lit_len,
+        None,
+        limits,
+        work,
+      )
     }
   }
   encode_delta(builder.commands, limits)

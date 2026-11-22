@@ -77,7 +77,7 @@ test "resources signature four applicable limits have explicit three point bound
 test "resources delta eight applicable limits have explicit three point boundaries" {
   let d = Limits::default()
   let sig = signature(b"abc", { block_len: 3L, strong_sum_len: 16L, }, d)
-  // One record =>32-byte signature; one COPY =>8-byte delta; full match work33.
+  // One record =>32-byte signature; one COPY =>8-byte delta; full match work37.
   for
     (field, needed) in [
       ("max_signature_bytes", 32L),
@@ -87,7 +87,7 @@ test "resources delta eight applicable limits have explicit three point boundari
       ("max_output_bytes", 3L),
       ("max_delta_bytes", 8L),
       ("max_instructions", 1L),
-      ("max_match_work", 33L),
+      ("max_match_work", 37L),
     ] {
     resource_triplets(field, needed, limits => {
       let _ = delta(sig, b"abc", limits)
@@ -459,15 +459,15 @@ test "resources hostile 128 candidate prefixes charge one digest and all actual 
   let weak = window_weak(b"abc")
   let records = Array::make(128, (weak, wrong))
   let sig = crafted_index_signature(3, 32, records)
-  // Sorted128: init384 + 7*128 writes + 7*64 comparisons =1728.
-  let build = index_work(1728L)
+  // Sorted128: init384 + 7*128 writes + 7*64 comparisons + 4 table + 1 insert =1733.
+  let build = index_work(1733L)
   let index = build_signature_index(sig, build)
   assert_eq(build.remaining, 0L)
-  // lower_bound8 + presence1 + digest(1+3) + 128*(visit1+compare32)=4237.
-  let query = index_work(4237L)
+  // hash_probe1 + digest(1+3) + 128*(visit1+compare32)=4229.
+  let query = index_work(4229L)
   assert_true(match_signature_window(index, b"abc", weak, query) is None)
   assert_eq(query.remaining, 0L)
-  let short = index_work(4236L)
+  let short = index_work(4228L)
   expect_sync_error(
     () => {
       let _ = match_signature_window(index, b"abc", weak, short)
@@ -477,8 +477,8 @@ test "resources hostile 128 candidate prefixes charge one digest and all actual 
   assert_eq(short.remaining, 31L) // failed full32 comparison is not deducted
   records[127] = (weak, correct)
   let late = encode_signature(crafted_index_signature(3, 32, records), d)
-  for budget in [5971L, 5972L, 5973L] {
-    if budget == 5971L {
+  for budget in [5968L, 5969L, 5970L] {
+    if budget == 5968L {
       expect_sync_error(
         () => {
           let _ = delta(late, b"abc", { ..d, max_match_work: budget, })
@@ -499,7 +499,7 @@ test "resources repeated windows and unmergeable copies consume shared work and 
   let d = Limits::default()
   let input = Bytes::make(64, b'a')
   let sig = signature(input, { block_len: 1L, strong_sum_len: 16L, }, d)
-  // Index768 +64*(setup2+dispatch1+query27+append1) +growth190 =2942.
+  // Index773 +64*(setup2+dispatch1+query20+append1) +growth190 =2499.
   let work = index_work(10000L)
   let index = build_signature_index(parse_signature(sig, d), work)
   let encoded = scan_signature_delta(
@@ -508,13 +508,13 @@ test "resources repeated windows and unmergeable copies consume shared work and 
     { ..d, max_instructions: 64L, max_delta_bytes: 197L, },
     work,
   )
-  assert_eq(work.remaining, 7058L)
+  assert_eq(work.remaining, 7501L)
   assert_eq(parse_delta(encoded, d).length(), 64)
   for
     limits in [
       { ..d, max_instructions: 63L, },
       { ..d, max_delta_bytes: 196L, },
-      { ..d, max_match_work: 2941L, },
+      { ..d, max_match_work: 2498L, },
     ] {
     expect_sync_error(
       () => {
@@ -523,7 +523,7 @@ test "resources repeated windows and unmergeable copies consume shared work and 
       "LimitExceeded",
     )
   }
-  assert_eq(delta(sig, input, { ..d, max_match_work: 2942L, }), encoded)
+  assert_eq(delta(sig, input, { ..d, max_match_work: 2499L, }), encoded)
 }
 
 ///|
@@ -531,19 +531,19 @@ test "resources long misses merge without payload copies and meter rotate plus E
   let d = Limits::default()
   let sig = signature(b"", { block_len: 64L, strong_sum_len: 32L, }, d)
   let input = Bytes::make(512, b'x')
-  // setup65 +448 rotate steps*5 +64 rollout steps*4 +first slot1 =2562.
+  // setup65 +448 rotate steps*4 +64 rollout steps*3 +pending flush1 +first slot1 =2051.
   let exact = {
     ..d,
     max_instructions: 1L,
     max_delta_bytes: 520L,
-    max_match_work: 2562L,
+    max_match_work: 2051L,
   }
   let encoded = delta(sig, input, exact)
   assert_eq(encoded.length(), 520)
   delta_same(parse_delta(encoded, d), [Literal(input)])
   expect_sync_error(
     () => {
-      let _ = delta(sig, input, { ..exact, max_match_work: 2561L, })
+      let _ = delta(sig, input, { ..exact, max_match_work: 2050L, })
     },
     "LimitExceeded",
   )
@@ -638,7 +638,7 @@ test "resources all public operations recover after interleaved failures without
   let input = b"abc"
   let sig = signature(input, o, d)
   let saved = sig.to_array()
-  let encoded = delta(sig, input, { ..d, max_match_work: 33L, })
+  let encoded = delta(sig, input, { ..d, max_match_work: 37L, })
   let output = patch(input, encoded, d)
   for _ in 0..<4 {
     expect_sync_error(
@@ -656,7 +656,7 @@ test "resources all public operations recover after interleaved failures without
     assert_eq(signature(input, o, d), sig)
     expect_sync_error(
       () => {
-        let _ = delta(sig, input, { ..d, max_match_work: 32L, })
+        let _ = delta(sig, input, { ..d, max_match_work: 36L, })
       },
       "LimitExceeded",
     )
@@ -672,7 +672,7 @@ test "resources all public operations recover after interleaved failures without
       },
       "TruncatedInput",
     )
-    assert_eq(delta(sig, input, { ..d, max_match_work: 33L, }), encoded)
+    assert_eq(delta(sig, input, { ..d, max_match_work: 37L, }), encoded)
     expect_sync_error(
       () => {
         let _ = patch(input, encoded, { ..d, max_output_bytes: 0L, })
@@ -717,8 +717,8 @@ test "resources actual weak input length and unpaid rollout leave shared credit 
   let single = crafted_index_signature(256, 1, [
     (window_weak(input), strong_sum(input, 1)),
   ])
-  let one_index = build_signature_index(single, index_work(3L))
-  let hash_short = index_work(258L) // two probes leave256, insufficient for257
+  let one_index = build_signature_index(single, index_work(8L))
+  let hash_short = index_work(257L) // one probe leaves256, insufficient for257
   expect_sync_error(
     () => {
       let _ = match_signature_window(
@@ -731,7 +731,7 @@ test "resources actual weak input length and unpaid rollout leave shared credit 
     "LimitExceeded",
   )
   assert_eq(hash_short.remaining, 256L)
-  let hash_exact = index_work(261L) // binary1 +presence1 +hash257 +visit1 +compare1
+  let hash_exact = index_work(260L) // probe1 +hash257 +visit1 +compare1
   assert_block_match(
     match_signature_window(one_index, input, window_weak(input), hash_exact),
     0,
@@ -744,7 +744,7 @@ test "resources actual weak input length and unpaid rollout leave shared credit 
     d,
   )
   let empty_index = build_signature_index(empty, index_work(0L))
-  let unpaid = index_work(8L) // first setup4+dispatch1+append1+slot1 leaves1 < rollout2
+  let unpaid = index_work(6L) // first setup4+dispatch1 leaves1 < rollout2
   expect_sync_error(
     () => {
       let _ = scan_signature_delta(empty_index, b"abc", d, unpaid)
@@ -760,7 +760,7 @@ test "resources actual weak input length and unpaid rollout leave shared credit 
   )
   assert_eq(unpaid.remaining, 1L)
   assert_eq(
-    scan_signature_delta(empty_index, b"abc", d, index_work(17L)),
+    scan_signature_delta(empty_index, b"abc", d, index_work(15L)),
     b"\x72\x73\x02\x36\x03abc\x00",
   )
 }

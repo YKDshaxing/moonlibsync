@@ -84,6 +84,29 @@ fn RabinKarp::update(
 }
 
 ///|
+/// Update rolling state directly from a byte array slice without allocating a BytesView.
+fn RabinKarp::update_array(
+  self : RabinKarp,
+  input : Array[Byte],
+  start : Int32,
+  len : Int32,
+) -> Unit raise SyncError {
+  guard start >= 0 && len >= 0 && len <= input.length() - start else {
+    raise InvalidOptions("window_len")
+  }
+  self.check_capacity(len)
+  let mut hash = self.hash
+  for i in 0..<len {
+    hash = hash * 0x08104225U + input[start + i].to_uint()
+  }
+  self.hash = hash
+  if len > 0 {
+    self.mult = self.mult * rk_pow_mult(len)
+    self.count = self.count + len
+  }
+}
+
+///|
 /// Caller must supply the actual outgoing first byte; no window is stored.
 fn RabinKarp::rotate(
   self : RabinKarp,

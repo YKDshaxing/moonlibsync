@@ -86,7 +86,7 @@ test "prepared public byte record block and work boundaries are exact" {
     max_signature_bytes: 17L,
     max_signature_records: 1L,
     max_block_bytes: 2L,
-    max_match_work: 3L,
+    max_match_work: 8L,
   }
   let _ = @moonlibsync.prepare_signature(bytes, exact)
   let _ = @moonlibsync.prepare_signature(bytes, {
@@ -94,14 +94,14 @@ test "prepared public byte record block and work boundaries are exact" {
     max_signature_bytes: 18L,
     max_signature_records: 2L,
     max_block_bytes: 3L,
-    max_match_work: 4L,
+    max_match_work: 9L,
   })
   for
     limits in [
       { ..exact, max_signature_bytes: 16L, },
       { ..exact, max_signature_records: 0L, },
       { ..exact, max_block_bytes: 1L, },
-      { ..exact, max_match_work: 2L, },
+      { ..exact, max_match_work: 7L, },
     ] {
     prepared_error(bytes, limits, "LimitExceeded")
   }
@@ -129,7 +129,7 @@ test "prepared public empty accepts zero work and legal irrelevant zero limits" 
   }
   let _ = @moonlibsync.prepare_signature(header + b"\x00\x00\x00\x00\xff", {
     ..d,
-    max_match_work: 3L,
+    max_match_work: 8L,
   })
   prepared_error(
     header,

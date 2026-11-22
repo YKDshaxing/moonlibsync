@@ -127,14 +127,14 @@ test "generation retained merged COPY fits one instruction and minimal byte budg
 test "generation index scan and collision candidates share one exact work budget" {
   let d = Limits::default()
   let sig = signature(b"abc", { block_len: 3L, strong_sum_len: 16L, }, d)
-  // 3 index +4 initialize +1 dispatch +23 match +1 append +1 slot =33.
+  // 8 index +4 initialize +1 dispatch +22 match +1 append +1 slot =37.
   assert_eq(
-    delta(sig, b"abc", { ..d, max_match_work: 33L, }),
+    delta(sig, b"abc", { ..d, max_match_work: 37L, }),
     b"\x72\x73\x02\x36\x45\x00\x03\x00",
   )
   expect_sync_error(
     () => {
-      let _ = delta(sig, b"abc", { ..d, max_match_work: 32L, })
+      let _ = delta(sig, b"abc", { ..d, max_match_work: 36L, })
     },
     "LimitExceeded",
   )
@@ -146,26 +146,26 @@ test "generation index scan and collision candidates share one exact work budget
     (weak, strong_sum(b"abc", 16)),
   ])
   let encoded = encode_signature(crafted, d)
-  // 18 index +4 initialize +1 dispatch +58 candidate query +1 append +1 slot =83.
+  // 23 index +4 initialize +1 dispatch +56 candidate query +1 append +1 slot =86.
   assert_eq(
-    delta(encoded, b"abc", { ..d, max_match_work: 83L, }),
+    delta(encoded, b"abc", { ..d, max_match_work: 86L, }),
     b"\x72\x73\x02\x36\x45\x06\x03\x00",
   )
   expect_sync_error(
     () => {
-      let _ = delta(encoded, b"abc", { ..d, max_match_work: 82L, })
+      let _ = delta(encoded, b"abc", { ..d, max_match_work: 85L, })
     },
     "LimitExceeded",
   )
   expect_sync_error(
     () => {
-      let _ = delta(encoded, b"abc", { ..d, max_match_work: 78L, })
+      let _ = delta(encoded, b"abc", { ..d, max_match_work: 81L, })
     },
     "LimitExceeded",
   )
-  let work = MatchWork::new({ ..d, max_match_work: 83L, })
+  let work = MatchWork::new({ ..d, max_match_work: 86L, })
   let index = build_signature_index(parse_signature(encoded, d), work)
-  assert_eq(work.remaining, 65L)
+  assert_eq(work.remaining, 63L)
   let _ = scan_signature_delta(index, b"abc", d, work)
   assert_eq(work.remaining, 0L)
 }

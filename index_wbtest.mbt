@@ -75,10 +75,19 @@ test "index empty absent weak and invalid windows avoid digest work" {
   )
   let weak = window_weak(b"abc")
   let sig = crafted_index_signature(7, 16, [(weak, strong_sum(b"abc", 16))])
-  let b = index_work(5L) // 3 build + 1 binary probe + 1 absent group check
+  // Pick an absent key whose bucket does not collide mod 2 (1 probe) and test it.
+  let absent = if weak_slot(window_weak(b"aaa"), 1) != weak_slot(weak, 1) {
+    b"aaa"
+  } else if weak_slot(window_weak(b"bbb"), 1) != weak_slot(weak, 1) {
+    b"bbb"
+  } else {
+    b"ccc"
+  }
+  assert_true(weak_slot(window_weak(absent), 1) != weak_slot(weak, 1))
+  let b = index_work(9L) // 8 build (3 sort + 4 table + 1 insert) + 1 empty bucket probe
   let one = build_signature_index(sig, b)
   assert_true(
-    match_signature_window(one, b"aaa", window_weak(b"aaa"), b) is None,
+    match_signature_window(one, absent, window_weak(absent), b) is None,
   )
   assert_eq(b.remaining, 0L)
 }
@@ -154,9 +163,9 @@ test "index genuine strong confirmation rejects crafted weak-only hits and disti
     (weak, strong_sum(b"other", 16)),
     (weak, digest),
   ])
-  let work = index_work(76L) // 18 build; query 2 probes+1 presence+4 hash+3 visits+48 compare
+  let work = index_work(79L) // 23 build (18+4+1); query 1 probe+4 hash+3 visits+48 compare
   let index = build_signature_index(sig, work)
-  assert_eq(work.remaining, 58L)
+  assert_eq(work.remaining, 56L)
   assert_block_match(
     match_signature_window(index, window, weak, work),
     2,
@@ -169,7 +178,7 @@ test "index genuine strong confirmation rejects crafted weak-only hits and disti
     (weak, false_digest),
     (weak, false_digest),
   ])
-  let reject_work = index_work(76L)
+  let reject_work = index_work(79L)
   let reject = build_signature_index(reject_sig, reject_work)
   assert_true(match_signature_window(reject, window, weak, reject_work) is None)
   assert_eq(reject_work.remaining, 0L)
@@ -205,7 +214,7 @@ test "index singleton exact charges and all query stage boundaries" {
   let window = b"abc"
   let weak = window_weak(window)
   let sig = crafted_index_signature(7, 16, [(weak, strong_sum(window, 16))])
-  let exact = index_work(26L) // 3 build + 1 probe + 1 presence + 4 hash + 1 visit + 16 compare
+  let exact = index_work(30L) // 8 build (3+4+1) + 1 probe + 4 hash + 1 visit + 16 compare
   let index = build_signature_index(sig, exact)
   assert_block_match(
     match_signature_window(index, window, weak, exact),
@@ -214,8 +223,8 @@ test "index singleton exact charges and all query stage boundaries" {
     3,
   )
   assert_eq(exact.remaining, 0L)
-  for available in [0L, 1L, 2L, 3L, 6L, 7L, 22L] {
-    let work = index_work(3L + available)
+  for available in [0L, 1L, 4L, 5L, 6L, 21L] {
+    let work = index_work(8L + available)
     let fresh = build_signature_index(sig, work)
     expect_sync_error(
       () => {
@@ -224,7 +233,7 @@ test "index singleton exact charges and all query stage boundaries" {
       "LimitExceeded",
     )
     assert_true(work.remaining <= available)
-    let replacement = index_work(23L)
+    let replacement = index_work(22L)
     assert_block_match(
       match_signature_window(fresh, window, weak, replacement),
       0,
@@ -245,7 +254,7 @@ test "index collision traversal and repeated queries exhaust the same budget wit
     (weak, digest),
     (weak, digest),
   ])
-  let work = index_work(75L)
+  let work = index_work(78L)
   let index = build_signature_index(sig, work)
   assert_block_match(
     match_signature_window(index, window, weak, work),
@@ -266,7 +275,7 @@ test "index collision traversal and repeated queries exhaust the same budget wit
     (weak, strong_sum(b"y", 16)),
     (weak, digest),
   ])
-  let short = index_work(75L)
+  let short = index_work(78L)
   let last = build_signature_index(last_sig, short)
   expect_sync_error(
     () => {
@@ -275,7 +284,7 @@ test "index collision traversal and repeated queries exhaust the same budget wit
     "LimitExceeded",
   )
   assert_eq(short.remaining, 15L)
-  let retry = index_work(58L)
+  let retry = index_work(56L)
   assert_block_match(
     match_signature_window(last, window, weak, retry),
     2,
