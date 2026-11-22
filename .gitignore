@@ -3,3 +3,4 @@
 /.toolchain/
 /target/
 __pycache__/
+/js/moonlibsync-core.js

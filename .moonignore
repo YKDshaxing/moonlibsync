@@ -5,6 +5,7 @@
 /.mooncakes/
 /_build/
 /target/
+/js/moonlibsync-core.js
 **/__pycache__/
 *.pyc
 *.tmp

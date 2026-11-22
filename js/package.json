@@ -1,0 +1,50 @@
+{
+  "name": "@ykdshaxing/moonlibsync",
+  "version": "0.5.0",
+  "type": "module",
+  "license": "LGPL-2.1-or-later",
+  "description": "Pure MoonBit librsync-compatible binary delta, bounded Gzip, and Schema 3 directory sync SDK for Node.js and browsers (zero C FFI, zero npm runtime dependencies).",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "moonlibsync-core.js",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node ./build-dist.mjs",
+    "test": "node ./test-sdk.mjs"
+  },
+  "keywords": [
+    "moonlibsync",
+    "librsync",
+    "rsync",
+    "rdiff",
+    "binary-delta",
+    "delta-sync",
+    "gzip",
+    "directory-sync",
+    "moonbit",
+    "esm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YKDshaxing/moonlibsync",
+    "directory": "js"
+  },
+  "homepage": "https://ykdshaxing.github.io/moonlibsync/",
+  "bugs": {
+    "url": "https://github.com/YKDshaxing/moonlibsync/issues"
+  }
+}
