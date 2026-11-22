@@ -314,6 +314,7 @@ fn append_generated_span(
 }
 
 ///|
+#warnings("-unused_value")
 fn generation_window(
   input : BytesView,
   position : Int32,
@@ -327,6 +328,25 @@ fn generation_window(
   }
   work.spend(1L + length.to_int64()) // state setup and all actual update bytes
   let weak = RabinKarp::new()
+  weak.update(input[position:position + length])
+  weak
+}
+
+///|
+fn generation_window_for_magic(
+  magic : UInt32,
+  input : BytesView,
+  position : Int32,
+  block : Int32,
+  work : MatchWork,
+) -> RollingWeak raise SyncError {
+  let length = if block < input.length() - position {
+    block
+  } else {
+    input.length() - position
+  }
+  work.spend(1L + length.to_int64()) // state setup and all actual update bytes
+  let weak = RollingWeak::new_for_magic(magic)
   weak.update(input[position:position + length])
   weak
 }
@@ -377,7 +397,8 @@ fn scan_signature_delta(
   let mut lit_len = 0
   let mut lit_cap = 0
   if input.length() > 0 {
-    let mut weak = generation_window(
+    let mut weak = generation_window_for_magic(
+      index.signature.magic,
       input,
       position,
       index.signature.block_len,
@@ -385,7 +406,7 @@ fn scan_signature_delta(
     )
     while position < input.length() {
       work.spend(1L) // window dispatch and bounded progress/position bookkeeping
-      let length = weak.count
+      let length = weak.count()
       let matched = match_signature_at(
         index,
         input,
@@ -420,7 +441,8 @@ fn scan_signature_delta(
           )
           position = position + length // nonempty; <= input.length by window invariant
           if position < input.length() {
-            weak = generation_window(
+            weak = generation_window_for_magic(
+              index.signature.magic,
               input,
               position,
               index.signature.block_len,

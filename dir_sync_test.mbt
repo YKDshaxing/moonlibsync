@@ -509,3 +509,143 @@ test "verify_dir_snapshot and schema 3 DirVerifyReport roundtrip and mismatch de
   }
   assert_true(bad)
 }
+
+///|
+test "plan_dir_sync_with_options detect_moves emits CopyFromBasis with zero transfer bytes" {
+  let d = @moonlibsync.DirLimits::default()
+  let d_big = digest_of(Bytes::make(1024, b'\x42'))
+  let d_same = digest_of(b"unchanged-doc")
+  let d_new = digest_of(b"brand-new")
+
+  let basis = @moonlibsync.create_dir_snapshot(
+    [
+      { path: "a/stay.txt", digest: d_same, },
+      { path: "legacy/asset.bin", digest: d_big, },
+    ],
+    d,
+  )
+  let target = @moonlibsync.create_dir_snapshot(
+    [
+      { path: "a/stay.txt", digest: d_same, },
+      { path: "media/moved-asset.bin", digest: d_big, },
+      { path: "media/copy-asset.bin", digest: d_big, },
+      { path: "new.txt", digest: d_new, },
+    ],
+    d,
+  )
+
+  // Default plan_dir_sync stays 100% backward-compatible (detect_moves = false)
+  let legacy_plan = @moonlibsync.plan_dir_sync(basis, target, d)
+  assert_eq(legacy_plan.copy_from_basis_count, 0L)
+  assert_eq(legacy_plan.add_count, 3L)
+  assert_eq(
+    legacy_plan.transfer_upper_bound_bytes,
+    d_big.byte_length * 2L + d_new.byte_length,
+  )
+
+  // With detect_moves = true, both moved and copied paths become 0-byte CopyFromBasis!
+  let move_plan = @moonlibsync.plan_dir_sync_with_options(
+    basis,
+    target,
+    { detect_moves: true, },
+    d,
+  )
+  assert_eq(move_plan.unchanged_count, 1L)
+  assert_eq(move_plan.copy_from_basis_count, 2L)
+  assert_eq(move_plan.add_count, 1L)
+  assert_eq(move_plan.delete_count, 1L)
+  assert_eq(move_plan.transfer_upper_bound_bytes, d_new.byte_length)
+
+  // Schema 3 JSON roundtrip preserves CopyFromBasis & source_path
+  let encoded = @moonlibsync.encode_dir_plan(move_plan, d)
+  let parsed = @moonlibsync.parse_dir_plan(encoded, d)
+  assert_eq(parsed.copy_from_basis_count, 2L)
+  assert_eq(parsed.transfer_upper_bound_bytes, d_new.byte_length)
+  let mut found_moved = false
+  for act in parsed.actions {
+    if act.path == "media/moved-asset.bin" {
+      assert_true(act.kind is CopyFromBasis("legacy/asset.bin"))
+      found_moved = true
+    }
+  }
+  assert_true(found_moved)
+}
+
+///|
+test "dir bundle manifest CopyFromBasis and UpdateDeltaFrom roundtrip and exclude file parser" {
+  let dl = @moonlibsync.DirLimits::default()
+  let lim = @moonlibsync.Limits::default()
+  let old_bytes = Bytes::makei(512, i => (i & 0xff).to_byte())
+  let new_bytes = old_bytes[0:256].to_owned() +
+    b"MOVED-EDIT" +
+    old_bytes[266:].to_owned()
+  let sig = @moonlibsync.signature(
+    old_bytes,
+    { block_len: 64L, strong_sum_len: 16L, },
+    lim,
+  )
+  let delta = @moonlibsync.delta(sig, new_bytes, lim)
+  let info = @moonlibsync.create_basis_info(old_bytes, sig, lim)
+  let um = @moonlibsync.create_update_manifest(info, sig, new_bytes, delta, lim)
+  let d_move = digest_of(b"exact-moved-file")
+
+  let bundle = @moonlibsync.create_dir_bundle_manifest(
+    [
+      {
+        path: "new/moved.bin",
+        action: @moonlibsync.DirBundleAction::CopyFromBasis(
+          "old/moved.bin", d_move,
+        ),
+      },
+      {
+        path: "new/edited.bin",
+        action: @moonlibsync.DirBundleAction::UpdateDeltaFrom(
+          "old/edited.bin", "payloads/0.delta", um,
+        ),
+      },
+      {
+        path: "old/moved.bin",
+        action: @moonlibsync.DirBundleAction::Delete(d_move),
+      },
+    ],
+    dl,
+    lim,
+  )
+  assert_eq(bundle.copy_from_basis_count, 1L)
+  assert_eq(bundle.update_delta_count, 1L)
+  assert_eq(bundle.delete_count, 1L)
+  assert_eq(bundle.total_payload_bytes, um.delta.byte_length)
+
+  let encoded = @moonlibsync.encode_dir_bundle_manifest(bundle, dl, lim)
+  let parsed = @moonlibsync.parse_dir_bundle_manifest(encoded, dl, lim)
+  assert_eq(parsed.copy_from_basis_count, 1L)
+  assert_eq(parsed.update_delta_count, 1L)
+  assert_eq(parsed.total_payload_bytes, um.delta.byte_length)
+
+  // Archive expected payloads skips CopyFromBasis (0 bytes) and includes UpdateDeltaFrom!
+  let expected_payloads = @moonlibsync.bundle_expected_payloads(parsed)
+  assert_eq(expected_payloads.length(), 1)
+  assert_eq(expected_payloads[0].0, "payloads/0.delta")
+  let arch = @moonlibsync.encode_bundle_archive(
+    parsed,
+    Map([("payloads/0.delta", delta)]),
+    dl,
+    lim,
+  )
+  let decoded = @moonlibsync.parse_bundle_archive(arch, dl, lim)
+  assert_eq(decoded.manifest.copy_from_basis_count, 1L)
+  assert_eq(decoded.payloads["payloads/0.delta"], delta)
+
+  // parse_dir_exclude_file parses comments, blanks, CRLF, and rejects BOM / invalid rules
+  let ignore_bytes = b"# MoonLibSync ignore file\r\n\r\n  .git  \nnode_modules\r\n# temp files\n*.tmp\nbuild/*\n"
+  let patterns = @moonlibsync.parse_dir_exclude_file(ignore_bytes, dl)
+  assert_eq(patterns, [".git", "node_modules", "*.tmp", "build/*"])
+  let bom_rej = try {
+    let _ = @moonlibsync.parse_dir_exclude_file(b"\xef\xbb\xbf.git\n", dl)
+    false
+  } catch {
+    @moonlibsync.ManifestError::InvalidField("exclude_file_bom") => true
+    _ => false
+  }
+  assert_true(bom_rej)
+}

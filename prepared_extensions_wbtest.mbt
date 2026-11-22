@@ -16,7 +16,7 @@ test "signature header parser matches full parse on all fixtures and error prece
     (b"short", { ..d, max_signature_bytes: 4L, }, "LimitExceeded"),
     (b"short", d, "TruncatedInput"),
     (
-      b"\x72\x73\x01\x37\x00\x00\x08\x00\x00\x00\x00\x20", d, "UnsupportedSignatureProfile",
+      b"\x72\x73\x01\x46\x00\x00\x08\x00\x00\x00\x00\x20", d, "UnsupportedSignatureProfile",
     ),
     (b"\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00\x00\x20", d, "InvalidSignature"),
     (b"\x72\x73\x01\x47\x00\x00\x00\x00\x00\x00\x00\x20", d, "InvalidSignature"),

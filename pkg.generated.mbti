@@ -18,6 +18,10 @@ pub fn create_dir_signature_index(Array[DirSignatureEntry], DirLimits, Limits) -
 
 pub fn create_dir_snapshot(Array[DirEntry], DirLimits) -> DirSnapshot raise ManifestError
 
+pub fn create_reverse_delta(Bytes, Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
+
+pub fn create_reverse_delta_auto(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
 pub fn create_transfer_manifest(BasisInfo, Bytes, Bytes, Bytes, UpdateOptions, Limits) -> TransferManifest raise ManifestError
 
 pub fn create_update_manifest(BasisInfo, Bytes, Bytes, Bytes, Limits) -> UpdateManifest raise ManifestError
@@ -58,6 +62,8 @@ pub fn parse_bundle_archive(Bytes, DirLimits, Limits) -> DecodedBundleArchive ra
 
 pub fn parse_dir_bundle_manifest(Bytes, DirLimits, Limits) -> DirBundleManifest raise ManifestError
 
+pub fn parse_dir_exclude_file(Bytes, DirLimits) -> Array[String] raise ManifestError
+
 pub fn parse_dir_plan(Bytes, DirLimits) -> DirSyncPlan raise ManifestError
 
 pub fn parse_dir_signature_index(Bytes, DirLimits, Limits) -> DirSignatureIndex raise ManifestError
@@ -74,6 +80,8 @@ pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
 pub fn plan_dir_sync(DirSnapshot, DirSnapshot, DirLimits) -> DirSyncPlan raise ManifestError
 
+pub fn plan_dir_sync_with_options(DirSnapshot, DirSnapshot, DirPlanOptions, DirLimits) -> DirSyncPlan raise ManifestError
+
 pub fn plan_update(Bytes, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 
 pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
@@ -81,6 +89,8 @@ pub fn prepare_signature(Bytes, Limits) -> PreparedSignature raise SyncError
 pub fn recommend_block_len(Int64, Int64, Limits) -> Int64 raise SyncError
 
 pub fn signature(Bytes, SignatureOptions, Limits) -> Bytes raise SyncError
+
+pub fn signature_with_profile(Bytes, SignatureOptions, SignatureProfile, Limits) -> Bytes raise SyncError
 
 pub fn verified_patch(Bytes, Bytes, UpdateManifest, Limits) -> Bytes raise ManifestError
 
@@ -161,6 +171,7 @@ pub(all) enum DirActionKind {
   AddFull
   UpdateCandidate
   Delete
+  CopyFromBasis(String)
 }
 
 pub(all) enum DirBundleAction {
@@ -169,6 +180,8 @@ pub(all) enum DirBundleAction {
   UpdateDelta(String, UpdateManifest)
   UpdateFull(String, FileDigest, FileDigest)
   Delete(FileDigest)
+  CopyFromBasis(String, FileDigest)
+  UpdateDeltaFrom(String, String, UpdateManifest)
 }
 
 pub(all) struct DirBundleEntry {
@@ -183,6 +196,7 @@ pub(all) struct DirBundleManifest {
   update_delta_count : Int64
   update_full_count : Int64
   delete_count : Int64
+  copy_from_basis_count : Int64
   total_payload_bytes : Int64
 }
 
@@ -200,6 +214,11 @@ pub(all) struct DirLimits {
 }
 pub fn DirLimits::default() -> Self
 pub fn DirLimits::validate(Self) -> Unit raise ManifestError
+
+pub(all) struct DirPlanOptions {
+  detect_moves : Bool
+}
+pub fn DirPlanOptions::default() -> Self
 
 pub(all) struct DirSignatureEntry {
   path : String
@@ -229,6 +248,7 @@ pub(all) struct DirSyncPlan {
   add_count : Int64
   update_count : Int64
   delete_count : Int64
+  copy_from_basis_count : Int64
   transfer_upper_bound_bytes : Int64
 }
 
@@ -320,6 +340,7 @@ pub struct SignatureHasher {
 }
 pub fn SignatureHasher::finish(Self) -> Bytes raise SyncError
 pub fn SignatureHasher::new(SignatureOptions, Limits) -> Self raise SyncError
+pub fn SignatureHasher::new_with_profile(SignatureOptions, SignatureProfile, Limits) -> Self raise SyncError
 pub fn SignatureHasher::take_ready(Self) -> Bytes raise SyncError
 pub fn SignatureHasher::update(Self, BytesView) -> Unit raise SyncError
 
@@ -328,6 +349,12 @@ pub(all) struct SignatureOptions {
   strong_sum_len : Int64
 }
 pub fn SignatureOptions::default() -> Self
+
+pub(all) enum SignatureProfile {
+  RkBlake2
+  RollsumBlake2
+}
+pub fn SignatureProfile::magic(Self) -> UInt32
 
 pub(all) struct SignatureSummary {
   magic : UInt32

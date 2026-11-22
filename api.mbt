@@ -18,6 +18,57 @@ pub fn SignatureOptions::default() -> SignatureOptions {
 }
 
 ///|
+/// Supported modern librsync BLAKE2 signature profiles.
+pub(all) enum SignatureProfile {
+  /// RS_RK_BLAKE2_SIG_MAGIC (`0x72730147`, Rabin-Karp + BLAKE2b, default).
+  RkBlake2
+  /// RS_BLAKE2_SIG_MAGIC (`0x72730137`, Adler-style Rollsum + BLAKE2b).
+  RollsumBlake2
+}
+
+///|
+/// Wire magic value for a supported `SignatureProfile`.
+pub fn SignatureProfile::magic(self : SignatureProfile) -> UInt32 {
+  match self {
+    RkBlake2 => 0x72730147U
+    RollsumBlake2 => 0x72730137U
+  }
+}
+
+///|
+/// Generate signature bytes for either `RkBlake2` (`0x72730147`) or
+/// `RollsumBlake2` (`0x72730137`), validating limits and options before hashing.
+pub fn signature_with_profile(
+  basis : Bytes,
+  options : SignatureOptions,
+  profile : SignatureProfile,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  let (block, strong, count, size) = signature_plan(
+    basis.length().to_uint64(),
+    options,
+    limits,
+  )
+  let output = signature_header_with_magic(profile.magic(), block, strong, size)
+  let mut pos = 0
+  let mut cursor = 12L
+  for _ in 0..<count {
+    let remaining = basis.length() - pos
+    let take = if remaining < block { remaining } else { block }
+    let end = pos + take // take <= remaining; addition is now bounded.
+    let window = basis[pos:end]
+    let weak = match profile {
+      RkBlake2 => rabinkarp_digest(window)
+      RollsumBlake2 => rollsum_digest(window)
+    }
+    write_signature_record(output, cursor, weak, strong_sum(window, strong))
+    pos = end
+    cursor = cursor + (4 + strong).to_int64()
+  }
+  Bytes::from_array(output[:])
+}
+
+///|
 /// Generate standard 0x72730147 signature bytes, not a delta or file recovery.
 /// Validates limits, options, basis and output budgets before hashing/allocation.
 /// Empty basis emits only the 12-byte header; the final short block is unpadded.
@@ -28,29 +79,41 @@ pub fn signature(
   options : SignatureOptions,
   limits : Limits,
 ) -> Bytes raise SyncError {
-  let (block, strong, count, size) = signature_plan(
-    basis.length().to_uint64(),
-    options,
+  signature_with_profile(basis, options, RkBlake2, limits)
+}
+
+///|
+/// Generate a rollback delta (`NEW -> OLD`) that reverts `new_bytes` back to
+/// `old_bytes` when passed to `patch(new_bytes, rev_delta, limits)`.
+pub fn create_reverse_delta(
+  old_bytes : Bytes,
+  new_bytes : Bytes,
+  options : SignatureOptions,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  let new_sig = signature(new_bytes, options, limits)
+  delta(new_sig, old_bytes, limits)
+}
+
+///|
+/// Generate a rollback delta (`NEW -> OLD`) using policy-v1 auto block sizing
+/// (`recommend_block_len` with 16-byte BLAKE2b strong digests).
+pub fn create_reverse_delta_auto(
+  old_bytes : Bytes,
+  new_bytes : Bytes,
+  limits : Limits,
+) -> Bytes raise SyncError {
+  let block_len = recommend_block_len(
+    new_bytes.length().to_int64(),
+    16L,
     limits,
   )
-  let output = signature_header(block, strong, size)
-  let mut pos = 0
-  let mut cursor = 12L
-  for _ in 0..<count {
-    let remaining = basis.length() - pos
-    let take = if remaining < block { remaining } else { block }
-    let end = pos + take // take <= remaining; addition is now bounded.
-    let window = basis[pos:end]
-    write_signature_record(
-      output,
-      cursor,
-      rabinkarp_digest(window),
-      strong_sum(window, strong),
-    )
-    pos = end
-    cursor = cursor + (4 + strong).to_int64()
-  }
-  Bytes::from_array(output[:])
+  create_reverse_delta(
+    old_bytes,
+    new_bytes,
+    { block_len, strong_sum_len: 16L, },
+    limits,
+  )
 }
 
 ///|

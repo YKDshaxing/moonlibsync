@@ -75,9 +75,6 @@ test "inspect public signature profiles malformed parameters and truncation" {
         b"\x72\x73\x01\x36\x00\x00\x00\x00\x00\x00\x00\x00", "UnsupportedSignatureProfile",
       ),
       (
-        b"\x72\x73\x01\x37\x00\x00\x00\x01\x00\x00\x00\x01", "UnsupportedSignatureProfile",
-      ),
-      (
         b"\x72\x73\x01\x46\x00\x00\x00\x01\x00\x00\x00\x01", "UnsupportedSignatureProfile",
       ),
       (b"\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01", "InvalidSignature"),

@@ -94,13 +94,20 @@ test "signature requires a full header before classifying any magic" {
 ///|
 test "signature classifies known profiles unknown magic and delta magic" {
   let rest = b"\x00\x00\x00\x01\x00\x00\x00\x01"
-  for magic in [b"\x72\x73\x01\x36", b"\x72\x73\x01\x37", b"\x72\x73\x01\x46"] {
+  for magic in [b"\x72\x73\x01\x36", b"\x72\x73\x01\x46"] {
     expect_signature_error(
       magic + rest,
       Limits::default(),
       "UnsupportedSignatureProfile",
     )
   }
+  let rs_header = parse_signature_header(
+    b"\x72\x73\x01\x37" + rest,
+    Limits::default(),
+  )
+  assert_eq(rs_header.magic, 0x72730137U)
+  assert_eq(rs_header.block_len, 1)
+  assert_eq(rs_header.strong_sum_len, 1)
   for
     magic in [
       b"\xde\xad\xbe\xef", b"\x72\x73\x02\x36", b"\x72\x73\x01\x48", b"\x00\x00\x00\x00",

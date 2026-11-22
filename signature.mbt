@@ -45,16 +45,27 @@ fn signature_plan(
 }
 
 ///|
-fn signature_header(
+fn signature_header_with_magic(
+  magic : UInt32,
   block : Int32,
   strong : Int32,
   size : Int32,
 ) -> FixedArray[Byte] raise SyncError {
   let output = FixedArray::make(size, b'\x00')
-  write_u32_be(output, 0L, 0x72730147U)
+  write_u32_be(output, 0L, magic)
   write_u32_be(output, 4L, block.reinterpret_as_uint())
   write_u32_be(output, 8L, strong.reinterpret_as_uint())
   output
+}
+
+///|
+#warnings("-unused_value")
+fn signature_header(
+  block : Int32,
+  strong : Int32,
+  size : Int32,
+) -> FixedArray[Byte] raise SyncError {
+  signature_header_with_magic(0x72730147U, block, strong, size)
 }
 
 ///|
@@ -77,7 +88,7 @@ fn write_signature_record(
 #warnings("-unused_value")
 fn encode_signature(sig : Signature, limits : Limits) -> Bytes raise SyncError {
   limits.validate()
-  guard sig.magic == 0x72730147U &&
+  guard (sig.magic == 0x72730147U || sig.magic == 0x72730137U) &&
     sig.block_len > 0 &&
     sig.strong_sum_len >= 1 &&
     sig.strong_sum_len <= 32 else {
@@ -99,7 +110,12 @@ fn encode_signature(sig : Signature, limits : Limits) -> Bytes raise SyncError {
       raise InvalidSignature
     }
   }
-  let output = signature_header(sig.block_len, sig.strong_sum_len, size)
+  let output = signature_header_with_magic(
+    sig.magic,
+    sig.block_len,
+    sig.strong_sum_len,
+    size,
+  )
   let mut cursor = 12L
   for record in sig.records {
     write_signature_record(output, cursor, record.weak_sum, record.strong_sum)
@@ -156,8 +172,8 @@ fn parse_signature_header(
   let block_wire = read_u32_be(input, 4L)
   let strong_wire = read_u32_be(input, 8L)
   match magic {
-    0x72730147U => ()
-    0x72730136U | 0x72730137U | 0x72730146U => raise UnsupportedSignatureProfile
+    0x72730147U | 0x72730137U => ()
+    0x72730136U | 0x72730146U => raise UnsupportedSignatureProfile
     _ => raise InvalidSignature
   }
   guard block_wire != 0U && strong_wire >= 1U && strong_wire <= 32U else {

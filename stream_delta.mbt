@@ -11,7 +11,7 @@ pub struct DeltaScanner {
   priv work : MatchWork
   priv buf : Array[Byte]
   priv mut head : Int32
-  priv mut weak : RabinKarp
+  priv mut weak : RollingWeak
   priv mut has_weak : Bool
   priv mut pending_copy : (UInt64, UInt64)?
   priv pending_lit : @buffer.Buffer
@@ -194,7 +194,7 @@ fn DeltaScanner::ensure_weak(
 ) -> Unit raise SyncError {
   if !self.has_weak {
     self.work.spend(1L + len.to_int64())
-    let w = RabinKarp::new()
+    let w = RollingWeak::new_for_magic(self.index.signature.magic)
     w.update_array(self.buf, self.head, len)
     self.weak = w
     self.has_weak = true
@@ -288,7 +288,7 @@ pub fn DeltaScanner::new(
     work,
     buf: [],
     head: 0,
-    weak: RabinKarp::new(),
+    weak: RollingWeak::new_for_magic(prepared.index.signature.magic),
     has_weak: false,
     pending_copy: None,
     pending_lit: Buffer(),

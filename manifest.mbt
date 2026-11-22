@@ -318,9 +318,15 @@ pub fn create_basis_info(
   let summary = inspect_signature(sig, limits) catch {
     error => raise ManifestError::Core(error)
   }
-  let expected = signature(
+  let profile = if summary.magic == 0x72730137U {
+    SignatureProfile::RollsumBlake2
+  } else {
+    SignatureProfile::RkBlake2
+  }
+  let expected = signature_with_profile(
     old,
     { block_len: summary.block_len, strong_sum_len: summary.strong_sum_len, },
+    profile,
     limits,
   ) catch {
     error => raise ManifestError::Core(error)

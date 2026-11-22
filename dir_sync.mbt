@@ -68,6 +68,19 @@ pub(all) enum DirActionKind {
   AddFull
   UpdateCandidate
   Delete
+  /// Reuse identical content already present at `source_path` inside `basis` (0-byte transfer).
+  CopyFromBasis(String)
+}
+
+///|
+/// Options controlling directory sync planning behavior.
+pub(all) struct DirPlanOptions {
+  detect_moves : Bool
+}
+
+///|
+pub fn DirPlanOptions::default() -> DirPlanOptions {
+  { detect_moves: false, }
 }
 
 ///|
@@ -86,6 +99,7 @@ pub(all) struct DirSyncPlan {
   add_count : Int64
   update_count : Int64
   delete_count : Int64
+  copy_from_basis_count : Int64
   transfer_upper_bound_bytes : Int64
 }
 
@@ -386,6 +400,7 @@ fn validate_sync_plan(
   let mut add = 0L
   let mut update = 0L
   let mut del = 0L
+  let mut copy_from_basis = 0L
   let mut transfer_upper = 0L
   for i in 0..<plan.actions.length() {
     let action = plan.actions[i]
@@ -439,23 +454,41 @@ fn validate_sync_plan(
         validate_file_digest(b, 0L, limits.max_file_bytes, "basis")
         del = del + 1L
       }
+      CopyFromBasis(source_path) => {
+        guard action.basis is None && action.target is Some(t) else {
+          raise ManifestError::InvalidField("action")
+        }
+        validate_dir_path(source_path, limits)
+        guard source_path != action.path else {
+          raise ManifestError::InvalidField("source_path")
+        }
+        validate_file_digest(t, 0L, limits.max_file_bytes, "target")
+        copy_from_basis = copy_from_basis + 1L
+      }
     }
   }
   guard plan.unchanged_count == unchanged &&
     plan.add_count == add &&
     plan.update_count == update &&
     plan.delete_count == del &&
+    plan.copy_from_basis_count == copy_from_basis &&
     plan.transfer_upper_bound_bytes == transfer_upper else {
     raise ManifestError::BindingMismatch("plan_summary")
   }
 }
 
 ///|
-/// Reconcile two validated snapshots in O(N + M) sorted order, rejecting any
-/// cross-snapshot ASCII case-folding collision before emitting a deterministic plan.
-pub fn plan_dir_sync(
+fn digest_lookup_key(d : FileDigest) -> String {
+  "\{d.byte_length}:\{d.sha256}"
+}
+
+///|
+/// Reconcile two validated snapshots in O(N + M) sorted order with optional
+/// content-digest move/copy detection (`CopyFromBasis` for 0-byte transfers).
+pub fn plan_dir_sync_with_options(
   basis : DirSnapshot,
   target : DirSnapshot,
+  options : DirPlanOptions,
   limits : DirLimits,
 ) -> DirSyncPlan raise ManifestError {
   let basis_lower = validate_snapshot_entries(
@@ -474,11 +507,21 @@ pub fn plan_dir_sync(
       None => ()
     }
   }
+  let basis_by_digest : Map[String, String] = Map([])
+  if options.detect_moves {
+    for entry in basis.entries {
+      let key = digest_lookup_key(entry.digest)
+      if !basis_by_digest.contains(key) {
+        basis_by_digest[key] = entry.path
+      }
+    }
+  }
   let actions : Array[DirSyncAction] = []
   let mut unchanged_count = 0L
   let mut add_count = 0L
   let mut update_count = 0L
   let mut delete_count = 0L
+  let mut copy_from_basis_count = 0L
   let mut transfer_upper_bound_bytes = 0L
   let mut i = 0
   let mut j = 0
@@ -496,17 +539,30 @@ pub fn plan_dir_sync(
       delete_count = delete_count + 1L
       i = i + 1
     } else if cmp > 0 {
-      actions.push({
-        path: t.path,
-        kind: AddFull,
-        basis: None,
-        target: Some(t.digest),
-      })
-      add_count = add_count + 1L
-      transfer_upper_bound_bytes = checked_add_i64(
-        transfer_upper_bound_bytes,
-        t.digest.byte_length,
-      )
+      match basis_by_digest.get(digest_lookup_key(t.digest)) {
+        Some(src_path) if options.detect_moves && src_path != t.path => {
+          actions.push({
+            path: t.path,
+            kind: CopyFromBasis(src_path),
+            basis: None,
+            target: Some(t.digest),
+          })
+          copy_from_basis_count = copy_from_basis_count + 1L
+        }
+        _ => {
+          actions.push({
+            path: t.path,
+            kind: AddFull,
+            basis: None,
+            target: Some(t.digest),
+          })
+          add_count = add_count + 1L
+          transfer_upper_bound_bytes = checked_add_i64(
+            transfer_upper_bound_bytes,
+            t.digest.byte_length,
+          )
+        }
+      }
       j = j + 1
     } else {
       if same_digest(b.digest, t.digest) {
@@ -547,17 +603,30 @@ pub fn plan_dir_sync(
   }
   while j < target.entries.length() {
     let t = target.entries[j]
-    actions.push({
-      path: t.path,
-      kind: AddFull,
-      basis: None,
-      target: Some(t.digest),
-    })
-    add_count = add_count + 1L
-    transfer_upper_bound_bytes = checked_add_i64(
-      transfer_upper_bound_bytes,
-      t.digest.byte_length,
-    )
+    match basis_by_digest.get(digest_lookup_key(t.digest)) {
+      Some(src_path) if options.detect_moves && src_path != t.path => {
+        actions.push({
+          path: t.path,
+          kind: CopyFromBasis(src_path),
+          basis: None,
+          target: Some(t.digest),
+        })
+        copy_from_basis_count = copy_from_basis_count + 1L
+      }
+      _ => {
+        actions.push({
+          path: t.path,
+          kind: AddFull,
+          basis: None,
+          target: Some(t.digest),
+        })
+        add_count = add_count + 1L
+        transfer_upper_bound_bytes = checked_add_i64(
+          transfer_upper_bound_bytes,
+          t.digest.byte_length,
+        )
+      }
+    }
     j = j + 1
   }
   {
@@ -566,8 +635,20 @@ pub fn plan_dir_sync(
     add_count,
     update_count,
     delete_count,
+    copy_from_basis_count,
     transfer_upper_bound_bytes,
   }
+}
+
+///|
+/// Reconcile two validated snapshots in O(N + M) sorted order, rejecting any
+/// cross-snapshot ASCII case-folding collision before emitting a deterministic plan.
+pub fn plan_dir_sync(
+  basis : DirSnapshot,
+  target : DirSnapshot,
+  limits : DirLimits,
+) -> DirSyncPlan raise ManifestError {
+  plan_dir_sync_with_options(basis, target, DirPlanOptions::default(), limits)
 }
 
 ///|
@@ -577,6 +658,7 @@ fn action_kind_label(kind : DirActionKind) -> String {
     AddFull => "add-full"
     UpdateCandidate => "update-candidate"
     Delete => "delete"
+    CopyFromBasis(_) => "copy-from-basis"
   }
 }
 
@@ -589,7 +671,13 @@ pub fn encode_dir_plan(
   validate_sync_plan(plan, limits)
   let out = StringBuilder()
   out.write_string(
-    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-plan\",\"summary\":{\"unchanged\":\"\{plan.unchanged_count}\",\"add\":\"\{plan.add_count}\",\"update\":\"\{plan.update_count}\",\"delete\":\"\{plan.delete_count}\",\"transfer_upper_bound_bytes\":\"\{plan.transfer_upper_bound_bytes}\"},\"actions\":[",
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-plan\",\"summary\":{\"unchanged\":\"\{plan.unchanged_count}\",\"add\":\"\{plan.add_count}\",\"update\":\"\{plan.update_count}\",\"delete\":\"\{plan.delete_count}\"",
+  )
+  if plan.copy_from_basis_count > 0L {
+    out.write_string(",\"copy_from_basis\":\"\{plan.copy_from_basis_count}\"")
+  }
+  out.write_string(
+    ",\"transfer_upper_bound_bytes\":\"\{plan.transfer_upper_bound_bytes}\"},\"actions\":[",
   )
   for i in 0..<plan.actions.length() {
     if i > 0 {
@@ -599,6 +687,13 @@ pub fn encode_dir_plan(
     out.write_string(
       "{\"path\":\"\{json_escape_string(a.path)}\",\"kind\":\"\{action_kind_label(a.kind)}\"",
     )
+    match a.kind {
+      CopyFromBasis(source_path) =>
+        out.write_string(
+          ",\"source_path\":\"\{json_escape_string(source_path)}\"",
+        )
+      _ => ()
+    }
     match a.basis {
       Some(b) => out.write_string(",\"basis\":\{file_digest_json(b)}")
       None => ()
@@ -629,9 +724,20 @@ pub fn parse_dir_plan(
     "schema_version", "kind", "summary", "actions",
   ])
   dir_schema3_header(fields, "moonlibsync-dir-plan")
-  let sum_fields = manifest_object(manifest_get(fields, "summary"), [
-    "unchanged", "add", "update", "delete", "transfer_upper_bound_bytes",
-  ])
+  let raw_sum = manifest_get(fields, "summary")
+  guard raw_sum is @json.Json::Object(raw_sum_map) else {
+    raise ManifestError::InvalidSchema
+  }
+  let has_cfb = raw_sum_map.contains("copy_from_basis")
+  let sum_fields = if has_cfb {
+    manifest_object(raw_sum, [
+      "unchanged", "add", "update", "delete", "copy_from_basis", "transfer_upper_bound_bytes",
+    ])
+  } else {
+    manifest_object(raw_sum, [
+      "unchanged", "add", "update", "delete", "transfer_upper_bound_bytes",
+    ])
+  }
   let unchanged_count = manifest_decimal(
     manifest_string(manifest_get(sum_fields, "unchanged"), "unchanged"),
   )
@@ -644,6 +750,16 @@ pub fn parse_dir_plan(
   let delete_count = manifest_decimal(
     manifest_string(manifest_get(sum_fields, "delete"), "delete"),
   )
+  let copy_from_basis_count = if has_cfb {
+    manifest_decimal(
+      manifest_string(
+        manifest_get(sum_fields, "copy_from_basis"),
+        "copy_from_basis",
+      ),
+    )
+  } else {
+    0L
+  }
   let transfer_upper_bound_bytes = manifest_decimal(
     manifest_string(
       manifest_get(sum_fields, "transfer_upper_bound_bytes"),
@@ -691,6 +807,15 @@ pub fn parse_dir_plan(
         Some(parse_file_digest(manifest_get(f, "basis"))),
         None,
       )
+    } else if kind_str == "copy-from-basis" {
+      let f = manifest_object(item, ["path", "kind", "source_path", "target"])
+      (
+        DirActionKind::CopyFromBasis(
+          manifest_string(manifest_get(f, "source_path"), "source_path"),
+        ),
+        None,
+        Some(parse_file_digest(manifest_get(f, "target"))),
+      )
     } else {
       raise ManifestError::InvalidSchema
     }
@@ -702,6 +827,7 @@ pub fn parse_dir_plan(
     add_count,
     update_count,
     delete_count,
+    copy_from_basis_count,
     transfer_upper_bound_bytes,
   }
   validate_sync_plan(plan, limits)
@@ -732,6 +858,10 @@ pub(all) enum DirBundleAction {
   UpdateDelta(String, UpdateManifest)
   UpdateFull(String, FileDigest, FileDigest)
   Delete(FileDigest)
+  /// Reuse identical bytes already present at `source_path` in `BASIS_DIR` (0-byte payload).
+  CopyFromBasis(String, FileDigest)
+  /// Apply a librsync delta against a different `source_path` in `BASIS_DIR` (moved + edited file).
+  UpdateDeltaFrom(String, String, UpdateManifest)
 }
 
 ///|
@@ -749,6 +879,7 @@ pub(all) struct DirBundleManifest {
   update_delta_count : Int64
   update_full_count : Int64
   delete_count : Int64
+  copy_from_basis_count : Int64
   total_payload_bytes : Int64
 }
 
@@ -933,7 +1064,7 @@ fn validate_dir_bundle_entries(
   dir_limits : DirLimits,
   limits : Limits,
   require_sorted~ : Bool,
-) -> (Int64, Int64, Int64, Int64, Int64, Int64) raise ManifestError {
+) -> (Int64, Int64, Int64, Int64, Int64, Int64, Int64) raise ManifestError {
   dir_limits.validate()
   manifest_limits(limits)
   guard entries.length().to_int64() <= dir_limits.max_entries * 2L else {
@@ -946,6 +1077,7 @@ fn validate_dir_bundle_entries(
   let mut update_delta = 0L
   let mut update_full = 0L
   let mut del = 0L
+  let mut copy_from_basis = 0L
   let mut total_payload = 0L
   for i in 0..<entries.length() {
     let entry = entries[i]
@@ -1010,9 +1142,38 @@ fn validate_dir_bundle_entries(
         validate_file_digest(basis, 0L, limits.max_old_bytes, "basis")
         del = del + 1L
       }
+      CopyFromBasis(source_path, target) => {
+        validate_dir_path(source_path, dir_limits)
+        guard source_path != entry.path else {
+          raise ManifestError::InvalidField("source_path")
+        }
+        validate_file_digest(target, 0L, dir_limits.max_file_bytes, "target")
+        validate_file_digest(target, 0L, limits.max_old_bytes, "basis")
+        validate_file_digest(target, 0L, limits.max_output_bytes, "result")
+        copy_from_basis = copy_from_basis + 1L
+      }
+      UpdateDeltaFrom(source_path, payload_path, m) => {
+        validate_dir_path(source_path, dir_limits)
+        guard source_path != entry.path else {
+          raise ManifestError::InvalidField("source_path")
+        }
+        validate_scoped_rel_path(
+          payload_path, "payloads/", "payload_path", dir_limits, seen_payload, "payload_path_collision",
+        )
+        validate_update_manifest(m, limits)
+        validate_file_digest(m.basis, 0L, dir_limits.max_file_bytes, "basis")
+        validate_file_digest(m.result, 0L, dir_limits.max_file_bytes, "result")
+        guard !same_digest(m.basis, m.result) else {
+          raise ManifestError::BindingMismatch("update_digest")
+        }
+        update_delta = update_delta + 1L
+        total_payload = checked_add_i64(total_payload, m.delta.byte_length)
+      }
     }
   }
-  (unchanged, add_full, update_delta, update_full, del, total_payload)
+  (
+    unchanged, add_full, update_delta, update_full, del, copy_from_basis, total_payload,
+  )
 }
 
 ///|
@@ -1029,6 +1190,7 @@ pub fn create_dir_bundle_manifest(
     update_delta_count,
     update_full_count,
     delete_count,
+    copy_from_basis_count,
     total_payload_bytes,
   ) = validate_dir_bundle_entries(
     entries,
@@ -1045,6 +1207,7 @@ pub fn create_dir_bundle_manifest(
     update_delta_count,
     update_full_count,
     delete_count,
+    copy_from_basis_count,
     total_payload_bytes,
   }
 }
@@ -1055,7 +1218,15 @@ fn validate_dir_bundle_manifest(
   dir_limits : DirLimits,
   limits : Limits,
 ) -> Unit raise ManifestError {
-  let (unchanged, add_full, update_delta, update_full, del, total_payload) = validate_dir_bundle_entries(
+  let (
+    unchanged,
+    add_full,
+    update_delta,
+    update_full,
+    del,
+    copy_from_basis,
+    total_payload,
+  ) = validate_dir_bundle_entries(
     bundle.entries,
     dir_limits,
     limits,
@@ -1066,6 +1237,7 @@ fn validate_dir_bundle_manifest(
     bundle.update_delta_count == update_delta &&
     bundle.update_full_count == update_full &&
     bundle.delete_count == del &&
+    bundle.copy_from_basis_count == copy_from_basis &&
     bundle.total_payload_bytes == total_payload else {
     raise ManifestError::BindingMismatch("bundle_summary")
   }
@@ -1081,7 +1253,13 @@ pub fn encode_dir_bundle_manifest(
   validate_dir_bundle_manifest(bundle, dir_limits, limits)
   let out = StringBuilder()
   out.write_string(
-    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-bundle\",\"summary\":{\"unchanged\":\"\{bundle.unchanged_count}\",\"add_full\":\"\{bundle.add_full_count}\",\"update_delta\":\"\{bundle.update_delta_count}\",\"update_full\":\"\{bundle.update_full_count}\",\"delete\":\"\{bundle.delete_count}\",\"total_payload_bytes\":\"\{bundle.total_payload_bytes}\"},\"entries\":[",
+    "{\"schema_version\":3,\"kind\":\"moonlibsync-dir-bundle\",\"summary\":{\"unchanged\":\"\{bundle.unchanged_count}\",\"add_full\":\"\{bundle.add_full_count}\",\"update_delta\":\"\{bundle.update_delta_count}\",\"update_full\":\"\{bundle.update_full_count}\",\"delete\":\"\{bundle.delete_count}\"",
+  )
+  if bundle.copy_from_basis_count > 0L {
+    out.write_string(",\"copy_from_basis\":\"\{bundle.copy_from_basis_count}\"")
+  }
+  out.write_string(
+    ",\"total_payload_bytes\":\"\{bundle.total_payload_bytes}\"},\"entries\":[",
   )
   for i in 0..<bundle.entries.length() {
     if i > 0 {
@@ -1109,6 +1287,14 @@ pub fn encode_dir_bundle_manifest(
       Delete(basis) =>
         out.write_string(
           "{\"path\":\"\{p}\",\"kind\":\"delete\",\"basis\":\{file_digest_json(basis)}}",
+        )
+      CopyFromBasis(source_path, target) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"copy-from-basis\",\"source_path\":\"\{json_escape_string(source_path)}\",\"target\":\{file_digest_json(target)}}",
+        )
+      UpdateDeltaFrom(source_path, payload_path, m) =>
+        out.write_string(
+          "{\"path\":\"\{p}\",\"kind\":\"update-delta-from\",\"source_path\":\"\{json_escape_string(source_path)}\",\"payload_path\":\"\{json_escape_string(payload_path)}\",\"basis\":\{file_digest_json(m.basis)},\"signature\":\{file_digest_json(m.signature)},\"delta\":\{file_digest_json(m.delta)},\"result\":\{file_digest_json(m.result)}}",
         )
     }
   }
@@ -1139,9 +1325,21 @@ pub fn parse_dir_bundle_manifest(
     "schema_version", "kind", "summary", "entries",
   ])
   dir_schema3_header(fields, "moonlibsync-dir-bundle")
-  let sum_fields = manifest_object(manifest_get(fields, "summary"), [
-    "unchanged", "add_full", "update_delta", "update_full", "delete", "total_payload_bytes",
-  ])
+  let raw_sum = manifest_get(fields, "summary")
+  guard raw_sum is @json.Json::Object(raw_sum_map) else {
+    raise ManifestError::InvalidSchema
+  }
+  let has_cfb = raw_sum_map.contains("copy_from_basis")
+  let sum_fields = if has_cfb {
+    manifest_object(raw_sum, [
+      "unchanged", "add_full", "update_delta", "update_full", "delete", "copy_from_basis",
+      "total_payload_bytes",
+    ])
+  } else {
+    manifest_object(raw_sum, [
+      "unchanged", "add_full", "update_delta", "update_full", "delete", "total_payload_bytes",
+    ])
+  }
   let unchanged_count = manifest_decimal(
     manifest_string(manifest_get(sum_fields, "unchanged"), "unchanged"),
   )
@@ -1157,6 +1355,16 @@ pub fn parse_dir_bundle_manifest(
   let delete_count = manifest_decimal(
     manifest_string(manifest_get(sum_fields, "delete"), "delete"),
   )
+  let copy_from_basis_count = if has_cfb {
+    manifest_decimal(
+      manifest_string(
+        manifest_get(sum_fields, "copy_from_basis"),
+        "copy_from_basis",
+      ),
+    )
+  } else {
+    0L
+  }
   let total_payload_bytes = manifest_decimal(
     manifest_string(
       manifest_get(sum_fields, "total_payload_bytes"),
@@ -1210,6 +1418,27 @@ pub fn parse_dir_bundle_manifest(
     } else if kind_str == "delete" {
       let f = manifest_object(item, ["path", "kind", "basis"])
       Delete(parse_file_digest(manifest_get(f, "basis")))
+    } else if kind_str == "copy-from-basis" {
+      let f = manifest_object(item, ["path", "kind", "source_path", "target"])
+      CopyFromBasis(
+        manifest_string(manifest_get(f, "source_path"), "source_path"),
+        parse_file_digest(manifest_get(f, "target")),
+      )
+    } else if kind_str == "update-delta-from" {
+      let f = manifest_object(item, [
+        "path", "kind", "source_path", "payload_path", "basis", "signature", "delta",
+        "result",
+      ])
+      UpdateDeltaFrom(
+        manifest_string(manifest_get(f, "source_path"), "source_path"),
+        manifest_string(manifest_get(f, "payload_path"), "payload_path"),
+        {
+          basis: parse_file_digest(manifest_get(f, "basis")),
+          signature: parse_file_digest(manifest_get(f, "signature")),
+          delta: parse_file_digest(manifest_get(f, "delta")),
+          result: parse_file_digest(manifest_get(f, "result")),
+        },
+      )
     } else {
       raise ManifestError::InvalidSchema
     }
@@ -1222,6 +1451,7 @@ pub fn parse_dir_bundle_manifest(
     update_delta_count,
     update_full_count,
     delete_count,
+    copy_from_basis_count,
     total_payload_bytes,
   }
   validate_dir_bundle_manifest(bundle, dir_limits, limits)
@@ -1300,6 +1530,68 @@ fn glob_match_segment(text : String, pat : String) -> Bool {
     pi = pi + 1
   }
   pi == p.length()
+}
+
+///|
+/// Parse a `.moonlibsyncignore`-style exclude file (UTF-8 without BOM, bounded by
+/// `max_snapshot_bytes`, ignoring blank lines and `#` comments, validating every
+/// pattern with `validate_exclude_pattern`).
+pub fn parse_dir_exclude_file(
+  input : Bytes,
+  limits : DirLimits,
+) -> Array[String] raise ManifestError {
+  limits.validate()
+  guard input.length().to_int64() <= limits.max_snapshot_bytes else {
+    raise ManifestError::ResourceLimit("exclude_file_bytes")
+  }
+  if input.length() >= 3 &&
+    input[0] == b'\xef' &&
+    input[1] == b'\xbb' &&
+    input[2] == b'\xbf' {
+    raise ManifestError::InvalidField("exclude_file_bom")
+  }
+  let text = @utf8.decode(input[:]) catch {
+    _ => raise ManifestError::InvalidField("exclude_file_utf8")
+  }
+  let patterns : Array[String] = []
+  let line_buf = StringBuilder()
+  let mut idx = 0
+  let chars = text.to_array()
+  while idx <= chars.length() {
+    let at_end = idx == chars.length()
+    if at_end || chars[idx] == '\n' {
+      let raw_line = line_buf.to_string()
+      line_buf.reset()
+      let line_chars = raw_line.to_array()
+      let mut s = 0
+      let mut e = line_chars.length()
+      if e > 0 && line_chars[e - 1] == '\r' {
+        e = e - 1
+      }
+      while s < e && (line_chars[s] == ' ' || line_chars[s] == '\t') {
+        s = s + 1
+      }
+      while e > s && (line_chars[e - 1] == ' ' || line_chars[e - 1] == '\t') {
+        e = e - 1
+      }
+      if s < e && line_chars[s] != '#' {
+        let pat_buf = StringBuilder()
+        for k in s..<e {
+          pat_buf.write_char(line_chars[k])
+        }
+        let pat = pat_buf.to_string()
+        validate_exclude_pattern(pat)
+        guard patterns.length() < 4096 else {
+          raise ManifestError::ResourceLimit("exclude_patterns")
+        }
+        patterns.push(pat)
+      }
+    } else {
+      line_buf.write_char(chars[idx])
+    }
+    idx = idx + 1
+  }
+  patterns
 }
 
 ///|
@@ -1466,7 +1758,7 @@ pub fn verify_dir_snapshot(
         })
         missing_count = missing_count + 1L
       }
-      AddFull => {
+      AddFull | CopyFromBasis(_) => {
         issues.push({
           path: act.path,
           kind: Extra,

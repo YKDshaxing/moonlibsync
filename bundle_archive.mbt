@@ -64,9 +64,10 @@ pub fn bundle_expected_payloads(
   let out : Array[(String, Int64)] = []
   for entry in bundle.entries {
     match entry.action {
-      Unchanged(_) | Delete(_) => ()
+      Unchanged(_) | Delete(_) | CopyFromBasis(_, _) => ()
       AddFull(path, target) => out.push((path, target.byte_length))
-      UpdateDelta(path, m) => out.push((path, m.delta.byte_length))
+      UpdateDelta(path, m) | UpdateDeltaFrom(_, path, m) =>
+        out.push((path, m.delta.byte_length))
       UpdateFull(path, _, target) => out.push((path, target.byte_length))
     }
   }
