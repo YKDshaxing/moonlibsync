@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="Live Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.1-0ea5e9" alt="Version 0.6.1"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.7.0-0ea5e9" alt="Version 0.7.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,18 +28,19 @@
 
 | Layer | Public Entry Points | Purpose |
 | --- | --- | --- |
-| **Core Binary Delta** | `signature`, `signature_with_profile`, `delta`, `patch`, `create_reverse_delta*` | Wire-compatible with `librsync` dual BLAKE2 profiles (`0x72730147` RK+BLAKE2b & `0x72730137` Rollsum+BLAKE2b, delta `0x72730236`); O(1) open-addressed weak-hash lookup, Pending Literal Run, and rollback deltas |
+| **Core Binary Delta & Compose** | `signature`, `signature_with_profile`, `delta`, `patch`, `compose_deltas`, `compose_delta_chain`, `create_reverse_delta*` | Wire-compatible with `librsync` dual BLAKE2 profiles (`0x72730147` RK+BLAKE2b & `0x72730137` Rollsum+BLAKE2b, delta `0x72730236`); O(1) open-addressed weak-hash lookup, `v1→v2 + v2→v3 ⇒ v1→v3` lossless delta squashing, and rollback deltas |
+| **HTTP Range (`zsync`) Pull** | `plan_range_fetch`, `apply_range_fetch`, `encode_range_plan_json`, `RangeFetchOptions` | Pure zero-IO static CDN / S3 / Nginx incremental pull planner: matches local basis blocks against remote target signatures and coalesces minimal RFC 9110 `bytes=` ranges (`fetch-sync` / `range-plan`) |
 | **Streaming & Sans-IO** | `SignatureHasher`, `DeltaScanner`, `PatchApplier`, `PatchDecoder`, `Sha256Hasher` | Pure zero-IO chunked pipelines + Sans-IO step decoder (`PatchStep`) & streaming SHA-256 bridging sync `Bytes`, Native `async/fs`, and browser JS/Workers |
-| **Directory Sync, Moves & Archives** | `DirSnapshot`, `plan_dir_sync_with_options`, `DirBundleManifest`, `DirVerifyReport`, `parse_dir_exclude_file`, `BundleArchiveDecoder` | Schema 3 deterministic snapshots, `--detect-moves` 0-byte `CopyFromBasis` & cross-path `UpdateDeltaFrom`, `dir-verify`, `--exclude`/`--exclude-from`, and single-file `MLSBDL01` `.mbundle`/`.mbundle.gz` archives |
-| **Publisher Signing & AEAD Crypto** | `YKDshaxing/moonlibsync/crypto`: `keypair_from_seed`, `sign_*`, `verify_*`, `seal_*`, `unseal_*`, `SealEncoder`, `SealDecoder` | Pure zero-IO cross-target Ed25519 publisher signatures (RFC 8032 strict point validation, Schema 4) and `MLSENC01` chunked ChaCha20-Poly1305 + Argon2id streaming encryption (zero new third-party deps) |
-| **Bounded Gzip Subpackage** | `YKDshaxing/moonlibsync/compress`: `compress_gzip`, `decompress_gzip`, `GzipEncoder`, `GzipDecoder` | Optional cross-target zero-IO single-member RFC 1952 gzip with zip-bomb (`LimitExceeded`) and `TrailingData` guards (root library stays non-experimental) |
+| **Directory Sync, Moves, Jobs & Metadata** | `DirSnapshot`, `plan_dir_sync_with_options`, `DirBundleManifest`, `DirVerifyReport`, `DirMetadata`, `plan_dir_metadata`, `BundleArchiveDecoder` | Schema 3 deterministic snapshots, `--jobs N` concurrent scanning/packing, `empty_dirs` & POSIX `+x` metadata, `--detect-moves` 0-byte `CopyFromBasis` & `UpdateDeltaFrom`, `dir-verify`, `--exclude`/`--exclude-from`, and `MLSBDL01` `.mbundle`/`.mbundle.gz` archives |
+| **Publisher Signing, Quorum & AEAD / X25519** | `YKDshaxing/moonlibsync/crypto`: `keypair_from_seed`, `sign_*`, `verify_quorum_*`, `seal_*`, `x25519_keypair_from_secret`, `seal_envelope`, `unseal_envelope` | Pure zero-IO Ed25519 signatures & `M-of-N` Keyring threshold verification with revocation, `MLSENC01` ChaCha20-Poly1305/Argon2id streaming encryption, and `MLSENC02` multi-recipient X25519 + HKDF-SHA256 envelopes |
+| **Bounded Gzip / Zlib / Raw DEFLATE** | `YKDshaxing/moonlibsync/compress`: `compress_gzip`, `decompress_gzip`, `compress_zlib`, `decompress_zlib`, `compress_deflate`, `decompress_deflate`, `{Gzip,Zlib,Deflate}{Encoder,Decoder}` | Optional cross-target zero-IO single-member RFC 1952 Gzip, RFC 1950 Zlib, and RFC 1951 Raw DEFLATE with zip-bomb (`LimitExceeded`) and `TrailingData` guards |
 | **Inspection & Preflight** | `inspect_signature`, `inspect_delta`, `check_patch` | O(1) zero-record-allocation signature metadata inspection, delta statistics, and COPY range preflight |
 | **Reusable Prepared Index** | `prepare_signature`, `PreparedSignature::{delta, summary, plan_update}` | Parse and index a signature once; reuse across multiple targets with per-call `Limits` re-checks and independent work budgets |
 | **Auto Block Sizing** | `recommend_block_len`, `signature --block-size auto` | Explicit integer policy v1 (targeting ~512 records, power-of-two rounding, bounded by `Limits`) |
 | **Integrity Manifests** | `create/parse/encode_basis_info`, `create/parse/encode_update_manifest`, `verified_patch` | Strict bounded JSON (schema 1) binding `OLD`, `SIG`, `DELTA`, and `RESULT` via SHA-256 before returning or committing output |
 | **Transfer Planning** | `plan_update`, `create/parse/encode_transfer_manifest`, `apply_update` | Schema 2 `Delta` vs. `Full` payload selection (chooses `Delta` only when strictly smaller and meeting `min_savings_bytes`) |
-| **Native Single-File CLI** | `cmd/moonlibsync` (28 subcommands) | Full `--streaming` 64 KiB pipelines, `--progress`, `keygen`/`sign`/`verify`, `seal`/`unseal`, `reverse-delta`, `inspect-bundle`, `completions`, `--profile`, `--detect-moves`, `--exclude-from`, `--verify-sig`/`--verify-key`, `--save-rollback`, symlink refusal & atomic commits |
-| **Zero-Dep JS/TS SDK & Web Studio** | `js/` (`@ykdshaxing/moonlibsync`) & `examples/web-demo/` | Zero-runtime-dependency Node.js + Browser ES module (27 core exports, 23 typed methods, zero `any`), plus a 5-tab Web Worker Studio (Literal Hexdump Heatmap, Multi-Block Benchmark, Split-Role `rdiff`, Universal Inspector, `.mbundle.gz` Pack/Unpack, Gzip + Ed25519 + AEAD Crypto Lab) |
+| **Native Single-File CLI** | `cmd/moonlibsync` (35 subcommands) | Full `--streaming` 64 KiB pipelines, `fetch-sync` / `range-plan` (HTTP `Range`), `compose-delta`, `--jobs N`, `--meta-out`/`--meta`, `--format gzip|zlib|deflate`, `x25519-keygen`, `keyring-init` / `sign-combine` / `verify-quorum`, `seal --recipient`, `--verify-bundle`, `completions`, symlink refusal & atomic commits |
+| **Zero-Dep JS/TS SDK & Web Studio** | `js/` (`@ykdshaxing/moonlibsync@0.7.0`) & `examples/web-demo/` | Zero-runtime-dependency Node.js + Browser ES module (37 core exports, 33 typed methods, zero `any`), plus a 5-tab Web Worker Studio (HTTP `Range` pull, Delta-chain composer, Literal Hexdump Heatmap, `.mbundle.gz` Pack/Unpack, Gzip/Zlib + Ed25519/Quorum + X25519/AEAD Crypto Lab) |
 
 ## Quick Start
 
@@ -50,7 +51,7 @@ Add `YKDshaxing/moonlibsync` to your `moon.mod` (published on [Mooncakes](https:
 ```moonbit
 // moon.mod
 import {
-  "YKDshaxing/moonlibsync@0.3.0", // or latest 0.3.x once published
+  "YKDshaxing/moonlibsync@0.7.0",
 }
 ```
 
@@ -93,7 +94,7 @@ More runnable examples (all verified on `native`, `js`, and `wasm-gc`):
 - [examples/auto](examples/auto/main.mbt) — explicit `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` vs. `Full` transfer workflow
 - [examples/streaming](examples/streaming/main.mbt) — zero-IO streaming `SignatureHasher`, `DeltaScanner`, and `PatchApplier` (plus zero-dependency JS runner: `node examples/streaming/run-node.mjs`)
-- [examples/web-demo](examples/web-demo/index.html) — 5-tab zero-backend static browser Web Worker Studio + 27-export ES module (`node examples/web-demo/test-node.mjs --rebuild`): Literal Hexdump Heatmap, Multi-Block Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, `.mbundle.gz` Pack/Unpack + `--detect-moves`, and Gzip + Ed25519 + AEAD Crypto Lab
+- [examples/web-demo](examples/web-demo/index.html) — 5-tab zero-backend static browser Web Worker Studio + 37-export ES module (`node examples/web-demo/test-node.mjs --rebuild`): HTTP `Range` pull simulator & live CORS fetch, Delta chain composer, Literal Hexdump Heatmap, Multi-Block Benchmark, Split-Role `rdiff`, Universal Artifact Inspector, `.mbundle.gz` Pack/Unpack + `--detect-moves`, and Gzip/Zlib + Ed25519 Quorum + X25519/AEAD Crypto Lab
 - [js/README.md](js/README.md) — standalone zero-dependency typed JS/TS ES module SDK (`@ykdshaxing/moonlibsync`, verified with `node js/test-sdk.mjs`)
 
 ## Native Single-File CLI
@@ -146,6 +147,20 @@ moonlibsync unseal ./v1-to-v2.mbundle.gz.menc ./unsealed.mbundle.gz --passphrase
 moonlibsync dir-apply ./v1 ./unsealed.mbundle.gz ./v2-restored --archive --gzip --verify-sig ./v1-to-v2.msig.json --verify-key publisher.pub --save-rollback ./rollback-v2-to-v1.mbundle.gz --streaming --progress
 moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude-from .moonlibsyncignore
 moonlibsync completions powershell > moonlibsync-completions.ps1
+
+# 7. Static HTTP Range (zsync) pull, delta-chain compose, X25519 multi-recipient & M-of-N quorum (0.7.0)
+moonlibsync range-plan release-v2.sig 134217728 release-v1.bin --merge-gap 4096 --json
+moonlibsync fetch-sync https://cdn.example.com/release-v2.bin --basis release-v1.bin --sig-url https://cdn.example.com/release-v2.sig --verify-bundle release-v2.sigbundle.json --keyring org.keyring.json -o release-v2.bin --json
+moonlibsync compose-delta v1-to-v2.delta v2-to-v3.delta -o v1-to-v3.delta --json
+moonlibsync x25519-keygen -o alice.x25519.sec --pub-out alice.x25519.pub
+moonlibsync x25519-keygen -o bob.x25519.sec --pub-out bob.x25519.pub
+moonlibsync seal payload.tar --recipient alice.x25519.pub --recipient bob.x25519.pub -o payload.menv
+moonlibsync unseal payload.menv --recipient-key bob.x25519.sec -o payload.restored.tar
+moonlibsync keyring-init --trust pub1.pub --trust pub2.pub --trust pub3.pub --quorum 2 -o org.keyring.json
+moonlibsync sign-combine sig1.json sig2.json -o bundle.sig.json
+moonlibsync verify-quorum artifact.bin bundle.sig.json --keyring org.keyring.json --json
+moonlibsync dir-snapshot ./v2 v2.snap.json --jobs 4 --meta-out v2.meta.json
+moonlibsync compress artifact.bin artifact.zlib --format zlib --streaming
 ```
 
 ### Integrity & Transfer Workflows
@@ -176,10 +191,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # Format, deps, 233 core + 4 compress + 13 crypto tests × 3 targets, 6 examples, web-demo ESM, JS/TS SDK, mbti guard
+python scripts/check.py            # Format, deps, 252 core + 13 compress + 20 crypto tests × 3 targets, 6 examples, web-demo ESM, JS/TS SDK, mbti guard
 python scripts/verify_fixtures.py  # Reference & opcode fixture integrity
 python scripts/failure_gates.py    # Isolated corruption & assertion failure gates
-./scripts/cli-smoke.ps1            # 46 Native helper tests + 685 Windows CLI integration cases (709 on Linux/ext4)
+./scripts/cli-smoke.ps1            # 57 Native helper tests + 784 Windows CLI integration cases (808 on Linux/ext4)
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs
@@ -221,7 +236,7 @@ python3 scripts/file_exchange.py
 
 ## Documentation Index
 
-- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.6.1`, `0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
+- [CHANGELOG.md](CHANGELOG.md) — Version history (`0.7.0`, `0.6.1`, `0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
 - [js/README.md](js/README.md) — Zero-dependency Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design

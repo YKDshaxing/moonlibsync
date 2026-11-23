@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="在线 Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.6.1-0ea5e9" alt="Version 0.6.1"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.7.0-0ea5e9" alt="Version 0.7.0"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -28,18 +28,19 @@
 
 | 层次 | 公开入口 | 用途说明 |
 | --- | --- | --- |
-| **标准字节差分与双 Profile** | `signature` / `signature_with_profile` / `delta` / `patch` / `create_reverse_delta*` | 与 `librsync` 双 BLAKE2 Profile 互操作（`0x72730147` RK+BLAKE2b 与 `0x72730137` Rollsum+BLAKE2b、delta `0x72730236`）；O(1) 弱校验开放定址表、Pending Literal Run 与反向回滚增量 |
+| **标准字节差分、双 Profile 与合成** | `signature` / `signature_with_profile` / `delta` / `patch` / `compose_deltas` / `compose_delta_chain` / `create_reverse_delta*` | 与 `librsync` 双 BLAKE2 Profile 互操作（`0x72730147` RK+BLAKE2b 与 `0x72730137` Rollsum+BLAKE2b、delta `0x72730236`）；O(1) 弱校验开放定址表、`v1→v2 + v2→v3 ⇒ v1→v3` 无损补丁链合成与反向回滚增量 |
+| **HTTP Range (`zsync`) 静态增量拉取** | `plan_range_fetch` / `apply_range_fetch` / `encode_range_plan_json` / `RangeFetchOptions` | 纯零 IO 静态 CDN / S3 / Nginx 增量拉取规划：用远端新 `.sig` 对本地旧文件滑窗匹配并合并小间隙生成最小 RFC 9110 `bytes=` 区间请求（`fetch-sync` / `range-plan`） |
 | **零 IO 流式与 Sans-IO 解码** | `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `Sha256Hasher` | 纯核心分块状态机 + Sans-IO 步进解码器（`PatchStep`）与流式 SHA-256，同时适配同步 `Bytes`、Native `async/fs` 与浏览器 JS/Web Worker |
-| **目录快照、移动检测、归档与巡检** | `DirSnapshot` / `plan_dir_sync_with_options` / `DirBundleManifest` / `DirVerifyReport` / `parse_dir_exclude_file` / `BundleArchiveDecoder` | Schema 3 确定性快照、`--detect-moves` 0 字节 `CopyFromBasis` 与跨路径 `UpdateDeltaFrom`、完整性巡检（`dir-verify`）、`--exclude`/`--exclude-from` 以及单文件 `MLSBDL01` `.mbundle`/`.mbundle.gz` |
-| **Ed25519 验签与 AEAD 加密子包** | `YKDshaxing/moonlibsync/crypto`：`keypair_from_seed` / `sign_*` / `verify_*` / `seal_*` / `unseal_*` / `SealEncoder` / `SealDecoder` | 纯零 IO 跨三目标 Ed25519 发布者数字签名（RFC 8032 严格点校验，Schema 4）与 `MLSENC01` 流式分块 ChaCha20-Poly1305/Argon2id 加密封装（零新增第三方依赖、零实验包） |
-| **独立有界 Gzip 压缩子包** | `YKDshaxing/moonlibsync/compress`：`compress_gzip` / `decompress_gzip` / `GzipEncoder` / `GzipDecoder` | 纯零 IO 跨三目标单流 RFC 1952 Gzip 封装，内置防解压炸弹（`LimitExceeded`）与拒绝尾随数据（`TrailingData`），根核心库保持零实验包 |
+| **目录快照、并发、元数据与归档** | `DirSnapshot` / `plan_dir_sync_with_options` / `DirBundleManifest` / `DirVerifyReport` / `DirMetadata` / `plan_dir_metadata` / `BundleArchiveDecoder` | Schema 3 确定性快照、`--jobs N` 有界并发扫描打包（输出字节严格一致）、空目录与 `+x` 可执行位元数据、`--detect-moves` 0 字节 `CopyFromBasis`、完整性巡检及 `.mbundle`/`.mbundle.gz` |
+| **Ed25519 多签密钥环与 X25519 / AEAD** | `YKDshaxing/moonlibsync/crypto`：`keypair_from_seed` / `sign_*` / `verify_quorum_*` / `seal_*` / `x25519_keypair_from_secret` / `seal_envelope` / `unseal_envelope` | 纯零 IO Ed25519 签名与 `M-of-N` 阈值 Keyring 吊销验签、`MLSENC01` ChaCha20-Poly1305/Argon2id 流式加密，以及 `MLSENC02` 多接收方 X25519 + HKDF-SHA256 公钥信封加密 |
+| **独立有界 Gzip / Zlib / Raw DEFLATE** | `YKDshaxing/moonlibsync/compress`：`compress_gzip` / `decompress_gzip` / `compress_zlib` / `decompress_zlib` / `compress_deflate` / `decompress_deflate` / `{Gzip,Zlib,Deflate}{Encoder,Decoder}` | 纯零 IO 跨三目标单流 RFC 1952 Gzip、RFC 1950 Zlib 与 RFC 1951 Raw DEFLATE 封装，内置防解压炸弹与拒绝尾随数据 |
 | **检查与预检** | `inspect_signature` / `inspect_delta` / `check_patch` | O(1) 零记录分配签名头校验、delta 统计以及基于长度的 COPY 范围预检 |
 | **可复用签名索引** | `prepare_signature` / `PreparedSignature::{delta, summary, plan_update}` | 一次解析建索引，跨多个目标复用；每次调用独立重检 `Limits` 并拥有独立工作预算 |
 | **显式自动块长** | `recommend_block_len` / `signature --block-size auto` | 纯整数 `policy v1` 策略（目标约 512 条记录、2 次幂向上舍入并受当前预算约束） |
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
-| **Native 单文件 CLI** | `cmd/moonlibsync`（28 条子命令） | 全链路 `--streaming` 64 KiB 管线、`--progress`、`keygen`/`sign`/`verify`、`seal`/`unseal`、`reverse-delta`、`inspect-bundle`、`completions`、`--profile`、`--detect-moves`、`--exclude-from`、`--verify-sig`/`--verify-key`、`--save-rollback` 与原子提交 |
-| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module（27 项核心导出 / 23 项类型方法，零 `any` `.d.ts`）；5 标签页 Web Worker 静态工作台（Literal Hex 透视热力图、多块长对比、独立 rdiff、通用剖析器、`.mbundle.gz` 打包解包、Gzip + Ed25519 + AEAD 实验室） |
+| **Native 单文件 CLI** | `cmd/moonlibsync`（35 条子命令） | 全链路 `--streaming` 64 KiB 管线、`fetch-sync`/`range-plan`（HTTP `Range`）、`compose-delta`、`--jobs N`、`--meta-out`/`--meta`、`--format gzip|zlib|deflate`、`x25519-keygen`、`keyring-init`/`sign-combine`/`verify-quorum`、`seal --recipient`、`--verify-bundle`、`completions` 与原子提交 |
+| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync@0.7.0`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module（37 项核心导出 / 33 项类型方法，零 `any` `.d.ts`）；5 标签页 Web Worker 静态工作台（HTTP `Range` 增量拉取、Delta 链合成压扁、Literal Hex 透视热力图、`.mbundle.gz` 打包解包、Gzip/Zlib + Ed25519 多签 + X25519/AEAD 实验室） |
 
 ## 快速开始
 
@@ -50,7 +51,7 @@
 ```moonbit
 // moon.mod
 import {
-  "YKDshaxing/moonlibsync@0.3.0", // 发布后可升级为最新 0.3.x
+  "YKDshaxing/moonlibsync@0.7.0",
 }
 ```
 
@@ -93,7 +94,7 @@ fn sync_demo() -> Unit raise {
 - [examples/auto](examples/auto/main.mbt) — 显式自动块长 `recommend_block_len`
 - [examples/transfer](examples/transfer/main.mbt) — schema 2 `Delta` / `Full` 更新规划与应用
 - [examples/streaming](examples/streaming/main.mbt) — 零 IO 分块流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier`（含零依赖 Node.js 运行脚本：`node examples/streaming/run-node.mjs`）
-- [examples/web-demo](examples/web-demo/index.html) — 5 标签页零后端静态浏览器 Web Worker 工作台 + 27 导出 JS ES 模块（`node examples/web-demo/test-node.mjs --rebuild`）：Literal Hex 透视热力图、多块长基准图、独立角色 rdiff、通用产物剖析、`.mbundle.gz` 打包解包 + `--detect-moves` 与 Gzip/Ed25519/AEAD 安全实验室
+- [examples/web-demo](examples/web-demo/index.html) — 5 标签页零后端静态浏览器 Web Worker 工作台 + 37 导出 JS ES 模块（`node examples/web-demo/test-node.mjs --rebuild`）：HTTP `Range` 增量拉取模拟与实测、Delta 链合成压扁、Literal Hex 透视热力图、多块长基准图、独立角色 rdiff、通用产物剖析、`.mbundle.gz` 打包解包 + `--detect-moves` 与 Gzip/Zlib/Ed25519 多签/X25519/AEAD 安全实验室
 - [js/README.md](js/README.md) — 独立零运行时依赖 JS/TS ES Module SDK（`@ykdshaxing/moonlibsync`，`node js/test-sdk.mjs` 验证）
 
 ## Native 单文件 CLI
@@ -146,6 +147,20 @@ moonlibsync unseal ./v1-to-v2.mbundle.gz.menc ./unsealed.mbundle.gz --passphrase
 moonlibsync dir-apply ./v1 ./unsealed.mbundle.gz ./v2-restored --archive --gzip --verify-sig ./v1-to-v2.msig.json --verify-key publisher.pub --save-rollback ./rollback-v2-to-v1.mbundle.gz --streaming --progress
 moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude-from .moonlibsyncignore
 moonlibsync completions powershell > moonlibsync-completions.ps1
+
+# 7. 静态 HTTP Range (`zsync`) 增量拉取、Delta 链合成、X25519 多接收方信封与 M-of-N 多签（0.7.0）
+moonlibsync range-plan release-v2.sig 134217728 release-v1.bin --merge-gap 4096 --json
+moonlibsync fetch-sync https://cdn.example.com/release-v2.bin --basis release-v1.bin --sig-url https://cdn.example.com/release-v2.sig --verify-bundle release-v2.sigbundle.json --keyring org.keyring.json -o release-v2.bin --json
+moonlibsync compose-delta v1-to-v2.delta v2-to-v3.delta -o v1-to-v3.delta --json
+moonlibsync x25519-keygen -o alice.x25519.sec --pub-out alice.x25519.pub
+moonlibsync x25519-keygen -o bob.x25519.sec --pub-out bob.x25519.pub
+moonlibsync seal payload.tar --recipient alice.x25519.pub --recipient bob.x25519.pub -o payload.menv
+moonlibsync unseal payload.menv --recipient-key bob.x25519.sec -o payload.restored.tar
+moonlibsync keyring-init --trust pub1.pub --trust pub2.pub --trust pub3.pub --quorum 2 -o org.keyring.json
+moonlibsync sign-combine sig1.json sig2.json -o bundle.sig.json
+moonlibsync verify-quorum artifact.bin bundle.sig.json --keyring org.keyring.json --json
+moonlibsync dir-snapshot ./v2 v2.snap.json --jobs 4 --meta-out v2.meta.json
+moonlibsync compress artifact.bin artifact.zlib --format zlib --streaming
 ```
 
 ### 完整性校验与传输规划流程
@@ -176,10 +191,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
 $env:MOON_HOME = (Resolve-Path '.toolchain/selected').Path
 $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 
-python scripts/check.py            # 格式、依赖、233 项库 + 4 项 compress + 13 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
+python scripts/check.py            # 格式、依赖、252 项库 + 13 项 compress + 20 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 46 项 Native 辅助测试 + 685 项 Windows CLI 集成用例（Linux/ext4 为 709 项）
+./scripts/cli-smoke.ps1            # 57 项 Native 辅助测试 + 784 项 Windows CLI 集成用例（Linux/ext4 为 808 项）
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs
@@ -221,7 +236,7 @@ python3 scripts/file_exchange.py
 
 ## 文档导航
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.6.1` / `0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.7.0` / `0.6.1` / `0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
 - [js/README.md](js/README.md) — 零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明

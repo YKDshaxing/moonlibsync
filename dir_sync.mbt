@@ -160,18 +160,27 @@ fn json_escape_string(text : String) -> String {
 
 ///|
 fn is_windows_reserved_segment(seg : String) -> Bool {
-  let stem_buf = StringBuilder()
+  let raw : Array[Char] = []
   for c in seg {
     if c == '.' {
       break
     }
-    stem_buf.write_char(c)
+    raw.push(c)
+  }
+  let mut trimmed_len = raw.length()
+  while trimmed_len > 0 && raw[trimmed_len - 1] == ' ' {
+    trimmed_len = trimmed_len - 1
+  }
+  let stem_buf = StringBuilder()
+  for i in 0..<trimmed_len {
+    stem_buf.write_char(raw[i])
   }
   match ascii_lower(stem_buf.to_string()) {
     "con"
     | "prn"
     | "aux"
     | "nul"
+    | "com0"
     | "com1"
     | "com2"
     | "com3"
@@ -181,6 +190,10 @@ fn is_windows_reserved_segment(seg : String) -> Bool {
     | "com7"
     | "com8"
     | "com9"
+    | "com\u{00b9}"
+    | "com\u{00b2}"
+    | "com\u{00b3}"
+    | "lpt0"
     | "lpt1"
     | "lpt2"
     | "lpt3"
@@ -189,7 +202,10 @@ fn is_windows_reserved_segment(seg : String) -> Bool {
     | "lpt6"
     | "lpt7"
     | "lpt8"
-    | "lpt9" => true
+    | "lpt9"
+    | "lpt\u{00b9}"
+    | "lpt\u{00b2}"
+    | "lpt\u{00b3}" => true
     _ => false
   }
 }

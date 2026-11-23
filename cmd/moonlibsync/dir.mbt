@@ -90,15 +90,15 @@ fn validate_rel_posix_path(
 }
 
 ///|
-async fn collect_dir_entries(
+async fn walk_dir_candidates(
   dir_path : String,
   rel_prefix : String,
   depth : Int64,
   limits : @lib.DirLimits,
   seen_lower : Map[String, String],
-  entries : Array[@lib.DirEntry],
-  excludes~ : Array[String] = [],
-  progress~ : ProgressReporter? = None,
+  pending_files : Array[(String, String)],
+  excludes : Array[String],
+  empty_dirs : Array[String]?,
 ) -> Unit {
   let names = @fs.readdir(
     dir_path,
@@ -126,34 +126,121 @@ async fn collect_dir_entries(
     let kind = @fs.kind(child_path, follow_symlink=false)
     match kind {
       @fs.FileKind::Regular => {
-        guard entries.length().to_int64() < limits.max_entries else {
+        guard pending_files.length().to_int64() < limits.max_entries else {
           raise @lib.ManifestError::ResourceLimit("dir_entries")
         }
         seen_lower[lower] = rel_path
-        let digest = stream_hash_regular_file(
-          child_path,
-          limits.max_file_bytes,
-          progress~,
-        )
-        entries.push({ path: rel_path, digest, })
+        pending_files.push((child_path, rel_path))
       }
       @fs.FileKind::Directory => {
         seen_lower[lower] = rel_path
-        collect_dir_entries(
+        walk_dir_candidates(
           child_path,
           rel_path,
           depth + 1L,
           limits,
           seen_lower,
-          entries,
-          excludes~,
-          progress~,
+          pending_files,
+          excludes,
+          empty_dirs,
         )
       }
       _ =>
         raise FileFailure(
           "unsupported directory entry kind or symlink: " + child_path,
         )
+    }
+  }
+  if names.length() == 0 && rel_prefix != "" {
+    match empty_dirs {
+      Some(ed) => {
+        guard ed.length().to_int64() < limits.max_entries else {
+          raise @lib.ManifestError::ResourceLimit("dir_entries")
+        }
+        ed.push(rel_prefix)
+      }
+      None => ()
+    }
+  }
+}
+
+///|
+async fn is_posix_executable(path : String) -> Bool {
+  if @path.sep != '/' {
+    false
+  } else {
+    guard @fs.kind(path, follow_symlink=false) is @fs.FileKind::Regular else {
+      raise FileFailure("unsupported directory entry kind or symlink: " + path)
+    }
+    @fs.can_execute(path)
+  }
+}
+
+///|
+async fn collect_dir_entries(
+  dir_path : String,
+  rel_prefix : String,
+  depth : Int64,
+  limits : @lib.DirLimits,
+  seen_lower : Map[String, String],
+  entries : Array[@lib.DirEntry],
+  excludes~ : Array[String] = [],
+  progress~ : ProgressReporter? = None,
+  jobs~ : Int32 = 1,
+  empty_dirs~ : Array[String]? = None,
+  executable_paths~ : Array[String]? = None,
+) -> Unit {
+  let pending_files : Array[(String, String)] = []
+  walk_dir_candidates(
+    dir_path, rel_prefix, depth, limits, seen_lower, pending_files, excludes, empty_dirs,
+  )
+  let check_exec = executable_paths is Some(_)
+  if jobs <= 1 || pending_files.length() <= 1 {
+    for item in pending_files {
+      let (child_path, rel_path) = item
+      let digest = stream_hash_regular_file(
+        child_path,
+        limits.max_file_bytes,
+        progress~,
+      )
+      entries.push({ path: rel_path, digest, })
+      if check_exec && is_posix_executable(child_path) {
+        match executable_paths {
+          Some(ep) => ep.push(rel_path)
+          None => ()
+        }
+      }
+    }
+  } else {
+    let tasks : Array[async () -> (@lib.DirEntry, Bool)] = Array(
+      capacity=pending_files.length(),
+    )
+    for item in pending_files {
+      let (child_path, rel_path) = item
+      tasks.push(async fn() {
+        let digest = stream_hash_regular_file(
+          child_path,
+          limits.max_file_bytes,
+          progress~,
+        )
+        let is_exec = if check_exec {
+          is_posix_executable(child_path)
+        } else {
+          false
+        }
+        ({ path: rel_path, digest, }, is_exec)
+      })
+    }
+    let hashed = @async.all(tasks, max_concurrency=jobs)
+    for pair in hashed {
+      let (entry, is_exec) = pair
+      entries.push(entry)
+      if is_exec {
+        match executable_paths {
+          Some(ep) => ep.push(entry.path)
+          None => ()
+        }
+      }
     }
   }
 }
@@ -170,9 +257,28 @@ async fn execute_dir_snapshot(plan : Plan, output_path : String) -> Unit {
       )
     }
     let output = prepare_output(output_path)
+    let meta_final_opt : String? = match plan.meta_out {
+      Some(mp) => {
+        let mf = prepare_output(mp)
+        let same_path = if @path.sep != '/' {
+          dir_ascii_lower(output) == dir_ascii_lower(mf)
+        } else {
+          output == mf
+        }
+        guard !same_path else {
+          raise FileFailure(
+            "dir-snapshot --meta-out collides with output path: " + mp,
+          )
+        }
+        Some(mf)
+      }
+      None => None
+    }
     let progress = make_progress(plan, -1L)
     let seen_lower : Map[String, String] = Map([])
     let entries : Array[@lib.DirEntry] = []
+    let empty_dirs_arr : Array[String] = []
+    let exec_paths_arr : Array[String] = []
     collect_dir_entries(
       root_dir,
       "",
@@ -182,10 +288,45 @@ async fn execute_dir_snapshot(plan : Plan, output_path : String) -> Unit {
       entries,
       excludes=effective_excludes,
       progress~,
+      jobs=plan.jobs,
+      empty_dirs=match meta_final_opt {
+        Some(_) => Some(empty_dirs_arr)
+        None => None
+      },
+      executable_paths=match meta_final_opt {
+        Some(_) => Some(exec_paths_arr)
+        None => None
+      },
     )
     let snapshot = @lib.create_dir_snapshot(entries, plan.dir_limits)
     let encoded = @lib.encode_dir_snapshot(snapshot, plan.dir_limits)
-    publish_output(output, encoded)
+    match meta_final_opt {
+      Some(meta_final) => {
+        let meta = @lib.create_dir_metadata(
+          exec_paths_arr,
+          empty_dirs_arr,
+          plan.dir_limits,
+        )
+        let meta_encoded = @lib.encode_dir_metadata(meta, plan.dir_limits)
+        let snap_tmp = unique_temp_path(output)
+        let meta_tmp = unique_temp_path(meta_final)
+        write_temp_file_synced(snap_tmp, encoded)
+        let mut snap_committed = false
+        errdefer {
+          if !snap_committed {
+            let _ = @fs.remove(snap_tmp, allow_missing=true) catch { _ => () }
+          } else {
+            let _ = @fs.remove(output, allow_missing=true) catch { _ => () }
+          }
+          let _ = @fs.remove(meta_tmp, allow_missing=true) catch { _ => () }
+        }
+        write_temp_file_synced(meta_tmp, meta_encoded)
+        @fs.rename(snap_tmp, output, replace=false)
+        snap_committed = true
+        @fs.rename(meta_tmp, meta_final, replace=false)
+      }
+      None => publish_output(output, encoded)
+    }
     finish_progress(progress)
   } catch {
     error =>
@@ -367,6 +508,7 @@ async fn execute_dir_verify(
       entries,
       excludes=effective_excludes,
       progress~,
+      jobs=plan.jobs,
     )
     let actual = @lib.create_dir_snapshot(entries, limits)
     let report = @lib.verify_dir_snapshot(expected, actual, limits)

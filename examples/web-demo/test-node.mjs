@@ -22,6 +22,18 @@ const candidates = [
     'web-demo',
     'web-demo.js',
   ),
+  path.join(resolvedBuildDir, 'js', 'release', 'build', 'examples', 'web-demo', 'web-demo.js'),
+  path.join(
+    resolvedBuildDir,
+    'js',
+    'release',
+    'build',
+    'YKDshaxing',
+    'moonlibsync',
+    'examples',
+    'web-demo',
+    'web-demo.js',
+  ),
 ];
 
 let moduleJs = candidates.find((p) => fs.existsSync(p));
@@ -1025,6 +1037,524 @@ if (
   throw new Error('inspect_delta_detailed_json UTF-8 preview mismatch: ' + JSON.stringify(utf8Lit));
 }
 
+// =========================================================================
+// 19. NEW (0.7.0): Verify all 37 exports & all 10 new v0.7.0 capabilities
+// =========================================================================
+const expectedV070Exports = [
+  ...expectedExports,
+  'plan_range_fetch_json',
+  'apply_range_fetch_json',
+  'compose_deltas_json',
+  'compress_zlib_bytes',
+  'decompress_zlib_check_json',
+  'x25519_keypair_from_secret_json',
+  'seal_envelope_json',
+  'unseal_envelope_json',
+  'create_trust_keyring_json',
+  'verify_quorum_bytes_json',
+];
+if (expectedV070Exports.length !== 37) {
+  throw new Error(`Expected 37 expected exports, got ${expectedV070Exports.length}`);
+}
+for (const name of expectedV070Exports) {
+  if (typeof wasmSync[name] !== 'function') {
+    throw new Error(`Missing expected 0.7.0 export: ${name}`);
+  }
+}
+const actualExportKeys = Object.keys(wasmSync).filter((k) => typeof wasmSync[k] === 'function');
+if (actualExportKeys.length !== 37) {
+  throw new Error(
+    `Expected exactly 37 function exports, found ${actualExportKeys.length}: ${actualExportKeys.join(', ')}`,
+  );
+}
+
+// 19a. plan_range_fetch_json + apply_range_fetch_json (RkBlake2 & RollsumBlake2, gap coalescing, bit-exact, bad slice rejection)
+const rangeBasis = new Uint8Array(65536);
+for (let i = 0; i < rangeBasis.length; i++) {
+  rangeBasis[i] = (i * 53 + 17 + Math.floor(i / 256) * 9) % 256;
+}
+const rangeTarget = new Uint8Array(rangeBasis.length);
+rangeTarget.set(rangeBasis);
+// Two edits separated by 1 block (2048 B gap) + one distant edit near the end
+rangeTarget.set(enc.encode('RANGE-EDIT-ALPHA-070-'.repeat(20)), 8192);
+rangeTarget.set(enc.encode('RANGE-EDIT-BETA-070--'.repeat(20)), 8192 + 4096); // 2048 B gap from block 4 -> block 6
+rangeTarget.set(enc.encode('RANGE-EDIT-GAMMA-070-'.repeat(20)), 53248);
+const rangeTargetSha = wasmSync.sha256_hex_bytes(rangeTarget);
+
+for (const profile of ['rk-blake2', 'rollsum-blake2']) {
+  const targetSig = wasmSync.create_signature_with_profile_bytes(rangeTarget, 2048, 16, profile);
+  const planNoMergeWrap = JSON.parse(
+    wasmSync.plan_range_fetch_json(targetSig, rangeTarget.length, rangeBasis, 0, 256),
+  );
+  const planMergedWrap = JSON.parse(
+    wasmSync.plan_range_fetch_json(targetSig, rangeTarget.length, rangeBasis, 4096, 256),
+  );
+  if (
+    !planNoMergeWrap.ok ||
+    !planMergedWrap.ok ||
+    planNoMergeWrap.plan.schema !== 3 ||
+    planNoMergeWrap.plan.kind !== 'moonlibsync-range-plan' ||
+    planNoMergeWrap.plan.profile !== profile ||
+    planNoMergeWrap.plan.target_length !== rangeTarget.length ||
+    planNoMergeWrap.plan.block_len !== 2048 ||
+    planNoMergeWrap.plan.reused_bytes < 50000 ||
+    planNoMergeWrap.plan.ranges.length !== 3 ||
+    planMergedWrap.plan.ranges.length !== 2 ||
+    planMergedWrap.plan.request_bytes <= planMergedWrap.plan.fetch_bytes
+  ) {
+    throw new Error(
+      `plan_range_fetch_json(${profile}) failed: ` +
+        JSON.stringify({ noMerge: planNoMergeWrap, merged: planMergedWrap }),
+    );
+  }
+  const mergedPlan = planMergedWrap.plan;
+  const slicesHex = mergedPlan.ranges.map((r) =>
+    bytesToHex(rangeTarget.subarray(r.start, r.start + r.length)),
+  );
+  const applied = JSON.parse(
+    wasmSync.apply_range_fetch_json(
+      targetSig,
+      rangeTarget.length,
+      rangeBasis,
+      4096,
+      256,
+      JSON.stringify(slicesHex),
+    ),
+  );
+  if (
+    !applied.ok ||
+    applied.restored_bytes !== rangeTarget.length ||
+    applied.restored_sha256 !== rangeTargetSha ||
+    applied.restored_hex !== bytesToHex(rangeTarget) ||
+    applied.reused_bytes !== mergedPlan.reused_bytes ||
+    applied.fetch_bytes !== mergedPlan.fetch_bytes ||
+    applied.request_bytes !== mergedPlan.request_bytes ||
+    applied.range_count !== mergedPlan.ranges.length
+  ) {
+    throw new Error(`apply_range_fetch_json(${profile}) mismatch: ` + JSON.stringify(applied));
+  }
+
+  // Reject bad slice length
+  const badLenSlices = slicesHex.map((h, i) => (i === 0 ? h.slice(0, h.length - 2) : h));
+  const badLenRes = JSON.parse(
+    wasmSync.apply_range_fetch_json(
+      targetSig,
+      rangeTarget.length,
+      rangeBasis,
+      4096,
+      256,
+      JSON.stringify(badLenSlices),
+    ),
+  );
+  if (badLenRes.ok !== false || !String(badLenRes.error).includes('InvalidOptions:fetched_slices')) {
+    throw new Error(`Expected bad slice length rejection (${profile}): ` + JSON.stringify(badLenRes));
+  }
+}
+
+// 19b. compose_deltas_json (3-step v1 -> v2 -> v3 -> v4 chain patched onto v1 === v4)
+const cv1 = new Uint8Array(32768);
+for (let i = 0; i < cv1.length; i++) cv1[i] = (i * 37 + 5 + Math.floor(i / 256) * 13) % 256;
+const cv2 = new Uint8Array(cv1);
+cv2.set(enc.encode('STEP-V2-EDIT-BLOCK-'.repeat(25)), 4096);
+const cv3 = new Uint8Array(cv2.length + 128);
+cv3.set(cv2.subarray(0, 16384), 0);
+cv3.set(enc.encode('STEP-V3-INSERTED-MID-128B-'.repeat(5)).subarray(0, 128), 16384);
+cv3.set(cv2.subarray(16384), 16384 + 128);
+const cv4 = new Uint8Array(cv3);
+cv4.set(enc.encode('STEP-V4-OVERWRITE-V2-'.repeat(25)), 4096); // overwrites v2 edit
+cv4.set(enc.encode('STEP-V4-TAIL-UPDATE--'.repeat(16)), 28000);
+
+const d12 = wasmSync.create_delta_bytes(wasmSync.create_signature_bytes(cv1, 512, 16), cv2);
+const d23 = wasmSync.create_delta_bytes(wasmSync.create_signature_bytes(cv2, 512, 16), cv3);
+const d34 = wasmSync.create_delta_bytes(wasmSync.create_signature_bytes(cv3, 512, 16), cv4);
+
+const composedRes = JSON.parse(
+  wasmSync.compose_deltas_json(JSON.stringify([bytesToHex(d12), bytesToHex(d23), bytesToHex(d34)])),
+);
+if (
+  !composedRes.ok ||
+  composedRes.input_total_bytes !== d12.length + d23.length + d34.length ||
+  composedRes.composed_bytes <= 5 ||
+  composedRes.output_bytes !== cv4.length ||
+  composedRes.instruction_count !== composedRes.copy_count + composedRes.literal_count ||
+  composedRes.copy_bytes + composedRes.literal_bytes !== cv4.length
+) {
+  throw new Error('compose_deltas_json failed: ' + JSON.stringify(composedRes));
+}
+const composedBytes = hexToBytes(composedRes.composed_hex);
+if (wasmSync.sha256_hex_bytes(composedBytes) !== composedRes.composed_sha256) {
+  throw new Error('compose_deltas_json SHA-256 mismatch');
+}
+const patchedV4 = wasmSync.apply_patch_bytes(cv1, composedBytes);
+if (
+  patchedV4.length !== cv4.length ||
+  wasmSync.sha256_hex_bytes(patchedV4) !== wasmSync.sha256_hex_bytes(cv4)
+) {
+  throw new Error('compose_deltas_json patch(v1, d14) !== v4');
+}
+const emptyComposeRes = JSON.parse(wasmSync.compose_deltas_json('[]'));
+if (emptyComposeRes.ok !== false || !String(emptyComposeRes.error).includes('InvalidOptions:deltas')) {
+  throw new Error('Expected empty deltas rejection: ' + JSON.stringify(emptyComposeRes));
+}
+
+// 19c. compress_zlib_bytes + decompress_zlib_check_json + inspect_artifact_json(zlib)
+const zlibPlain = enc.encode('MoonLibSync 0.7.0 RFC 1950 Zlib bounded framing test payload! '.repeat(40));
+const zlibComp = wasmSync.compress_zlib_bytes(zlibPlain, 1048576, 1048576, 6);
+if (zlibComp.length < 8 || zlibComp.length >= zlibPlain.length) {
+  throw new Error('compress_zlib_bytes unexpected length: ' + zlibComp.length);
+}
+const zlibDec = JSON.parse(wasmSync.decompress_zlib_check_json(zlibComp, 1048576, 1048576));
+if (
+  !zlibDec.ok ||
+  zlibDec.input_bytes !== zlibComp.length ||
+  zlibDec.output_bytes !== zlibPlain.length ||
+  zlibDec.output_sha256 !== wasmSync.sha256_hex_bytes(zlibPlain) ||
+  zlibDec.output_hex !== bytesToHex(zlibPlain)
+) {
+  throw new Error('decompress_zlib_check_json roundtrip failed: ' + JSON.stringify(zlibDec));
+}
+const insZlib = JSON.parse(wasmSync.inspect_artifact_json(zlibComp));
+if (
+  !insZlib.ok ||
+  insZlib.artifact_kind !== 'zlib' ||
+  insZlib.compressed_bytes !== String(zlibComp.length) ||
+  insZlib.uncompressed_bytes !== String(zlibPlain.length) ||
+  insZlib.uncompressed_sha256 !== wasmSync.sha256_hex_bytes(zlibPlain)
+) {
+  throw new Error('inspect_artifact_json(zlib) failed: ' + JSON.stringify(insZlib));
+}
+// Zlib zip-bomb rejection
+const zlibBomb = wasmSync.compress_zlib_bytes(new Uint8Array(262144), 1048576, 1048576, 6);
+const zlibBombRes = JSON.parse(wasmSync.decompress_zlib_check_json(zlibBomb, 1048576, 4096));
+if (zlibBombRes.ok !== false || zlibBombRes.error !== 'LimitExceeded') {
+  throw new Error('Expected LimitExceeded on zlib zip-bomb: ' + JSON.stringify(zlibBombRes));
+}
+// Zlib trailing byte rejection
+const zlibTrailing = new Uint8Array(zlibComp.length + 1);
+zlibTrailing.set(zlibComp, 0);
+zlibTrailing[zlibComp.length] = 0x42;
+const zlibTrailRes = JSON.parse(wasmSync.decompress_zlib_check_json(zlibTrailing, 1048576, 1048576));
+if (zlibTrailRes.ok !== false || zlibTrailRes.error !== 'TrailingData') {
+  throw new Error('Expected TrailingData on zlib trailing byte: ' + JSON.stringify(zlibTrailRes));
+}
+// Zlib truncated trailer rejection
+const zlibTruncRes = JSON.parse(
+  wasmSync.decompress_zlib_check_json(zlibComp.subarray(0, zlibComp.length - 1), 1048576, 1048576),
+);
+if (zlibTruncRes.ok !== false || zlibTruncRes.error !== 'TruncatedInput') {
+  throw new Error('Expected TruncatedInput on truncated zlib: ' + JSON.stringify(zlibTruncRes));
+}
+// Zlib invalid level returns empty bytes
+if (wasmSync.compress_zlib_bytes(zlibPlain, 1048576, 1048576, 99).length !== 0) {
+  throw new Error('Expected empty bytes on invalid zlib level');
+}
+
+// 19d. x25519_keypair_from_secret_json + seal_envelope_json + unseal_envelope_json + inspect_artifact_json(MLSENC02)
+const makeSecretHex = (mul, add) => {
+  const b = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) b[i] = (i * mul + add) & 0xff;
+  return bytesToHex(b);
+};
+const aliceX = JSON.parse(wasmSync.x25519_keypair_from_secret_json(makeSecretHex(11, 3)));
+const bobX = JSON.parse(wasmSync.x25519_keypair_from_secret_json(makeSecretHex(19, 7)));
+const malloryX = JSON.parse(wasmSync.x25519_keypair_from_secret_json(makeSecretHex(31, 13)));
+if (
+  !aliceX.ok ||
+  !bobX.ok ||
+  !malloryX.ok ||
+  aliceX.public_key_hex.length !== 64 ||
+  aliceX.key_id.length !== 16 ||
+  aliceX.key_id === bobX.key_id
+) {
+  throw new Error('x25519_keypair_from_secret_json failed: ' + JSON.stringify({ aliceX, bobX, malloryX }));
+}
+const zeroX = JSON.parse(wasmSync.x25519_keypair_from_secret_json('00'.repeat(32)));
+if (zeroX.ok !== false || !String(zeroX.error).includes('InvalidKey')) {
+  throw new Error('Expected InvalidKey for all-zero X25519 secret: ' + JSON.stringify(zeroX));
+}
+
+const envPlain = enc.encode('MoonLibSync 0.7.0 multi-recipient X25519 MLSENC02 secret payload '.repeat(20));
+const ephSecHex = makeSecretHex(41, 17);
+const cekHex = makeSecretHex(53, 29);
+const noncePrefix4Hex = 'a1b2c3d4';
+const sealedEnv = JSON.parse(
+  wasmSync.seal_envelope_json(
+    envPlain,
+    JSON.stringify([aliceX.public_key_hex, bobX.public_key_hex]),
+    ephSecHex,
+    cekHex,
+    noncePrefix4Hex,
+    4096,
+  ),
+);
+if (
+  !sealedEnv.ok ||
+  sealedEnv.recipient_count !== 2 ||
+  sealedEnv.recipient_key_ids.length !== 2 ||
+  sealedEnv.recipient_key_ids[0] !== aliceX.key_id ||
+  sealedEnv.recipient_key_ids[1] !== bobX.key_id ||
+  sealedEnv.ephemeral_public_key_hex.length !== 64 ||
+  sealedEnv.chunk_size !== 4096
+) {
+  throw new Error('seal_envelope_json failed: ' + JSON.stringify(sealedEnv));
+}
+const envCipherBytes = hexToBytes(sealedEnv.ciphertext_hex);
+if (
+  envCipherBytes.length !== sealedEnv.ciphertext_bytes ||
+  wasmSync.sha256_hex_bytes(envCipherBytes) !== sealedEnv.ciphertext_sha256
+) {
+  throw new Error('seal_envelope_json ciphertext length/sha256 mismatch');
+}
+// inspect_artifact_json recognizes MLSENC02
+const insEnv = JSON.parse(wasmSync.inspect_artifact_json(envCipherBytes));
+if (
+  !insEnv.ok ||
+  insEnv.artifact_kind !== 'envelope-archive' ||
+  insEnv.summary.magic !== 'MLSENC02' ||
+  insEnv.summary.recipient_count !== 2 ||
+  insEnv.summary.chunk_size !== 4096 ||
+  insEnv.summary.ephemeral_public_key_hex !== sealedEnv.ephemeral_public_key_hex
+) {
+  throw new Error('inspect_artifact_json(MLSENC02) failed: ' + JSON.stringify(insEnv));
+}
+// Alice & Bob both decrypt cleanly
+for (const [label, party] of [
+  ['Alice', aliceX],
+  ['Bob', bobX],
+]) {
+  const unsealed = JSON.parse(wasmSync.unseal_envelope_json(envCipherBytes, party.secret_key_hex));
+  if (
+    !unsealed.ok ||
+    unsealed.plaintext_bytes !== envPlain.length ||
+    unsealed.plaintext_hex !== bytesToHex(envPlain) ||
+    unsealed.plaintext_sha256 !== wasmSync.sha256_hex_bytes(envPlain) ||
+    unsealed.recipient_count !== 2 ||
+    unsealed.ephemeral_public_key_hex !== sealedEnv.ephemeral_public_key_hex
+  ) {
+    throw new Error(`unseal_envelope_json(${label}) failed: ` + JSON.stringify(unsealed));
+  }
+}
+// Mallory rejected
+const malloryUnseal = JSON.parse(wasmSync.unseal_envelope_json(envCipherBytes, malloryX.secret_key_hex));
+if (malloryUnseal.ok !== false || malloryUnseal.error !== 'AuthenticationFailed') {
+  throw new Error('Expected AuthenticationFailed for Mallory: ' + JSON.stringify(malloryUnseal));
+}
+// 1-byte tamper rejected
+const tamperedEnv = new Uint8Array(envCipherBytes);
+tamperedEnv[tamperedEnv.length - 1] ^= 0x01;
+const tamperEnvRes = JSON.parse(wasmSync.unseal_envelope_json(tamperedEnv, aliceX.secret_key_hex));
+if (tamperEnvRes.ok !== false || tamperEnvRes.error !== 'AuthenticationFailed') {
+  throw new Error('Expected AuthenticationFailed on 1-byte tampered MLSENC02: ' + JSON.stringify(tamperEnvRes));
+}
+
+// 19e. create_trust_keyring_json + verify_quorum_bytes_json (2-of-3 pass, revocation fail, tamper fail, inspect_artifact_json)
+const seed3 = new Uint8Array(32);
+for (let i = 0; i < 32; i++) seed3[i] = (i * 47 + 19) & 0xff;
+const kp3 = JSON.parse(wasmSync.ed25519_keypair_from_seed_json(seed3));
+
+const quorumPayload = enc.encode('MoonLibSync 0.7.0 2-of-3 threshold quorum release manifest');
+const qSig1 = JSON.parse(wasmSync.ed25519_sign_bytes_json(seed1, quorumPayload));
+const qSig2 = JSON.parse(wasmSync.ed25519_sign_bytes_json(seed2, quorumPayload));
+const qSig3 = JSON.parse(wasmSync.ed25519_sign_bytes_json(seed3, quorumPayload));
+
+const kr2of3 = JSON.parse(
+  wasmSync.create_trust_keyring_json(
+    JSON.stringify([kp1.public_key_hex, kp2.public_key_hex, kp3.public_key_hex]),
+    JSON.stringify([]),
+    2,
+  ),
+);
+if (
+  !kr2of3.ok ||
+  kr2of3.trusted_count !== 3 ||
+  kr2of3.revoked_count !== 0 ||
+  kr2of3.min_quorum !== 2 ||
+  kr2of3.key_ids.length !== 3
+) {
+  throw new Error('create_trust_keyring_json failed: ' + JSON.stringify(kr2of3));
+}
+// inspect_artifact_json recognizes Schema 4 moonlibsync-keyring
+const insKr = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(kr2of3.keyring_json)));
+if (
+  !insKr.ok ||
+  insKr.artifact_kind !== 'moonlibsync-keyring' ||
+  insKr.schema_version !== 4 ||
+  insKr.summary.trusted_count !== 3 ||
+  insKr.summary.min_quorum !== 2
+) {
+  throw new Error('inspect_artifact_json(keyring) failed: ' + JSON.stringify(insKr));
+}
+
+// Form 1: JSON array of PublisherSignature JSON strings -> 2-of-3 PASS
+const qPassFromStrings = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    JSON.stringify([qSig1.signature_json, qSig2.signature_json]),
+    kr2of3.keyring_json,
+    quorumPayload,
+  ),
+);
+if (
+  !qPassFromStrings.ok ||
+  qPassFromStrings.verified_key_ids.length !== 2 ||
+  qPassFromStrings.rejected_key_ids.length !== 0 ||
+  qPassFromStrings.revoked_hits.length !== 0 ||
+  qPassFromStrings.required_quorum !== 2 ||
+  !qPassFromStrings.bundle_json
+) {
+  throw new Error('verify_quorum_bytes_json(strings array) failed: ' + JSON.stringify(qPassFromStrings));
+}
+// inspect_artifact_json recognizes Schema 4 moonlibsync-signature-bundle
+const insBundleSig = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(qPassFromStrings.bundle_json)));
+if (
+  !insBundleSig.ok ||
+  insBundleSig.artifact_kind !== 'moonlibsync-signature-bundle' ||
+  insBundleSig.schema_version !== 4 ||
+  insBundleSig.summary.signature_count !== 2
+) {
+  throw new Error('inspect_artifact_json(signature-bundle) failed: ' + JSON.stringify(insBundleSig));
+}
+
+// Form 2: JSON array of PublisherSignature objects -> PASS
+const qPassFromObjects = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    JSON.stringify([qSig1.signature, qSig3.signature]),
+    kr2of3.keyring_json,
+    quorumPayload,
+  ),
+);
+if (!qPassFromObjects.ok || qPassFromObjects.verified_key_ids.length !== 2) {
+  throw new Error('verify_quorum_bytes_json(objects array) failed: ' + JSON.stringify(qPassFromObjects));
+}
+
+// Form 3: SignatureBundle JSON string directly -> PASS
+const qPassFromBundle = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    qPassFromStrings.bundle_json,
+    kr2of3.keyring_json,
+    quorumPayload,
+  ),
+);
+if (!qPassFromBundle.ok || qPassFromBundle.verified_key_ids.length !== 2) {
+  throw new Error('verify_quorum_bytes_json(bundle json) failed: ' + JSON.stringify(qPassFromBundle));
+}
+
+// Revocation failure: revoke kp1 so [qSig1, qSig2] only has 1 active valid sig < 2
+const krRevokedKp1 = JSON.parse(
+  wasmSync.create_trust_keyring_json(
+    JSON.stringify([kp1.public_key_hex, kp2.public_key_hex, kp3.public_key_hex]),
+    JSON.stringify([kp1.key_id]),
+    2,
+  ),
+);
+if (!krRevokedKp1.ok || krRevokedKp1.revoked_count !== 1) {
+  throw new Error('create_trust_keyring_json(revoked) failed: ' + JSON.stringify(krRevokedKp1));
+}
+const qFailRevoked = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    qPassFromStrings.bundle_json,
+    krRevokedKp1.keyring_json,
+    quorumPayload,
+  ),
+);
+if (qFailRevoked.ok !== false || !String(qFailRevoked.error).includes('UntrustedKey:quorum_not_met')) {
+  throw new Error('Expected UntrustedKey:quorum_not_met after revocation: ' + JSON.stringify(qFailRevoked));
+}
+// With all 3 signatures and kp1 revoked, kp2 + kp3 still meet 2-of-3 quorum and record kp1 in revoked_hits!
+const qPassWithRevokedHit = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    JSON.stringify([qSig1.signature_json, qSig2.signature_json, qSig3.signature_json]),
+    krRevokedKp1.keyring_json,
+    quorumPayload,
+  ),
+);
+if (
+  !qPassWithRevokedHit.ok ||
+  qPassWithRevokedHit.verified_key_ids.length !== 2 ||
+  !qPassWithRevokedHit.revoked_hits.includes(kp1.key_id)
+) {
+  throw new Error('Expected 2-of-3 pass with revoked_hits=[kp1]: ' + JSON.stringify(qPassWithRevokedHit));
+}
+
+// Tamper failure
+const tamperedQuorumPayload = new Uint8Array(quorumPayload);
+tamperedQuorumPayload[0] ^= 0x01;
+const qFailTamper = JSON.parse(
+  wasmSync.verify_quorum_bytes_json(
+    qPassFromStrings.bundle_json,
+    kr2of3.keyring_json,
+    tamperedQuorumPayload,
+  ),
+);
+if (qFailTamper.ok !== false || !String(qFailTamper.error).includes('DigestMismatch')) {
+  throw new Error('Expected DigestMismatch on tampered quorum payload: ' + JSON.stringify(qFailTamper));
+}
+
+// 19f. inspect_artifact_json recognizes Schema 3 moonlibsync-dir-metadata
+const dirMetaJson = JSON.stringify({
+  schema: 3,
+  kind: 'moonlibsync-dir-metadata',
+  executable_paths: ['bin/run.sh', 'scripts/deploy.sh'],
+  empty_dirs: ['logs', 'tmp/cache'],
+}) + '\n';
+const insDirMeta = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(dirMetaJson)));
+if (
+  !insDirMeta.ok ||
+  insDirMeta.artifact_kind !== 'moonlibsync-dir-metadata' ||
+  insDirMeta.schema_version !== 3 ||
+  insDirMeta.summary.executable_count !== 2 ||
+  insDirMeta.summary.empty_dir_count !== 2
+) {
+  throw new Error('inspect_artifact_json(dir-metadata) failed: ' + JSON.stringify(insDirMeta));
+}
+
+// 19g. Red-Team hardening: > 1 MiB .zlib bypasses Schema 3 JSON size caps,
+// 0x78 0x5e corrupt zlib preserves error, and moonlibsync-range-plan inspects cleanly.
+const bigZlibPlain = new Uint8Array(1060000);
+let rng = 0x13579bdf;
+for (let i = 0; i < bigZlibPlain.length; i++) {
+  rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0;
+  bigZlibPlain[i] = (rng >>> 24) & 0xff;
+}
+const bigZlibComp = wasmSync.compress_zlib_bytes(bigZlibPlain, 2097152, 2097152, 6);
+if (bigZlibComp.length <= 1048576) {
+  throw new Error('Expected > 1 MiB compressed zlib test blob, got ' + bigZlibComp.length);
+}
+const insBigZlib = JSON.parse(wasmSync.inspect_artifact_json(bigZlibComp));
+if (
+  !insBigZlib.ok ||
+  insBigZlib.artifact_kind !== 'zlib' ||
+  insBigZlib.uncompressed_bytes !== String(bigZlibPlain.length) ||
+  insBigZlib.uncompressed_sha256 !== wasmSync.sha256_hex_bytes(bigZlibPlain)
+) {
+  throw new Error('inspect_artifact_json(>1MiB zlib) failed: ' + JSON.stringify(insBigZlib));
+}
+const corrupt5eZlib = new Uint8Array([0x78, 0x5e, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01]);
+const insCorrupt5e = JSON.parse(wasmSync.inspect_artifact_json(corrupt5eZlib));
+if (insCorrupt5e.ok !== false || insCorrupt5e.error === 'UnsupportedArtifact') {
+  throw new Error('Expected preserved zlib error on corrupt 0x78 0x5e: ' + JSON.stringify(insCorrupt5e));
+}
+const rangePlanJson = JSON.stringify({
+  schema: 3,
+  kind: 'moonlibsync-range-plan',
+  target_length: 131072,
+  block_len: 2048,
+  profile: 'rk-blake2',
+  reused_bytes: 124928,
+  fetch_bytes: 6144,
+  request_bytes: 7168,
+  ranges: [{ start: 16384, length: 7168, http_range: 'bytes=16384-23551' }],
+});
+const insRangePlan = JSON.parse(wasmSync.inspect_artifact_json(enc.encode(rangePlanJson)));
+if (
+  !insRangePlan.ok ||
+  insRangePlan.artifact_kind !== 'moonlibsync-range-plan' ||
+  insRangePlan.schema_version !== 3 ||
+  insRangePlan.summary.profile !== 'rk-blake2' ||
+  insRangePlan.summary.range_count !== 1
+) {
+  throw new Error('inspect_artifact_json(range-plan) failed: ' + JSON.stringify(insRangePlan));
+}
+
 console.log(
-  `WEB_DEMO_OK sig=${res.signature_bytes} delta=${res.delta_bytes} delta_gz=${res.gzip_delta_bytes} copy=${res.copy_bytes} exports=27 verified=true`,
+  `WEB_DEMO_OK sig=${res.signature_bytes} delta=${res.delta_bytes} delta_gz=${res.gzip_delta_bytes} copy=${res.copy_bytes} exports=${actualExportKeys.length} verified=true`,
 );

@@ -18,7 +18,7 @@ const MODULE_PATHS = IS_REPO_LOCAL
 
 const I18N = {
   zh: {
-    subtitle: '纯 MoonBit 编译的浏览器零后端二进制差分、Web Worker 后台执行、块复用 Hexdump 热力图、单文件目录打包与 Ed25519 / AEAD 密码学工作台',
+    subtitle: '纯 MoonBit 编译的浏览器零后端二进制差分、HTTP Range 增量拉取、Delta 链压缩合并、Gzip/Zlib、单文件目录打包与 X25519 / Ed25519 多签密码学工作台',
     tabFile: '文件差分 & Gzip',
     tabRdiff: '独立角色在线工具',
     tabInspect: '通用产物剖析器',
@@ -66,13 +66,15 @@ const I18N = {
     rdiffPickOld: '请先选择 OLD 旧文件。',
     rdiffPickSigNew: '请先同时选择 .sig 签名文件与 NEW 目标文件。',
     rdiffPickOldDelta: '请先同时选择 OLD 旧文件与 .delta / .delta.gz 补丁文件。',
-    inspectCardTitle: '通用产物剖析器（.sig · .delta · .delta.gz · .mbundle · .menc · Schema 1/2/3/4 JSON）',
+    inspectCardTitle: '通用产物剖析器（.sig · .delta · .gz · .zlib · .mbundle · .menc · MLSENC02 · Schema 1/2/3/4 JSON）',
     inspectSampleDelta: '剖析示例 .delta（含热力图）',
     inspectSampleSig: '剖析示例 .sig (0x72730137)',
     inspectSampleSeal: '剖析示例 .menc',
+    inspectSampleEnvelope: '剖析示例 MLSENC02',
+    inspectSampleKeyring: '剖析示例 Keyring',
     inspectSamplePubSig: '剖析示例 .msig.json',
     inspectDropLabel: '拖入任意 MoonLibSync 二进制或 JSON 产物自动剖析',
-    inspectDropHint: '支持 .sig (0x72730147/0x72730137) / .delta / .delta.gz / .mbundle / .menc / .msig.json / Schema 1/2/3 JSON',
+    inspectDropHint: '支持 .sig / .delta / .gz / .zlib / .mbundle / .menc / MLSENC02 / Keyring / Signature Bundle / Dir Metadata / Schema 1/2/3/4 JSON',
     inspectRawJson: '展开原始剖析 JSON 响应',
     inspectInnerDelta: '检测到 Gzip 内层为标准 0x72730236 Delta，已自动展开块复用热力图与 Literal Hexdump 预览',
     inspectInnerBundle: '检测到 Gzip 内层为 MLSBDL01 单文件目录归档（.mbundle.gz）',
@@ -110,7 +112,7 @@ const I18N = {
     expectedCol: '预期基线 (Expected)',
     actualCol: '实测目录 (Actual)',
     issueKindCol: '漂移类型',
-    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.6.1 · 零后端 · 零 C FFI · 27 项核心导出）',
+    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.7.0 · 零后端 · 零 C FFI · 37 项核心导出）',
     workerBadgeActive: 'Web Worker 后台线程',
     workerBadgeFallback: '主线程回退模式',
     engineMissing: '未找到已编译模块 web-demo.js。请先在仓库根目录运行 moon build examples/web-demo --target js 并通过本地 HTTP 服务访问。',
@@ -144,18 +146,18 @@ const I18N = {
     cliFileTitle: '等价 Native CLI 命令（支持 > 64 MiB 流式管道）',
     cliDirTitle: '等价 Native CLI 端到端目录增量分发闭环',
     cliVerifyTitle: '等价 Native CLI 目录完整性巡检命令',
-    labTitle: '有界 RFC 1952 Gzip 安全防线实测（Zip-Bomb · 尾随数据 · 截断流）',
+    labTitle: '有界 Gzip / Zlib 安全防线实测（Zip-Bomb · 尾随数据 · 截断流）',
     runAllLab: '一键运行全部 3 项安全演练',
     labBombTitle: '1. Zip-Bomb 解压炸弹拦截',
     labBombDesc: '现场生成 256 KiB 零字节高压缩炸弹（仅约 300 B），以 4 KiB 解压上限执行有界解压，验证引擎在超出预算瞬间中断并报 LimitExceeded。',
     labBombBtn: '触发 Zip-Bomb 测试',
     labTrailTitle: '2. 尾随垃圾字节拒绝',
-    labTrailDesc: '在合法单流 Gzip 尾部追加 1 字节多余载荷（0x42），验证单流严格帧校验立刻返回 TrailingData。',
+    labTrailDesc: '在合法单流压缩帧（Gzip CRC32/ISIZE 或 Zlib Adler-32）尾部追加 1 字节多余载荷（0x42），验证严格帧校验立刻返回 TrailingData。',
     labTrailBtn: '触发 TrailingData 测试',
     labTruncTitle: '3. 截断流 / 尾部缺失拒绝',
-    labTruncDesc: '截去 RFC 1952 尾部 CRC32/ISIZE 校验的最后 1 字节，验证解码器严格报 TruncatedInput，绝不静默返回不完整数据。',
+    labTruncDesc: '截去尾部校验和（CRC32/ISIZE 或 Adler-32）的最后 1 字节，验证解码器严格报 TruncatedInput，绝不静默返回不完整数据。',
     labTruncBtn: '触发 TruncatedInput 测试',
-    labCustomTitle: '自定义文本有界 Gzip 往返实验室',
+    labCustomTitle: '自定义文本有界 Gzip / Zlib 往返实验室',
     labLevel: '压缩级别',
     labMaxOut: '解压上限 (B)',
     labRunCustom: '压缩并有界解压测试',
@@ -176,9 +178,71 @@ const I18N = {
     aeadDlMencBtn: '下载 .menc',
     aeadUnsealBtn: '解密并校验 SHA-256',
     aeadTamperBtn: '模拟 1 字节密文篡改 (AuthenticationFailed)',
+    rangeCardTitle: '静态 CDN HTTP Range 增量拉取模拟器 & CORS 实网拉取',
+    rangeModeSim: '本地 CDN 模拟',
+    rangeModeLive: 'CORS 实网 URL',
+    rangeProfileLabel: '签名',
+    rangeMergeGapLabel: '合并间隙',
+    rangeMergeGapZero: '0 B (不合并)',
+    rangeSigVerifiedBadge: '远端签名 BLAKE2b 逐块校验通过',
+    runRangeSimBtn: '一键运行 128 KiB HTTP Range 增量拉取模拟 (v1 → v2)',
+    rangeSimHint: '无需服务端差分计算：仅凭静态托管的 v2.sig 与本地 v1 基准，规划最小 HTTP Range 请求区间、模拟 HTTP 206 Partial Content 拉取并逐字节验证还原结果。',
+    rangeTargetUrlLabel: '远端目标文件 URL（支持 CORS 与 HTTP 206 Range）',
+    rangeSigUrlLabel: '远端 .sig 签名 URL（留空则自动追加 .sig）',
+    rangeLiveBasisLabel: '本地旧基准文件 (OLD Basis，可选)',
+    rangeLiveBasisHint: '可选：拖入本地旧版文件以最大化本地块复用（不选则视为空基准）',
+    rangeLiveHint: '要求远端静态主机返回 Access-Control-Allow-Origin 并允许 Range 请求头与 Content-Range 响应头。',
+    runRangeLiveBtn: '通过 HTTP Range 实网拉取并还原',
+    rangeSavedLabel: 'HTTP 带宽节省（静态 Range 拉取）',
+    rangePillsTitle: 'HTTP Range 请求区间列表（RFC 9110）',
+    rangeZeroRanges: '零网络请求：本地基准已包含 100% 目标块！',
+    rangeUrlRequired: '请先输入远端目标文件 URL（https://...）。',
+    rangeDlPlanBtn: '下载 range-plan.json',
+    rangeDlRestoredBtn: '下载还原后的目标文件',
+    rangeCliTitle: '等价 Native CLI 静态 Range 拉取命令',
+    composeCardTitle: '多代 Delta 链零中间文件合并（v1 → v2 → v3 ⇒ v1 → v3）',
+    runCompose2Btn: '一键演示 2 跳合并 (v1→v2→v3)',
+    runCompose3Btn: '一键演示 3 跳合并 (v1→v2→v3→v4)',
+    composeDesc: '无需还原中间版本 v2/v3，直接将串联的增量补丁代数合并为单跳直达补丁 d1→N，自动折叠重复覆写并合并相邻 COPY/Literal 指令。',
+    composeDropLabel: '或选择/拖入 2 个及以上按版本顺序排列的 .delta 文件进行合并',
+    composeDropHint: '将按文件名顺序合并为单条标准 0x72730236 Delta 并支持直接下载',
+    composeFooterHint: '合并产物完全符合标准 0x72730236 线缆格式，可直接配合 apply_patch 或原生 librsync rdiff 使用。',
+    runComposeCustomBtn: '合并所选 .delta 链',
+    composeSavedLabel: 'Delta 链合并体积缩减',
+    composeVerifiedBadge: 'patch(v1, d_composed) === v_final 逐字节验证通过',
+    composeCustomBadge: '多跳 Delta 合并完成',
+    composePickWarn: '请先选择至少 2 个 .delta 文件，或点击上方一键演示按钮。',
+    composeDlBtn: '下载合并后的 .delta',
+    composeSumBar: '原始多代 Delta 体积之和',
+    composeDirectBar: '合并后直达单跳 Delta',
+    composeGzBar: '合并后 Delta + Gzip',
+    composeCliTitle: '等价 Native CLI Delta 链合并命令',
+    envCardTitle: 'X25519 多接收方信封加密实验室（MLSENC02 · HKDF-SHA256 + ChaCha20-Poly1305）',
+    envGenKeysBtn: '生成 Alice / Bob / Mallory 密钥对',
+    envSealBtn: '封装给 Alice + Bob (MLSENC02)',
+    envDlBtn: '下载 .menv',
+    envRecipientBadge: '授权接收方',
+    envOutsiderBadge: '未授权第三方',
+    envUnsealAliceBtn: '以 Alice 私钥解密 ✓',
+    envUnsealBobBtn: '以 Bob 私钥解密 ✓',
+    envUnsealMalloryBtn: '以 Mallory 私钥尝试解密 (拒绝)',
+    envTamperBtn: '模拟 1 字节密文篡改 (AuthenticationFailed)',
+    quorumCardTitle: 'Ed25519 信任密钥环 & 2-of-3 门限多签实验室（Schema 4 Keyring + Quorum）',
+    quorumMinLabel: '门限阈值',
+    quorumGenBtn: '生成 3 签名者密钥并实时验签',
+    quorumSignedChk: '参与签名',
+    quorumRevokedChk: '吊销密钥',
+    quorumVerifyBtn: '重新执行门限多签校验',
+    quorumTamperBtn: '模拟 1 字节载荷篡改 (DigestMismatch)',
+    quorumDlKeyringBtn: '下载 keyring.json',
+    quorumDlBundleBtn: '下载 bundle.msig.json',
+    quorumJsonToggle: '展开 Schema 4 TrustKeyring & SignatureBundle JSON',
+    quorumStateActive: '已签名 · 有效',
+    quorumStateRevoked: '已吊销',
+    quorumStateUnsigned: '未签名',
   },
   en: {
-    subtitle: 'Pure-MoonBit zero-backend browser studio with Web Worker execution, literal hexdump heatmaps, .mbundle.gz move detection, and Ed25519 / AEAD crypto labs',
+    subtitle: 'Pure-MoonBit zero-backend browser studio with Web Worker execution, HTTP Range (zsync) pull, delta squashing, Gzip/Zlib, .mbundle.gz, and X25519 / Ed25519 quorum labs',
     tabFile: 'File Sync & Gzip',
     tabRdiff: 'Split-Role rdiff',
     tabInspect: 'Artifact Inspector',
@@ -226,13 +290,15 @@ const I18N = {
     rdiffPickOld: 'Please select an OLD basis file first.',
     rdiffPickSigNew: 'Please select both a .sig signature file and a NEW target file.',
     rdiffPickOldDelta: 'Please select both an OLD basis file and a .delta / .delta.gz file.',
-    inspectCardTitle: 'Universal Artifact Inspector (.sig · .delta · .delta.gz · .mbundle · .menc · Schema 1/2/3/4 JSON)',
+    inspectCardTitle: 'Universal Artifact Inspector (.sig · .delta · .gz · .zlib · .mbundle · .menc · MLSENC02 · Schema 1/2/3/4 JSON)',
     inspectSampleDelta: 'Inspect Sample .delta (+ Heatmap)',
     inspectSampleSig: 'Inspect Sample .sig (0x72730137)',
     inspectSampleSeal: 'Inspect Sample .menc',
+    inspectSampleEnvelope: 'Inspect Sample MLSENC02',
+    inspectSampleKeyring: 'Inspect Sample Keyring',
     inspectSamplePubSig: 'Inspect Sample .msig.json',
     inspectDropLabel: 'Drop any MoonLibSync binary or JSON artifact to inspect',
-    inspectDropHint: 'Supports .sig (0x72730147/0x72730137) / .delta / .delta.gz / .mbundle / .menc / .msig.json / Schema 1/2/3 JSON',
+    inspectDropHint: 'Supports .sig / .delta / .gz / .zlib / .mbundle / .menc / MLSENC02 / Keyring / Signature Bundle / Dir Metadata / Schema 1/2/3/4 JSON',
     inspectRawJson: 'Show Raw Inspector JSON',
     inspectInnerDelta: 'Inner Gzip payload is a standard 0x72730236 delta — Block Reuse Heatmap & Literal Hexdump rendered below',
     inspectInnerBundle: 'Inner Gzip payload is a single-file MLSBDL01 directory bundle archive (.mbundle.gz)',
@@ -270,7 +336,7 @@ const I18N = {
     expectedCol: 'Expected Baseline',
     actualCol: 'Actual Observed',
     issueKindCol: 'Drift Kind',
-    engineReady: 'MoonBit pure-JS engine ready (v0.6.1 · zero backend · zero C FFI · 27 core exports)',
+    engineReady: 'MoonBit pure-JS engine ready (v0.7.0 · zero backend · zero C FFI · 37 core exports)',
     workerBadgeActive: 'Web Worker Thread',
     workerBadgeFallback: 'Main-Thread Fallback',
     engineMissing: 'Compiled web-demo.js not found. Run "moon build examples/web-demo --target js" and serve the repo root over HTTP.',
@@ -304,18 +370,18 @@ const I18N = {
     cliFileTitle: 'Equivalent Native CLI Commands (Supports > 64 MiB --streaming)',
     cliDirTitle: 'Equivalent Native CLI End-to-End Directory Bundle Pipeline',
     cliVerifyTitle: 'Equivalent Native CLI Directory Integrity Audit Command',
-    labTitle: 'Bounded RFC 1952 Gzip Security Defense Lab (Zip-Bomb · Trailing · Truncated)',
+    labTitle: 'Bounded Gzip / Zlib Security Defense Lab (Zip-Bomb · Trailing · Truncated)',
     runAllLab: 'Run All 3 Security Drills',
     labBombTitle: '1. Zip-Bomb Decompression Guard',
-    labBombDesc: 'Compresses 256 KiB of zeros (~300 B gzip bomb) live in-browser and decompresses under a 4 KiB cap, proving immediate LimitExceeded cutoff.',
+    labBombDesc: 'Compresses 256 KiB of zeros (~300 B bomb) live in-browser and decompresses under a 4 KiB cap, proving immediate LimitExceeded cutoff.',
     labBombBtn: 'Run Zip-Bomb Drill',
     labTrailTitle: '2. Trailing Garbage Rejection',
-    labTrailDesc: 'Appends 1 extra byte (0x42) after a valid single-member RFC 1952 gzip trailer, proving strict TrailingData rejection.',
+    labTrailDesc: 'Appends 1 extra byte (0x42) after a valid single-member Gzip (CRC32/ISIZE) or Zlib (Adler-32) trailer, proving strict TrailingData rejection.',
     labTrailBtn: 'Run TrailingData Drill',
     labTruncTitle: '3. Truncated Trailer Rejection',
-    labTruncDesc: 'Removes the final byte of the CRC32/ISIZE trailer, proving TruncatedInput rejection with zero silent partial output.',
+    labTruncDesc: 'Removes the final byte of the checksum trailer (CRC32/ISIZE or Adler-32), proving TruncatedInput rejection with zero silent partial output.',
     labTruncBtn: 'Run TruncatedInput Drill',
-    labCustomTitle: 'Custom Text Bounded Gzip Round-Trip Playground',
+    labCustomTitle: 'Custom Text Bounded Gzip / Zlib Round-Trip Playground',
     labLevel: 'Level',
     labMaxOut: 'Max Output (B)',
     labRunCustom: 'Compress & Bounded Decompress',
@@ -336,6 +402,68 @@ const I18N = {
     aeadDlMencBtn: 'Download .menc',
     aeadUnsealBtn: 'Unseal & Verify SHA-256',
     aeadTamperBtn: 'Simulate 1-Byte Ciphertext Tamper (AuthenticationFailed)',
+    rangeCardTitle: 'Static HTTP Range (zsync) Incremental Pull Simulator & Live CORS Fetch',
+    rangeModeSim: 'Local CDN Simulator',
+    rangeModeLive: 'Live Static CORS URL',
+    rangeProfileLabel: 'Profile',
+    rangeMergeGapLabel: 'Merge Gap',
+    rangeMergeGapZero: '0 B (No merge)',
+    rangeSigVerifiedBadge: 'Signature BLAKE2b Verified',
+    runRangeSimBtn: 'Run 1-Click 128 KiB HTTP Range Pull Simulation (v1 → v2)',
+    rangeSimHint: 'Zero server-side diffing: plan minimal HTTP Range requests from static v2.sig + local v1 basis, simulate HTTP 206 Partial Content fetches, and verify bit-exact reconstruction.',
+    rangeTargetUrlLabel: 'Remote Target File URL (CORS + HTTP 206 Range enabled)',
+    rangeSigUrlLabel: 'Remote .sig Signature URL (blank = auto-append .sig)',
+    rangeLiveBasisLabel: 'Local OLD Basis File (Optional)',
+    rangeLiveBasisHint: 'Optional: drop your local old version to maximize block reuse (empty basis if omitted)',
+    rangeLiveHint: 'Requires remote static host to send Access-Control-Allow-Origin and allow Range request + Content-Range response headers.',
+    runRangeLiveBtn: 'Fetch Remote via HTTP Range & Reconstruct',
+    rangeSavedLabel: 'HTTP Bandwidth Saved (Static Range Pull)',
+    rangePillsTitle: 'HTTP Range Request Spans (RFC 9110)',
+    rangeZeroRanges: 'Zero network requests needed: local basis already has 100% of target blocks!',
+    rangeUrlRequired: 'Please enter a remote target file URL (https://...) first.',
+    rangeDlPlanBtn: 'Download range-plan.json',
+    rangeDlRestoredBtn: 'Download Reconstructed Target',
+    rangeCliTitle: 'Equivalent Native CLI Static Range Pull Commands',
+    composeCardTitle: 'Zero-Intermediate Delta Chain Squashing (v1 → v2 → v3 ⇒ v1 → v3)',
+    runCompose2Btn: '1-Click 2-Hop Squash (v1→v2→v3)',
+    runCompose3Btn: '1-Click 3-Hop Squash (v1→v2→v3→v4)',
+    composeDesc: 'Algebraically squash chained deltas into one direct v1 → vN patch without materializing v2/v3, collapsing overwrites and coalescing adjacent COPY/Literal ops.',
+    composeDropLabel: 'Or select / drop 2+ ordered .delta files to compose',
+    composeDropHint: 'Composed in filename order into a single wire-standard 0x72730236 delta ready for download',
+    composeFooterHint: 'Output is wire-standard 0x72730236 librsync delta compatible with apply_patch and native librsync rdiff.',
+    runComposeCustomBtn: 'Compose Selected .delta Chain',
+    composeSavedLabel: 'Delta Chain Size Reduction',
+    composeVerifiedBadge: 'patch(v1, d_composed) === v_final Bit-Exact Verified',
+    composeCustomBadge: 'Delta Chain Composed',
+    composePickWarn: 'Please select at least 2 .delta files, or click a 1-click demo button above.',
+    composeDlBtn: 'Download Composed .delta',
+    composeSumBar: 'Sum of Individual Deltas',
+    composeDirectBar: 'Squashed Direct Delta',
+    composeGzBar: 'Squashed Delta + Gzip',
+    composeCliTitle: 'Equivalent Native CLI Delta Chain Composition Command',
+    envCardTitle: 'X25519 Multi-Recipient Envelope Lab (MLSENC02 · HKDF-SHA256 + ChaCha20-Poly1305)',
+    envGenKeysBtn: 'Generate Alice / Bob / Mallory Keypairs',
+    envSealBtn: 'Seal for Alice + Bob (MLSENC02)',
+    envDlBtn: 'Download .menv',
+    envRecipientBadge: 'Authorized Recipient',
+    envOutsiderBadge: 'Unauthorized Outsider',
+    envUnsealAliceBtn: 'Decrypt as Alice ✓',
+    envUnsealBobBtn: 'Decrypt as Bob ✓',
+    envUnsealMalloryBtn: 'Try Decrypt as Mallory (Rejected)',
+    envTamperBtn: 'Simulate 1-Byte Ciphertext Tamper (AuthenticationFailed)',
+    quorumCardTitle: 'Ed25519 Trust Keyring & 2-of-3 Threshold Quorum Lab (Schema 4 Keyring + Quorum)',
+    quorumMinLabel: 'Quorum Threshold',
+    quorumGenBtn: 'Generate 3 Signer Keys & Verify Live',
+    quorumSignedChk: 'Include Sig',
+    quorumRevokedChk: 'Revoked',
+    quorumVerifyBtn: 'Re-Run Quorum Verification',
+    quorumTamperBtn: 'Simulate 1-Byte Payload Tamper (DigestMismatch)',
+    quorumDlKeyringBtn: 'Download keyring.json',
+    quorumDlBundleBtn: 'Download bundle.msig.json',
+    quorumJsonToggle: 'Show Schema 4 TrustKeyring & SignatureBundle JSON',
+    quorumStateActive: 'Signed · Active',
+    quorumStateRevoked: 'Revoked',
+    quorumStateUnsigned: 'Unsigned',
   },
 };
 
@@ -352,6 +480,13 @@ let lastInputs = null;
 let lastDetailState = null;
 let lastBenchmarkState = null;
 
+// Tab 2 v0.7.0 state
+let rangePullMode = 'sim'; // 'sim' | 'live'
+let lastRangePullState = null;
+let lastComposeState = null;
+let rangeLiveBasisFileObj = null;
+let composeFileObjs = [];
+
 // Tab 3 state
 let lastInspectState = null;
 
@@ -364,8 +499,11 @@ let droppedBundleArchiveFile = null;
 let lastPackedBundle = null; // { archiveBytes, isGz, basisFilesJson, packRes }
 
 // Tab 5 Crypto Lab state
+let labFormat = 'gzip'; // 'gzip' | 'zlib'
 let edState = null; // { seed, keyId, publicKeyHex, lastSigJson, lastPayloadBytes }
 let aeadState = null; // { cipherBytes, usePassphrase, secretBytes }
+let envState = null; // { alice, bob, mallory, cipherBytes, sealRes }
+let quorumState = null; // { signers: [{name, seed, kp}], lastKeyringJson, lastBundleJson }
 
 const statusBar = document.getElementById('statusBar');
 const statusText = document.getElementById('statusText');
@@ -761,6 +899,7 @@ function applyTheme() {
 function applyI18n() {
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
   for (const el of document.querySelectorAll('[data-i18n]')) {
+    if (el.classList.contains('selected')) continue;
     const key = el.getAttribute('data-i18n');
     if (typeof I18N[lang][key] === 'string') el.textContent = I18N[lang][key];
   }
@@ -778,7 +917,15 @@ function applyI18n() {
     newMeta.textContent = `${f.name} (${fmtBytes(f.size)})`;
     newMeta.classList.add('selected');
   }
+  if (typeof basisDirInput !== 'undefined' && typeof basisDirMeta !== 'undefined') {
+    updateFolderMeta(basisDirInput, basisDirMeta);
+  }
+  if (typeof targetDirInput !== 'undefined' && typeof targetDirMeta !== 'undefined') {
+    updateFolderMeta(targetDirInput, targetDirMeta);
+  }
   if (lastResultState) renderResult(lastResultState.data, lastResultState.elapsedMs);
+  if (lastRangePullState) renderRangePullResult(lastRangePullState);
+  if (lastComposeState) renderComposeResult(lastComposeState);
   if (lastInspectState) renderInspectResult(lastInspectState);
   if (lastDirState) {
     if (lastDirState.mode === 'verify') renderDirVerify(lastDirState);
@@ -786,6 +933,7 @@ function applyI18n() {
     else if (lastDirState.mode === 'bundle-unpack') renderBundleUnpackResult(lastDirState);
     else renderDirPlan(lastDirState);
   }
+  if (typeof updateQuorumBadges === 'function') updateQuorumBadges();
 }
 
 langToggle.addEventListener('click', () => {
@@ -1405,7 +1553,7 @@ function makeBuiltInBinaryPair() {
   }
   const newBuf = new Uint8Array(oldBuf.length);
   newBuf.set(oldBuf);
-  const patchA = new TextEncoder().encode('MOONLIBSYNC-060-HEADER-EDIT-SEGMENT '.repeat(6));
+  const patchA = new TextEncoder().encode('MOONLIBSYNC-070-HEADER-EDIT-SEGMENT '.repeat(6));
   const patchB = new TextEncoder().encode(
     'MOONLIBSYNC-BROWSER-WORKER-LITERAL-HEXDUMP-LINE '.repeat(12),
   );
@@ -1686,8 +1834,599 @@ rdiffApplyPatchBtn.addEventListener('click', async () => {
   }
 });
 
+// --- Card D: Static HTTP Range (zsync) Incremental Pull Simulator & Live CORS Fetch ---
+const rangeModeSimBtn = document.getElementById('rangeModeSim');
+const rangeModeLiveBtn = document.getElementById('rangeModeLive');
+const rangeSimPanel = document.getElementById('rangeSimPanel');
+const rangeLivePanel = document.getElementById('rangeLivePanel');
+const rangeProfileSelect = document.getElementById('rangeProfileSelect');
+const rangeMergeGapSelect = document.getElementById('rangeMergeGapSelect');
+const runRangeSimBtn = document.getElementById('runRangeSimBtn');
+const rangeTargetUrlInput = document.getElementById('rangeTargetUrl');
+const rangeSigUrlInput = document.getElementById('rangeSigUrl');
+const rangeLiveBasisDrop = document.getElementById('rangeLiveBasisDrop');
+const rangeLiveBasisFile = document.getElementById('rangeLiveBasisFile');
+const rangeLiveBasisMeta = document.getElementById('rangeLiveBasisMeta');
+const runRangeLiveBtn = document.getElementById('runRangeLiveBtn');
+const rangePullOut = document.getElementById('rangePullOut');
+
+function setRangePullMode(mode) {
+  rangePullMode = mode;
+  rangeModeSimBtn.classList.toggle('active', mode === 'sim');
+  rangeModeLiveBtn.classList.toggle('active', mode === 'live');
+  rangeSimPanel.hidden = mode !== 'sim';
+  rangeLivePanel.hidden = mode !== 'live';
+}
+rangeModeSimBtn.addEventListener('click', () => setRangePullMode('sim'));
+rangeModeLiveBtn.addEventListener('click', () => setRangePullMode('live'));
+
+wireDropzone(rangeLiveBasisDrop, rangeLiveBasisFile, rangeLiveBasisMeta, (f) => {
+  rangeLiveBasisFileObj = f;
+});
+
+function renderRangePullResult(state) {
+  const { plan, applyRes, expectedSha, verified, modeLabel, targetName, mergeGap, elapsedMs, restoredBytes, verifiedBadgeKey } = state;
+  const targetLen = Number(plan.target_length);
+  const reused = Number(plan.reused_bytes);
+  const fetchBytes = Number(plan.fetch_bytes);
+  const reqBytes = Number(plan.request_bytes);
+  const gapOverhead = Math.max(0, reqBytes - fetchBytes);
+  const reusedOnly = Math.max(0, reused - gapOverhead);
+  const savedPct = targetLen > 0 ? Math.max(0, (1 - reqBytes / targetLen) * 100).toFixed(2) : '0.00';
+  const reusedPct = targetLen > 0 ? ((reused / targetLen) * 100).toFixed(1) : '100.0';
+  const barReusedPct = targetLen > 0 ? ((reusedOnly / targetLen) * 100).toFixed(1) : '100.0';
+  const fetchPct = targetLen > 0 ? ((fetchBytes / targetLen) * 100).toFixed(1) : '0.0';
+  const gapPct = targetLen > 0 ? ((gapOverhead / targetLen) * 100).toFixed(1) : '0.0';
+  const ranges = plan.ranges || [];
+
+  const pillsHtml = ranges.length
+    ? ranges
+        .map(
+          (r, idx) =>
+            `<span class="range-pill" title="Range #${idx + 1}: start=${r.start}, length=${r.length}"><span>#${idx + 1}</span><code>${escapeHtml(r.http_range)}</code><span class="rp-len">(${fmtBytes(r.length)})</span></span>`,
+        )
+        .join('')
+    : `<span class="badge badge-add">${escapeHtml(t('rangeZeroRanges'))}</span>`;
+
+  const planJsonText = JSON.stringify(plan, null, 2);
+  const safeTargetName = String(targetName || 'target.bin').replace(/["`$\\]/g, '_');
+  const cliCmd = [
+    `moonlibsync signature "${safeTargetName}" "${safeTargetName}.sig" --profile ${plan.profile}`,
+    `moonlibsync range-plan "${safeTargetName}.sig" ${targetLen} local-v1.bin --merge-gap ${mergeGap} -o range-plan.json`,
+    `moonlibsync fetch-sync "https://cdn.example.com/${safeTargetName}" --basis local-v1.bin --sig "${safeTargetName}.sig" -o "restored-${safeTargetName}" --merge-gap ${mergeGap}`,
+  ].join('\n');
+
+  const shaRows = expectedSha
+    ? `
+      <div class="hash-row"><span class="hash-key">Remote v2 SHA-256</span><span class="hash-val">${escapeHtml(expectedSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(expectedSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+      <div class="hash-row"><span class="hash-key">Restored SHA-256</span><span class="hash-val">${escapeHtml(applyRes.restored_sha256)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(applyRes.restored_sha256)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+    `
+    : `<div class="hash-row"><span class="hash-key">Restored SHA-256</span><span class="hash-val">${escapeHtml(applyRes.restored_sha256)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(applyRes.restored_sha256)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>`;
+
+  rangePullOut.innerHTML = `
+    <div class="result-hero" style="margin-bottom:0.85rem;">
+      <div class="hero-metric">
+        <span class="hero-pct">${savedPct}%</span>
+        <span class="hero-desc">${escapeHtml(t('rangeSavedLabel'))} · ${fmtBytes(targetLen)} → ${fmtBytes(reqBytes)} (${ranges.length} HTTP Range reqs · ${elapsedMs.toFixed(1)} ms)</span>
+      </div>
+      <div class="controls-row">
+        <span class="verified-pill info">${escapeHtml(modeLabel)} · ${escapeHtml(plan.profile)}</span>
+        <span class="verified-pill ${verified ? '' : 'fail'}">${verified ? '✓ ' + escapeHtml(t(verifiedBadgeKey || 'verifiedBadge')) : '✕ ' + escapeHtml(t('mismatchBadge'))}</span>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Target Length</div><div class="stat-value">${fmtBytes(targetLen)}</div><div class="stat-sub">block=${plan.block_len} B</div></div>
+      <div class="stat-card"><div class="stat-label">Reused Local (CopyLocal)</div><div class="stat-value" style="color:var(--emerald-text)">${fmtBytes(reused)}</div><div class="stat-sub">${reusedPct}% · ${reused.toLocaleString()} B</div></div>
+      <div class="stat-card"><div class="stat-label">Minimal Fetch</div><div class="stat-value" style="color:var(--primary)">${fmtBytes(fetchBytes)}</div><div class="stat-sub">${fetchPct}% · ${fetchBytes.toLocaleString()} B</div></div>
+      <div class="stat-card"><div class="stat-label">HTTP Request Bytes</div><div class="stat-value">${fmtBytes(reqBytes)}</div><div class="stat-sub">${ranges.length} range(s) · gap +${fmtBytes(gapOverhead)}</div></div>
+    </div>
+
+    <div style="margin-bottom:0.85rem;">
+      <div class="bar-item-head">
+        <span>CopyLocal (${reusedPct}%) · FetchRemote (${fetchPct}%)${gapOverhead > 0 ? ` · Gap Coalesce (+${gapPct}%)` : ''}</span>
+        <span>${reqBytes.toLocaleString()} / ${targetLen.toLocaleString()} B</span>
+      </div>
+      <div class="bar-copy-track" style="background:var(--surface-muted);">
+        <div class="bar-seg-reused" style="width:${Math.min(100, Number(barReusedPct))}%">${Number(barReusedPct) >= 12 ? `Reused ${reusedPct}%` : ''}</div>
+        <div class="bar-seg-fetch" style="width:${Math.min(100, Number(fetchPct))}%">${Number(fetchPct) >= 10 ? `Fetch ${fetchPct}%` : ''}</div>
+        ${gapOverhead > 0 ? `<div class="bar-seg-gap" style="width:${Math.min(100, Number(gapPct))}%" title="Coalesced gap overhead: ${gapOverhead} B"></div>` : ''}
+      </div>
+    </div>
+
+    <div style="margin-bottom:0.85rem;">
+      <div class="stat-label" style="margin-bottom:0.2rem;">${escapeHtml(t('rangePillsTitle'))}</div>
+      <div class="range-pills">${pillsHtml}</div>
+    </div>
+
+    <div class="hash-list" style="margin-bottom:0.75rem;">${shaRows}</div>
+
+    <div class="controls-row">
+      <button id="rangeDlPlanBtn" class="btn btn-secondary btn-sm" type="button">${escapeHtml(t('rangeDlPlanBtn'))}</button>
+      <button id="rangeDlRestoredBtn" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('rangeDlRestoredBtn'))}</button>
+    </div>
+
+    <div class="cli-wrap">
+      <div class="cli-head">
+        <span>${escapeHtml(t('rangeCliTitle'))}</span>
+        <button id="copyRangeCli" class="btn btn-secondary btn-sm" type="button">${escapeHtml(t('copyBtn'))}</button>
+      </div>
+      <pre class="cli-pre">${escapeHtml(cliCmd)}</pre>
+    </div>
+  `;
+
+  bindCopyButtons(rangePullOut);
+  document.getElementById('rangeDlPlanBtn').addEventListener('click', () => {
+    downloadBlob(planJsonText, 'range-plan.json', 'application/json');
+  });
+  document.getElementById('rangeDlRestoredBtn').addEventListener('click', () => {
+    downloadBlob(restoredBytes, 'restored-' + targetName);
+  });
+  document.getElementById('copyRangeCli').addEventListener('click', (e) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(cliCmd);
+      e.target.textContent = t('copiedBtn');
+      setTimeout(() => { e.target.textContent = t('copyBtn'); }, 1200);
+    }
+  });
+}
+
+runRangeSimBtn.addEventListener('click', async () => {
+  try {
+    const mod = await loadEngine();
+    const profile = rangeProfileSelect.value || 'rk-blake2';
+    const mergeGap = Number(rangeMergeGapSelect.value);
+    const t0 = performance.now();
+
+    // Synthesize 128 KiB local v1 basis and remote v2 target with 3 scattered edits
+    // (two nearby edits 1.5 KiB apart to demonstrate merge_gap_bytes coalescing!).
+    const basis = new Uint8Array(131072);
+    for (let i = 0; i < basis.length; i++) {
+      basis[i] = (i * 59 + 31 + Math.floor(i / 256) * 13 + Math.floor(i / 2048) * 7) % 256;
+    }
+    const remoteV2 = new Uint8Array(basis.length);
+    remoteV2.set(basis);
+    const enc = new TextEncoder();
+    const edit1 = enc.encode('HTTP-RANGE-PATCH-REGION-ALPHA-070 '.repeat(14));
+    const edit2 = enc.encode('HTTP-RANGE-PATCH-NEARBY-BETA-070 '.repeat(14));
+    const edit3 = enc.encode('HTTP-RANGE-PATCH-TAIL-GAMMA-070 '.repeat(18));
+    remoteV2.set(edit1, 16384);
+    remoteV2.set(edit2, 16384 + 2048 + 1024); // close enough to coalesce when merge_gap >= 2048
+    remoteV2.set(edit3, 98304);
+
+    const targetSig = await mod.create_signature_with_profile_bytes(remoteV2, 2048, 16, profile);
+    const planWrap = JSON.parse(
+      await mod.plan_range_fetch_json(targetSig, remoteV2.length, basis, mergeGap, 256),
+    );
+    if (!planWrap.ok) {
+      rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Range Plan Error:</strong> <code>${escapeHtml(planWrap.error)}</code></div>`;
+      return;
+    }
+    const plan = planWrap.plan;
+    const hexSlices = (plan.ranges || []).map((r) =>
+      bytesToHex(remoteV2.subarray(Number(r.start), Number(r.start) + Number(r.length))),
+    );
+    const applyRes = JSON.parse(
+      await mod.apply_range_fetch_json(
+        targetSig,
+        remoteV2.length,
+        basis,
+        mergeGap,
+        256,
+        JSON.stringify(hexSlices),
+      ),
+    );
+    if (!applyRes.ok) {
+      rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Range Apply Error:</strong> <code>${escapeHtml(applyRes.error)}</code></div>`;
+      return;
+    }
+    const expectedSha = await mod.sha256_hex_bytes(remoteV2);
+    const restoredBytes = hexToBytes(applyRes.restored_hex);
+    const elapsedMs = performance.now() - t0;
+    const verified =
+      applyRes.restored_sha256 === expectedSha && restoredBytes.length === remoteV2.length;
+
+    lastRangePullState = {
+      plan,
+      applyRes,
+      expectedSha,
+      verified,
+      modeLabel: 'Simulated HTTP 206',
+      targetName: 'release-v2.bin',
+      mergeGap,
+      elapsedMs,
+      restoredBytes,
+    };
+    renderRangePullResult(lastRangePullState);
+  } catch (err) {
+    rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Range Pull Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+});
+
+runRangeLiveBtn.addEventListener('click', async () => {
+  const rawTargetUrl = (rangeTargetUrlInput.value || '').trim();
+  let parsedTarget;
+  try {
+    parsedTarget = new URL(rawTargetUrl);
+  } catch (_) {
+    rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('rangeUrlRequired'))}</div>`;
+    return;
+  }
+  if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+    rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('rangeUrlRequired'))}</div>`;
+    return;
+  }
+  const targetUrl = parsedTarget.href;
+  const rawSigUrl = (rangeSigUrlInput.value || '').trim();
+  let sigUrl;
+  if (rawSigUrl) {
+    try {
+      const parsedSig = new URL(rawSigUrl);
+      if (parsedSig.protocol !== 'http:' && parsedSig.protocol !== 'https:') {
+        throw new Error('Unsupported scheme');
+      }
+      sigUrl = parsedSig.href;
+    } catch (_) {
+      rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Invalid .sig URL:</strong> <code>${escapeHtml(rawSigUrl)}</code></div>`;
+      return;
+    }
+  } else {
+    const defaultSigUrl = new URL(parsedTarget.href);
+    defaultSigUrl.pathname = `${defaultSigUrl.pathname}.sig`;
+    sigUrl = defaultSigUrl.href;
+  }
+  const mergeGap = Number(rangeMergeGapSelect.value);
+  try {
+    const mod = await loadEngine();
+    const t0 = performance.now();
+    const basisFile = rangeLiveBasisFileObj || rangeLiveBasisFile.files?.[0] || null;
+    const basis = basisFile ? new Uint8Array(await basisFile.arrayBuffer()) : new Uint8Array(0);
+
+    const sigResp = await fetch(sigUrl);
+    if (!sigResp.ok) {
+      throw new Error(`Failed to fetch .sig (${sigResp.status} ${sigResp.statusText})`);
+    }
+    const targetSig = new Uint8Array(await sigResp.arrayBuffer());
+    const sigInfo = JSON.parse(await mod.inspect_artifact_json(targetSig));
+    if (!sigInfo.ok || sigInfo.artifact_kind !== 'signature') {
+      throw new Error(`Invalid remote .sig artifact (${sigInfo.error || sigInfo.artifact_kind || 'InvalidSignature'})`);
+    }
+
+    let targetLength = -1;
+    try {
+      const headResp = await fetch(targetUrl, { method: 'HEAD' });
+      const cl = headResp.headers.get('content-length');
+      if (headResp.ok && cl && /^\d+$/.test(cl.trim())) {
+        targetLength = Number(cl.trim());
+      }
+    } catch (_) {}
+    if (targetLength < 0) {
+      const probeResp = await fetch(targetUrl, { headers: { Range: 'bytes=0-0' } });
+      const cr = probeResp.headers.get('content-range') || '';
+      const m = /\/(\d+)$/.exec(cr.trim());
+      if (m) {
+        targetLength = Number(m[1]);
+      } else if (probeResp.status === 200) {
+        const full = new Uint8Array(await probeResp.arrayBuffer());
+        targetLength = full.length;
+      }
+    }
+    if (!Number.isInteger(targetLength) || targetLength < 0 || targetLength > 67108864) {
+      throw new Error(
+        targetLength > 67108864
+          ? `Remote target exceeds 64 MiB browser limit (${targetLength} B)`
+          : 'Could not determine remote target byte length (check CORS Content-Length / Content-Range)',
+      );
+    }
+
+    const planWrap = JSON.parse(
+      await mod.plan_range_fetch_json(targetSig, targetLength, basis, mergeGap, 256),
+    );
+    if (!planWrap.ok) {
+      throw new Error(`plan_range_fetch_json: ${planWrap.error}`);
+    }
+    const plan = planWrap.plan;
+    const hexSlices = [];
+    for (const r of plan.ranges || []) {
+      const resp = await fetch(targetUrl, { headers: { Range: r.http_range } });
+      if (resp.status !== 206 && !(resp.status === 200 && Number(r.start) === 0 && Number(r.length) === targetLength)) {
+        throw new Error(`Expected HTTP 206 for ${r.http_range}, got HTTP ${resp.status}`);
+      }
+      if (resp.status === 206) {
+        const cr = resp.headers.get('content-range');
+        if (cr && cr.trim()) {
+          const endByte = Number(r.start) + Number(r.length) - 1;
+          const expectedCr = `bytes ${r.start}-${endByte}/${targetLength}`;
+          if (cr.trim() !== expectedCr) {
+            throw new Error(`Content-Range mismatch for ${r.http_range}: got "${cr.trim()}", expected "${expectedCr}"`);
+          }
+        }
+      }
+      const slice = new Uint8Array(await resp.arrayBuffer());
+      if (slice.length !== Number(r.length)) {
+        throw new Error(`Range ${r.http_range} returned ${slice.length} B (expected ${r.length} B)`);
+      }
+      hexSlices.push(bytesToHex(slice));
+    }
+
+    const applyRes = JSON.parse(
+      await mod.apply_range_fetch_json(
+        targetSig,
+        targetLength,
+        basis,
+        mergeGap,
+        256,
+        JSON.stringify(hexSlices),
+      ),
+    );
+    if (!applyRes.ok) {
+      throw new Error(`apply_range_fetch_json: ${applyRes.error}`);
+    }
+    const restoredBytes = hexToBytes(applyRes.restored_hex);
+    if (restoredBytes.length !== targetLength) {
+      throw new Error(`Reconstructed target byte length mismatch (${restoredBytes.length} != ${targetLength})`);
+    }
+    const recomputedSig = await mod.create_signature_with_profile_bytes(
+      restoredBytes,
+      Number(sigInfo.summary.block_len),
+      Number(sigInfo.summary.strong_sum_len),
+      sigInfo.summary.profile,
+    );
+    let sigMatch = targetSig.length > 0 && recomputedSig.length === targetSig.length;
+    for (let i = 0; sigMatch && i < targetSig.length; i++) {
+      if (recomputedSig[i] !== targetSig[i]) sigMatch = false;
+    }
+    if (!sigMatch) {
+      throw new Error('Reconstructed target signature mismatch against remote .sig');
+    }
+    const elapsedMs = performance.now() - t0;
+    const urlPathName = parsedTarget.pathname.split('/').pop() || 'remote-target.bin';
+
+    lastRangePullState = {
+      plan,
+      applyRes,
+      expectedSha: null,
+      verified: sigMatch,
+      verifiedBadgeKey: 'rangeSigVerifiedBadge',
+      modeLabel: 'Live CORS HTTP 206',
+      targetName: urlPathName,
+      mergeGap,
+      elapsedMs,
+      restoredBytes,
+    };
+    renderRangePullResult(lastRangePullState);
+  } catch (err) {
+    rangePullOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Live CORS Range Fetch Failed:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+});
+
+// --- Card E: Delta Chain Squashing (v1 -> v2 -> v3 => v1 -> v3) ---
+const runCompose2Btn = document.getElementById('runCompose2Btn');
+const runCompose3Btn = document.getElementById('runCompose3Btn');
+const composeDrop = document.getElementById('composeDrop');
+const composeFilesInput = document.getElementById('composeFiles');
+const composeMeta = document.getElementById('composeMeta');
+const runComposeCustomBtn = document.getElementById('runComposeCustomBtn');
+const composeOut = document.getElementById('composeOut');
+
+function setComposeSelectedFiles(fileList) {
+  const list = Array.from(fileList || []).sort((a, b) => a.name.localeCompare(b.name));
+  if (!list.length) return;
+  composeFileObjs = list;
+  const total = list.reduce((acc, f) => acc + f.size, 0);
+  composeMeta.textContent = `${list.map((f) => f.name).join(' → ')} (${fmtBytes(total)})`;
+  composeMeta.classList.add('selected');
+}
+composeFilesInput.addEventListener('change', () => setComposeSelectedFiles(composeFilesInput.files));
+composeDrop.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  composeDrop.classList.add('dragover');
+});
+composeDrop.addEventListener('dragleave', () => composeDrop.classList.remove('dragover'));
+composeDrop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  composeDrop.classList.remove('dragover');
+  if (e.dataTransfer?.files?.length) setComposeSelectedFiles(e.dataTransfer.files);
+});
+
+function renderComposeResult(state) {
+  const { res, hopSizes, hopLabels, gzSize, composedBytes, verified, expectedSha, restoredSha, isDemo, elapsedMs } = state;
+  const inTotal = Number(res.input_total_bytes);
+  const outBytes = Number(res.composed_bytes);
+  const savedPct = inTotal > 0 ? Math.max(0, (1 - outBytes / inTotal) * 100).toFixed(1) : '0.0';
+  const directBarPct = inTotal > 0 ? Math.min(100, Math.max(3, (outBytes / inTotal) * 100)).toFixed(1) : '100';
+  const gzBarPct = inTotal > 0 ? Math.min(100, Math.max(2, (gzSize / inTotal) * 100)).toFixed(1) : '100';
+  const hopChainDesc = hopLabels.map((lbl, i) => `${lbl} (${fmtBytes(hopSizes[i])})`).join(' + ');
+  const cliInputs = hopLabels.map((lbl) => `${lbl}.delta`).join(' ');
+  const cliCmd = `moonlibsync compose-delta ${cliInputs} -o squashed.delta`;
+
+  const badgeHtml = isDemo
+    ? `<span class="verified-pill ${verified ? '' : 'fail'}">${verified ? '✓ ' + escapeHtml(t('composeVerifiedBadge')) : '✕ ' + escapeHtml(t('mismatchBadge'))}</span>`
+    : `<span class="verified-pill">✓ ${escapeHtml(t('composeCustomBadge'))}</span>`;
+
+  composeOut.innerHTML = `
+    <div class="result-hero" style="margin-bottom:0.85rem;">
+      <div class="hero-metric">
+        <span class="hero-pct">${savedPct}%</span>
+        <span class="hero-desc">${escapeHtml(t('composeSavedLabel'))} · ${fmtBytes(inTotal)} → ${fmtBytes(outBytes)} (${hopSizes.length} hops · ${elapsedMs.toFixed(1)} ms)</span>
+      </div>
+      ${badgeHtml}
+    </div>
+
+    <div class="stats-grid cols-5">
+      <div class="stat-card"><div class="stat-label">Chain Hops</div><div class="stat-value">${hopSizes.length}</div><div class="stat-sub">${escapeHtml(hopLabels.join(' → '))}</div></div>
+      <div class="stat-card"><div class="stat-label">Sum of Deltas</div><div class="stat-value">${fmtBytes(inTotal)}</div><div class="stat-sub">${inTotal.toLocaleString()} B</div></div>
+      <div class="stat-card"><div class="stat-label">Squashed Delta</div><div class="stat-value" style="color:var(--emerald-text)">${fmtBytes(outBytes)}</div><div class="stat-sub">${outBytes.toLocaleString()} B</div></div>
+      <div class="stat-card"><div class="stat-label">Instructions</div><div class="stat-value">${Number(res.instruction_count).toLocaleString()}</div><div class="stat-sub">${res.copy_count} COPY · ${res.literal_count} Literal</div></div>
+      <div class="stat-card"><div class="stat-label">Output Size</div><div class="stat-value">${fmtBytes(res.output_bytes)}</div><div class="stat-sub">COPY ${fmtBytes(res.copy_bytes)} · Lit ${fmtBytes(res.literal_bytes)}</div></div>
+    </div>
+
+    <div class="bars-stack" style="margin-bottom:0.85rem;">
+      <div>
+        <div class="bar-item-head"><span>${escapeHtml(t('composeSumBar'))} (${escapeHtml(hopChainDesc)})</span><span>${inTotal.toLocaleString()} B (100%)</span></div>
+        <div class="bar-track"><div class="bar-fill bar-full" style="width:100%"></div></div>
+      </div>
+      <div>
+        <div class="bar-item-head"><span>${escapeHtml(t('composeDirectBar'))}</span><span>${outBytes.toLocaleString()} B (${directBarPct}%)</span></div>
+        <div class="bar-track"><div class="bar-fill bar-delta" style="width:${directBarPct}%"></div></div>
+      </div>
+      <div>
+        <div class="bar-item-head"><span>${escapeHtml(t('composeGzBar'))}</span><span>${gzSize.toLocaleString()} B (${gzBarPct}%)</span></div>
+        <div class="bar-track"><div class="bar-fill bar-gz" style="width:${gzBarPct}%"></div></div>
+      </div>
+    </div>
+
+    <div class="hash-list" style="margin-bottom:0.75rem;">
+      <div class="hash-row"><span class="hash-key">Squashed .delta SHA-256</span><span class="hash-val">${escapeHtml(res.composed_sha256)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(res.composed_sha256)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>
+      ${isDemo ? `<div class="hash-row"><span class="hash-key">patch(v1, d) SHA-256</span><span class="hash-val">${escapeHtml(restoredSha)}</span><span class="badge ${verified ? 'badge-add' : 'badge-delete'}">${verified ? '=== v_final ✓' : 'MISMATCH'}</span></div>` : ''}
+      ${isDemo && expectedSha ? `<div class="hash-row"><span class="hash-key">v_final SHA-256</span><span class="hash-val">${escapeHtml(expectedSha)}</span><button class="btn btn-secondary btn-sm copy-hash" data-hash="${escapeHtml(expectedSha)}" type="button">${escapeHtml(t('copyBtn'))}</button></div>` : ''}
+    </div>
+
+    <div class="controls-row">
+      <button id="composeDlBtn" class="btn btn-teal btn-sm" type="button">${escapeHtml(t('composeDlBtn'))}</button>
+    </div>
+
+    <div class="cli-wrap">
+      <div class="cli-head">
+        <span>${escapeHtml(t('composeCliTitle'))}</span>
+        <button id="copyComposeCli" class="btn btn-secondary btn-sm" type="button">${escapeHtml(t('copyBtn'))}</button>
+      </div>
+      <pre class="cli-pre">${escapeHtml(cliCmd)}</pre>
+    </div>
+  `;
+
+  bindCopyButtons(composeOut);
+  document.getElementById('composeDlBtn').addEventListener('click', () => {
+    downloadBlob(composedBytes, 'squashed.delta');
+  });
+  document.getElementById('copyComposeCli').addEventListener('click', (e) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(cliCmd);
+      e.target.textContent = t('copiedBtn');
+      setTimeout(() => { e.target.textContent = t('copyBtn'); }, 1200);
+    }
+  });
+}
+
+async function runComposeDemo(hops) {
+  try {
+    const mod = await loadEngine();
+    const enc = new TextEncoder();
+    const t0 = performance.now();
+
+    // Build deterministic 64 KiB version chain where later versions overwrite earlier hot zones
+    // so squashing eliminates redundant intermediate literals cleanly.
+    const v1 = new Uint8Array(65536);
+    for (let i = 0; i < v1.length; i++) {
+      v1[i] = (i * 43 + 11 + Math.floor(i / 512) * 19) % 256;
+    }
+    const v2 = new Uint8Array(v1);
+    v2.set(enc.encode('V2-HOT-CONFIG-REGION-DRAFT-ITERATION-'.repeat(45)), 8192);
+    v2.set(enc.encode('V2-TELEMETRY-BLOCK-PAYLOAD-'.repeat(30)), 32768);
+
+    const v3 = new Uint8Array(v2);
+    v3.set(enc.encode('V3-HOT-CONFIG-REGION-FINAL-REPLACED!-'.repeat(45)), 8192); // overwrites v2 edit!
+    v3.set(enc.encode('V3-NEW-FEATURE-FOOTER-SEGMENT-'.repeat(20)), 52000);
+
+    const versions = [v1, v2, v3];
+    const hopLabels = ['d12', 'd23'];
+    if (hops >= 3) {
+      const v4 = new Uint8Array(v3);
+      v4.set(enc.encode('V4-HOT-CONFIG-PRODUCTION-SIGNED-070!-'.repeat(45)), 8192); // overwrites v3 edit!
+      v4.set(enc.encode('V4-TELEMETRY-FINAL-RELEASE-'.repeat(30)), 32768);
+      versions.push(v4);
+      hopLabels.push('d34');
+    }
+
+    const deltas = [];
+    for (let i = 0; i < versions.length - 1; i++) {
+      const sig = await mod.create_signature_bytes(versions[i], 1024, 16);
+      const delta = await mod.create_delta_bytes(sig, versions[i + 1]);
+      deltas.push(delta);
+    }
+
+    const res = JSON.parse(
+      await mod.compose_deltas_json(JSON.stringify(deltas.map((d) => bytesToHex(d)))),
+    );
+    if (!res.ok) {
+      composeOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Compose Error:</strong> <code>${escapeHtml(res.error)}</code></div>`;
+      return;
+    }
+    const composedBytes = hexToBytes(res.composed_hex);
+    const gzBytes = await mod.compress_gzip_bytes(composedBytes, 6);
+    const vFinal = versions[versions.length - 1];
+    // Prove patch(v1, d_composed) === v_final WITHOUT touching v2/v3!
+    const restored = await mod.apply_patch_bytes(v1, composedBytes);
+    const [expectedSha, restoredSha] = await Promise.all([
+      mod.sha256_hex_bytes(vFinal),
+      mod.sha256_hex_bytes(restored),
+    ]);
+    const verified = restoredSha === expectedSha && restored.length === vFinal.length;
+    const elapsedMs = performance.now() - t0;
+
+    lastComposeState = {
+      res,
+      hopSizes: deltas.map((d) => d.length),
+      hopLabels,
+      gzSize: gzBytes.length,
+      composedBytes,
+      verified,
+      expectedSha,
+      restoredSha,
+      isDemo: true,
+      elapsedMs,
+    };
+    renderComposeResult(lastComposeState);
+  } catch (err) {
+    composeOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Compose Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+}
+
+runCompose2Btn.addEventListener('click', () => runComposeDemo(2));
+runCompose3Btn.addEventListener('click', () => runComposeDemo(3));
+
+runComposeCustomBtn.addEventListener('click', async () => {
+  if (composeFileObjs.length < 2) {
+    composeOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;">${escapeHtml(t('composePickWarn'))}</div>`;
+    return;
+  }
+  try {
+    const mod = await loadEngine();
+    const t0 = performance.now();
+    const bufs = await Promise.all(
+      composeFileObjs.map(async (f) => new Uint8Array(await f.arrayBuffer())),
+    );
+    const res = JSON.parse(
+      await mod.compose_deltas_json(JSON.stringify(bufs.map((b) => bytesToHex(b)))),
+    );
+    if (!res.ok) {
+      composeOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Compose Error:</strong> <code>${escapeHtml(res.error)}</code></div>`;
+      return;
+    }
+    const composedBytes = hexToBytes(res.composed_hex);
+    const gzBytes = await mod.compress_gzip_bytes(composedBytes, 6);
+    const elapsedMs = performance.now() - t0;
+
+    lastComposeState = {
+      res,
+      hopSizes: bufs.map((b) => b.length),
+      hopLabels: composeFileObjs.map((f) => f.name.replace(/\.delta$/i, '')),
+      gzSize: gzBytes.length,
+      composedBytes,
+      verified: true,
+      expectedSha: null,
+      restoredSha: null,
+      isDemo: false,
+      elapsedMs,
+    };
+    renderComposeResult(lastComposeState);
+  } catch (err) {
+    composeOut.innerHTML = `<div class="card err-card" style="margin-bottom:0;"><strong>Compose Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+});
+
 // =========================================================================
-// Tab 3: Universal Artifact Inspector (.sig, .delta, .gz, .mbundle, .menc, .msig.json)
+// Tab 3: Universal Artifact Inspector (.sig, .delta, .gz, .zlib, .mbundle, .menc, MLSENC02, Schema 1/2/3/4)
 // =========================================================================
 const inspectDrop = document.getElementById('inspectDrop');
 const inspectFile = document.getElementById('inspectFile');
@@ -1695,6 +2434,8 @@ const inspectMeta = document.getElementById('inspectMeta');
 const inspectSampleDeltaBtn = document.getElementById('inspectSampleDelta');
 const inspectSampleSigBtn = document.getElementById('inspectSampleSig');
 const inspectSampleSealBtn = document.getElementById('inspectSampleSeal');
+const inspectSampleEnvelopeBtn = document.getElementById('inspectSampleEnvelope');
+const inspectSampleKeyringBtn = document.getElementById('inspectSampleKeyring');
 const inspectSamplePubSigBtn = document.getElementById('inspectSamplePubSig');
 
 function renderInspectResult(state) {
@@ -1721,10 +2462,13 @@ function renderInspectResult(state) {
     'salt_hex',
     'nonce_prefix_hex',
     'header_hex',
+    'ephemeral_public_key_hex',
   ]);
   const pushSummaryFields = (obj) => {
     for (const [k, v] of Object.entries(obj || {})) {
-      if (k.includes('sha256') || hashKeys.has(k)) {
+      if (Array.isArray(v)) {
+        hashRows.push([k, v.length ? v.join(', ') : '(empty)']);
+      } else if (k.includes('sha256') || hashKeys.has(k)) {
         hashRows.push([k, String(v)]);
       } else {
         const isBytes =
@@ -1741,7 +2485,7 @@ function renderInspectResult(state) {
     }
   };
 
-  if (parsed.artifact_kind === 'gzip') {
+  if (parsed.artifact_kind === 'gzip' || parsed.artifact_kind === 'zlib') {
     const ratio = Number(parsed.compressed_bytes) > 0
       ? (Number(parsed.uncompressed_bytes) / Number(parsed.compressed_bytes)).toFixed(2) + '×'
       : '—';
@@ -1886,7 +2630,7 @@ inspectSampleSealBtn.addEventListener('click', async () => {
   try {
     const mod = await loadEngine();
     const enc = new TextEncoder();
-    const plain = enc.encode('MoonLibSync 0.6.0 sample MLSENC01 authenticated stream container');
+    const plain = enc.encode('MoonLibSync 0.7.0 sample MLSENC01 authenticated stream container');
     const salt = new Uint8Array(16);
     crypto.getRandomValues(salt);
     const nonce = new Uint8Array(12);
@@ -1907,12 +2651,77 @@ inspectSampleSealBtn.addEventListener('click', async () => {
   }
 });
 
+inspectSampleEnvelopeBtn.addEventListener('click', async () => {
+  try {
+    const mod = await loadEngine();
+    const enc = new TextEncoder();
+    const randHex = (n) => {
+      const b = new Uint8Array(n);
+      crypto.getRandomValues(b);
+      return bytesToHex(b);
+    };
+    const [alice, bob] = await Promise.all([
+      mod.x25519_keypair_from_secret_json(randHex(32)).then(JSON.parse),
+      mod.x25519_keypair_from_secret_json(randHex(32)).then(JSON.parse),
+    ]);
+    const sealed = JSON.parse(
+      await mod.seal_envelope_json(
+        enc.encode('MoonLibSync 0.7.0 sample MLSENC02 multi-recipient envelope'),
+        JSON.stringify([alice.public_key_hex, bob.public_key_hex]),
+        randHex(32),
+        randHex(32),
+        randHex(4),
+        65536,
+      ),
+    );
+    if (!sealed.ok) {
+      inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Envelope Error:</strong> <code>${escapeHtml(sealed.error || 'SealFailed')}</code></div>`;
+      return;
+    }
+    const envBytes = hexToBytes(sealed.ciphertext_hex);
+    inspectMeta.textContent = `sample-envelope.menv (${fmtBytes(envBytes.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(envBytes, 'sample-envelope.menv');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+});
+
+inspectSampleKeyringBtn.addEventListener('click', async () => {
+  try {
+    const mod = await loadEngine();
+    const makeKp = async () => {
+      const s = new Uint8Array(32);
+      crypto.getRandomValues(s);
+      return JSON.parse(await mod.ed25519_keypair_from_seed_json(s));
+    };
+    const [k1, k2, k3] = await Promise.all([makeKp(), makeKp(), makeKp()]);
+    const kr = JSON.parse(
+      await mod.create_trust_keyring_json(
+        JSON.stringify([k1.public_key_hex, k2.public_key_hex, k3.public_key_hex]),
+        JSON.stringify([]),
+        2,
+      ),
+    );
+    if (!kr.ok) {
+      inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Keyring Error:</strong> <code>${escapeHtml(kr.error || 'KeyringFailed')}</code></div>`;
+      return;
+    }
+    const krBytes = new TextEncoder().encode(kr.keyring_json);
+    inspectMeta.textContent = `release-keyring.json (${fmtBytes(krBytes.length)})`;
+    inspectMeta.classList.add('selected');
+    await inspectArtifactBytes(krBytes, 'release-keyring.json');
+  } catch (err) {
+    inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Inspection Error:</strong> <code>${escapeHtml(errMessage(err))}</code></div>`;
+  }
+});
+
 inspectSamplePubSigBtn.addEventListener('click', async () => {
   try {
     const mod = await loadEngine();
     const seed = new Uint8Array(32);
     crypto.getRandomValues(seed);
-    const payload = new TextEncoder().encode('MoonLibSync 0.6.0 sample release payload');
+    const payload = new TextEncoder().encode('MoonLibSync 0.7.0 sample release payload');
     const signed = JSON.parse(await mod.ed25519_sign_bytes_json(seed, payload));
     if (!signed.ok) {
       inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Sign Error:</strong> <code>${escapeHtml(signed.error || 'SignFailed')}</code></div>`;
@@ -2447,7 +3256,7 @@ function makeSampleRawFiles() {
     Array.from({ length: 60 }, (_, i) => `- v0.5.${i}: deterministic streaming check #${i}\n`).join('');
   const basisFiles = [
     make('.git/HEAD', 'ref: refs/heads/main\n'),
-    make('README.md', '# MoonLibSync 0.6.0\n'),
+    make('README.md', '# MoonLibSync 0.7.0\n'),
     make('assets/logo.svg', '<svg viewBox="0 0 28 28">v1</svg>'),
     make('assets/manual-v1.txt', movedManual),
     make('cache/session.tmp', 'temporary scratch data'),
@@ -2456,13 +3265,13 @@ function makeSampleRawFiles() {
     make('legacy/deprecated.txt', 'old legacy file'),
   ];
   const targetFiles = [
-    make('.git/HEAD', 'ref: refs/heads/release-0.6\n'),
-    make('README.md', '# MoonLibSync 0.6.0\n'),
+    make('.git/HEAD', 'ref: refs/heads/release-0.7\n'),
+    make('README.md', '# MoonLibSync 0.7.0\n'),
     make('assets/logo.svg', '<svg viewBox="0 0 28 28">v2-updated-vector</svg>'),
     make('cache/session.tmp', 'temporary scratch data v2'),
-    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220) + '// v0.6.0 rollsum + crypto\n'),
+    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220) + '// v0.7.0 range-sync + compose + crypto\n'),
     make('docs/manual.txt', movedManual),
-    make('docs/changelog.md', changelogBase + '- v0.6.0: Ed25519 signing, AEAD sealing, and move detection!\n'),
+    make('docs/changelog.md', changelogBase + '- v0.7.0: HTTP Range pull, delta composition, Zlib, X25519 MLSENC02, and M-of-N quorum!\n'),
     make('compress/gzip.mbt', 'pub fn compress_gzip() {}\n'.repeat(30)),
   ];
   return { basisFiles, targetFiles };
@@ -2704,8 +3513,10 @@ runBundleUnpackBtn.addEventListener('click', async () => {
 });
 
 // =========================================================================
-// Tab 5: Security & Crypto Lab (Gzip Guard + Ed25519 + MLSENC01 AEAD)
+// Tab 5: Security & Crypto Lab (Gzip/Zlib Guard + Ed25519 + MLSENC01/02 + Quorum)
 // =========================================================================
+const labFmtGzipBtn = document.getElementById('labFmtGzip');
+const labFmtZlibBtn = document.getElementById('labFmtZlib');
 const runAllLabBtn = document.getElementById('runAllLab');
 const runBombBtn = document.getElementById('runBombBtn');
 const runTrailBtn = document.getElementById('runTrailBtn');
@@ -2719,16 +3530,42 @@ const labInputEl = document.getElementById('labInput');
 const runCustomGzipBtn = document.getElementById('runCustomGzip');
 const labCustomOut = document.getElementById('labCustomOut');
 
+function setLabFormat(fmt) {
+  labFormat = fmt;
+  labFmtGzipBtn.classList.toggle('active', fmt === 'gzip');
+  labFmtZlibBtn.classList.toggle('active', fmt === 'zlib');
+}
+labFmtGzipBtn.addEventListener('click', () => setLabFormat('gzip'));
+labFmtZlibBtn.addEventListener('click', () => setLabFormat('zlib'));
+
+async function labCompress(mod, raw, level) {
+  if (labFormat === 'zlib') {
+    return mod.compress_zlib_bytes(raw, 67108864, 67108864, level);
+  }
+  return mod.compress_gzip_bytes(raw, level);
+}
+
+async function labDecompressCheck(mod, compressed, cap) {
+  if (labFormat === 'zlib') {
+    const res = JSON.parse(await mod.decompress_zlib_check_json(compressed, 67108864, cap));
+    return res.ok
+      ? { ok: true, byte_length: String(res.output_bytes), sha256: res.output_sha256 }
+      : res;
+  }
+  return JSON.parse(await mod.decompress_gzip_check_json(compressed, cap));
+}
+
 async function runBombDrill() {
   try {
     const mod = await loadEngine();
     const raw = new Uint8Array(262144);
-    const gz = await mod.compress_gzip_bytes(raw, 6);
-    const res = JSON.parse(await mod.decompress_gzip_check_json(gz, 4096));
-    const ratio = (raw.length / gz.length).toFixed(0);
+    const label = labFormat === 'zlib' ? 'zlib' : 'gzip';
+    const comp = await labCompress(mod, raw, 6);
+    const res = await labDecompressCheck(mod, comp, 4096);
+    const ratio = (raw.length / comp.length).toFixed(0);
     labBombOut.className = 'lab-out ' + (!res.ok && res.error === 'LimitExceeded' ? 'blocked' : 'err');
     labBombOut.textContent = !res.ok
-      ? `✓ BLOCKED (${res.error}) — 256 KiB → ${gz.length} B bomb (${ratio}×) stopped at 4,096 B cap`
+      ? `✓ BLOCKED (${res.error}) [${label}] — 256 KiB → ${comp.length} B bomb (${ratio}×) stopped at 4,096 B cap`
       : `Unexpected pass: ${JSON.stringify(res)}`;
   } catch (err) {
     labBombOut.className = 'lab-out err';
@@ -2739,15 +3576,16 @@ async function runBombDrill() {
 async function runTrailingDrill() {
   try {
     const mod = await loadEngine();
+    const label = labFormat === 'zlib' ? 'zlib' : 'gzip';
     const sample = new TextEncoder().encode('moonlibsync-strict-framing-check');
-    const gz = await mod.compress_gzip_bytes(sample, 6);
-    const forged = new Uint8Array(gz.length + 1);
-    forged.set(gz, 0);
-    forged[gz.length] = 0x42;
-    const res = JSON.parse(await mod.decompress_gzip_check_json(forged, 65536));
+    const comp = await labCompress(mod, sample, 6);
+    const forged = new Uint8Array(comp.length + 1);
+    forged.set(comp, 0);
+    forged[comp.length] = 0x42;
+    const res = await labDecompressCheck(mod, forged, 65536);
     labTrailOut.className = 'lab-out ' + (!res.ok && res.error === 'TrailingData' ? 'blocked' : 'err');
     labTrailOut.textContent = !res.ok
-      ? `✓ BLOCKED (${res.error}) — ${gz.length} B valid frame + 1 rogue byte rejected`
+      ? `✓ BLOCKED (${res.error}) [${label}] — ${comp.length} B valid frame + 1 rogue byte rejected`
       : `Unexpected pass: ${JSON.stringify(res)}`;
   } catch (err) {
     labTrailOut.className = 'lab-out err';
@@ -2758,13 +3596,14 @@ async function runTrailingDrill() {
 async function runTruncatedDrill() {
   try {
     const mod = await loadEngine();
+    const label = labFormat === 'zlib' ? 'zlib' : 'gzip';
     const sample = new TextEncoder().encode('moonlibsync-strict-trailer-check');
-    const gz = await mod.compress_gzip_bytes(sample, 6);
-    const trunc = gz.subarray(0, gz.length - 1);
-    const res = JSON.parse(await mod.decompress_gzip_check_json(trunc, 65536));
+    const comp = await labCompress(mod, sample, 6);
+    const trunc = comp.subarray(0, comp.length - 1);
+    const res = await labDecompressCheck(mod, trunc, 65536);
     labTruncOut.className = 'lab-out ' + (!res.ok && res.error === 'TruncatedInput' ? 'blocked' : 'err');
     labTruncOut.textContent = !res.ok
-      ? `✓ BLOCKED (${res.error}) — ${trunc.length}/${gz.length} B truncated trailer rejected`
+      ? `✓ BLOCKED (${res.error}) [${label}] — ${trunc.length}/${comp.length} B truncated trailer rejected`
       : `Unexpected pass: ${JSON.stringify(res)}`;
   } catch (err) {
     labTruncOut.className = 'lab-out err';
@@ -2775,20 +3614,21 @@ async function runTruncatedDrill() {
 async function runCustomGzipDrill() {
   try {
     const mod = await loadEngine();
+    const label = labFormat === 'zlib' ? 'zlib' : 'gzip';
     const raw = new TextEncoder().encode(labInputEl.value || '');
     const level = Number(labLevelEl.value);
     const cap = Math.max(0, Number(labMaxOutEl.value) || 0);
-    const gz = await mod.compress_gzip_bytes(raw, level);
-    const check = JSON.parse(await mod.decompress_gzip_check_json(gz, cap));
+    const comp = await labCompress(mod, raw, level);
+    const check = await labDecompressCheck(mod, comp, cap);
     if (check.ok) {
-      const pct = raw.length > 0 ? ((gz.length / raw.length) * 100).toFixed(1) : '100.0';
+      const pct = raw.length > 0 ? ((comp.length / raw.length) * 100).toFixed(1) : '100.0';
       labCustomOut.className = 'lab-out blocked';
       labCustomOut.textContent =
-        `✓ OK — raw=${raw.length} B → gzip=${gz.length} B (${pct}%, level=${level}) · decompressed=${check.byte_length} B · sha256=${check.sha256.slice(0, 16)}... · hex=${toHexPreview(gz, 14)}`;
+        `✓ OK [${label}] — raw=${raw.length} B → ${label}=${comp.length} B (${pct}%, level=${level}) · decompressed=${check.byte_length} B · sha256=${check.sha256.slice(0, 16)}... · hex=${toHexPreview(comp, 14)}`;
     } else {
       labCustomOut.className = 'lab-out blocked';
       labCustomOut.textContent =
-        `✓ GUARD TRIGGERED (${check.error}) — raw=${raw.length} B, gzip=${gz.length} B, max_output cap=${cap} B`;
+        `✓ GUARD TRIGGERED (${check.error}) [${label}] — raw=${raw.length} B, ${label}=${comp.length} B, max_output cap=${cap} B`;
     }
   } catch (err) {
     labCustomOut.className = 'lab-out err';
@@ -3010,7 +3850,7 @@ aeadModeSelect.addEventListener('change', () => {
   if (aeadModeSelect.value === 'raw-key' && !/^[0-9a-fA-F]{64}$/.test(aeadSecretInput.value.trim())) {
     aeadSecretInput.value = generateRandomRawKeyHex();
   } else if (aeadModeSelect.value === 'argon2id' && /^[0-9a-fA-F]{64}$/.test(aeadSecretInput.value.trim())) {
-    aeadSecretInput.value = 'moonlibsync-060-browser-passphrase';
+    aeadSecretInput.value = 'moonlibsync-070-browser-passphrase';
   }
 });
 
@@ -3106,6 +3946,343 @@ aeadTamperBtn.addEventListener('click', async () => {
   } catch (err) {
     aeadOut.className = 'lab-out err';
     aeadOut.textContent = `✕ Tamper test error: ${errMessage(err)}`;
+  }
+});
+
+// --- Card 4: X25519 Multi-Recipient Envelope Lab (MLSENC02) ---
+const envGenKeysBtn = document.getElementById('envGenKeysBtn');
+const envSealBtn = document.getElementById('envSealBtn');
+const envDlBtn = document.getElementById('envDlBtn');
+const envAliceMeta = document.getElementById('envAliceMeta');
+const envBobMeta = document.getElementById('envBobMeta');
+const envMalloryMeta = document.getElementById('envMalloryMeta');
+const envPlainInput = document.getElementById('envPlainInput');
+const envUnsealAliceBtn = document.getElementById('envUnsealAliceBtn');
+const envUnsealBobBtn = document.getElementById('envUnsealBobBtn');
+const envUnsealMalloryBtn = document.getElementById('envUnsealMalloryBtn');
+const envTamperBtn = document.getElementById('envTamperBtn');
+const envOut = document.getElementById('envOut');
+const envMetaPreview = document.getElementById('envMetaPreview');
+
+function randomHexBytes(len) {
+  const buf = new Uint8Array(len);
+  crypto.getRandomValues(buf);
+  return bytesToHex(buf);
+}
+
+async function ensureEnvKeys(forceNew = false) {
+  if (envState?.alice && !forceNew) return envState;
+  const mod = await loadEngine();
+  const [alice, bob, mallory] = await Promise.all([
+    mod.x25519_keypair_from_secret_json(randomHexBytes(32)).then(JSON.parse),
+    mod.x25519_keypair_from_secret_json(randomHexBytes(32)).then(JSON.parse),
+    mod.x25519_keypair_from_secret_json(randomHexBytes(32)).then(JSON.parse),
+  ]);
+  if (!alice.ok || !bob.ok || !mallory.ok) {
+    throw new Error(alice.error || bob.error || mallory.error || 'X25519 keygen failed');
+  }
+  envState = { alice, bob, mallory, cipherBytes: null, sealRes: null };
+  envAliceMeta.textContent = `key_id: ${alice.key_id}\npub: ${alice.public_key_hex.slice(0, 24)}…`;
+  envBobMeta.textContent = `key_id: ${bob.key_id}\npub: ${bob.public_key_hex.slice(0, 24)}…`;
+  envMalloryMeta.textContent = `key_id: ${mallory.key_id}\npub: ${mallory.public_key_hex.slice(0, 24)}…`;
+  envDlBtn.disabled = true;
+  envMetaPreview.hidden = true;
+  return envState;
+}
+
+async function runEnvSeal() {
+  try {
+    const state = await ensureEnvKeys(false);
+    const mod = await loadEngine();
+    const plainBytes = new TextEncoder().encode(envPlainInput.value || '');
+    const t0 = performance.now();
+    const res = JSON.parse(
+      await mod.seal_envelope_json(
+        plainBytes,
+        JSON.stringify([state.alice.public_key_hex, state.bob.public_key_hex]),
+        randomHexBytes(32),
+        randomHexBytes(32),
+        randomHexBytes(4),
+        65536,
+      ),
+    );
+    const elapsed = performance.now() - t0;
+    if (!res.ok) {
+      envOut.className = 'lab-out err';
+      envOut.textContent = `✕ Envelope seal failed: ${res.error}`;
+      return null;
+    }
+    state.cipherBytes = hexToBytes(res.ciphertext_hex);
+    state.sealRes = res;
+    envDlBtn.disabled = false;
+    envOut.className = 'lab-out blocked';
+    envOut.textContent = `✓ Sealed MLSENC02 for ${res.recipient_count} recipients (Alice + Bob · ${elapsed.toFixed(1)} ms) — plain=${plainBytes.length} B → cipher=${res.ciphertext_bytes} B · sha256=${res.ciphertext_sha256.slice(0, 16)}...`;
+    envMetaPreview.textContent = JSON.stringify(
+      {
+        magic: 'MLSENC02',
+        recipient_count: res.recipient_count,
+        recipient_key_ids: res.recipient_key_ids,
+        ephemeral_public_key_hex: res.ephemeral_public_key_hex,
+        chunk_size: res.chunk_size,
+        ciphertext_bytes: res.ciphertext_bytes,
+      },
+      null,
+      2,
+    );
+    envMetaPreview.hidden = false;
+    return state;
+  } catch (err) {
+    envOut.className = 'lab-out err';
+    envOut.textContent = `✕ Envelope seal error: ${errMessage(err)}`;
+    return null;
+  }
+}
+
+envGenKeysBtn.addEventListener('click', async () => {
+  try {
+    const st = await ensureEnvKeys(true);
+    envOut.className = 'lab-out blocked';
+    envOut.textContent = `✓ Generated fresh X25519 keys — Alice=${st.alice.key_id}, Bob=${st.bob.key_id}, Mallory=${st.mallory.key_id}`;
+  } catch (err) {
+    envOut.className = 'lab-out err';
+    envOut.textContent = `✕ X25519 keygen error: ${errMessage(err)}`;
+  }
+});
+
+envSealBtn.addEventListener('click', runEnvSeal);
+
+envDlBtn.addEventListener('click', () => {
+  if (envState?.cipherBytes?.length) {
+    downloadBlob(envState.cipherBytes, 'multi-recipient.menv', 'application/octet-stream');
+  }
+});
+
+async function runEnvUnsealAs(who, expectReject = false) {
+  try {
+    const state = envState?.cipherBytes?.length ? envState : await runEnvSeal();
+    if (!state) return;
+    const party = state[who];
+    const mod = await loadEngine();
+    const t0 = performance.now();
+    const res = JSON.parse(await mod.unseal_envelope_json(state.cipherBytes, party.secret_key_hex));
+    const elapsed = performance.now() - t0;
+    const label = who.charAt(0).toUpperCase() + who.slice(1);
+    if (res.ok) {
+      const text = new TextDecoder().decode(hexToBytes(res.plaintext_hex));
+      const snippet = text.length > 72 ? text.slice(0, 72) + '…' : text;
+      envOut.className = 'lab-out ' + (expectReject ? 'err' : 'blocked');
+      envOut.textContent = `✓ Decrypted as ${label} (key_id=${party.key_id} · ${elapsed.toFixed(1)} ms) — ${res.plaintext_bytes} B · sha256=${res.plaintext_sha256.slice(0, 16)}... · "${snippet}"`;
+    } else {
+      envOut.className = 'lab-out ' + (expectReject && res.error === 'AuthenticationFailed' ? 'blocked' : 'err');
+      envOut.textContent = expectReject
+        ? `✕ ${res.error} — ${label} (key_id=${party.key_id}) is NOT a recipient and was rejected as expected!`
+        : `✕ Unseal as ${label} failed: ${res.error}`;
+    }
+  } catch (err) {
+    envOut.className = 'lab-out err';
+    envOut.textContent = `✕ Unseal error: ${errMessage(err)}`;
+  }
+}
+
+envUnsealAliceBtn.addEventListener('click', () => runEnvUnsealAs('alice', false));
+envUnsealBobBtn.addEventListener('click', () => runEnvUnsealAs('bob', false));
+envUnsealMalloryBtn.addEventListener('click', () => runEnvUnsealAs('mallory', true));
+
+envTamperBtn.addEventListener('click', async () => {
+  try {
+    const state = envState?.cipherBytes?.length ? envState : await runEnvSeal();
+    if (!state) return;
+    const mod = await loadEngine();
+    const tampered = new Uint8Array(state.cipherBytes.length);
+    tampered.set(state.cipherBytes);
+    tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff;
+    const res = JSON.parse(await mod.unseal_envelope_json(tampered, state.alice.secret_key_hex));
+    envOut.className = 'lab-out ' + (!res.ok && res.error === 'AuthenticationFailed' ? 'blocked' : 'err');
+    envOut.textContent = !res.ok
+      ? `✕ ${res.error} — 1-byte MLSENC02 ciphertext / Poly1305 tamper rejected even for authorized Alice!`
+      : `Unexpected pass: ${JSON.stringify(res)}`;
+  } catch (err) {
+    envOut.className = 'lab-out err';
+    envOut.textContent = `✕ Tamper test error: ${errMessage(err)}`;
+  }
+});
+
+// --- Card 5: Ed25519 Trust Keyring & 2-of-3 Threshold Quorum Lab ---
+const quorumMinSelect = document.getElementById('quorumMinSelect');
+const quorumGenBtn = document.getElementById('quorumGenBtn');
+const quorumPayloadInput = document.getElementById('quorumPayloadInput');
+const quorumVerifyBtn = document.getElementById('quorumVerifyBtn');
+const quorumTamperBtn = document.getElementById('quorumTamperBtn');
+const quorumDlKeyringBtn = document.getElementById('quorumDlKeyringBtn');
+const quorumDlBundleBtn = document.getElementById('quorumDlBundleBtn');
+const quorumOut = document.getElementById('quorumOut');
+const quorumDetails = document.getElementById('quorumDetails');
+const quorumJsonPreview = document.getElementById('quorumJsonPreview');
+
+const quorumSignerEls = [0, 1, 2].map((idx) => ({
+  card: document.getElementById(`quorumCard${idx}`),
+  badge: document.getElementById(`quorumBadge${idx}`),
+  meta: document.getElementById(`quorumKeyMeta${idx}`),
+  signChk: document.getElementById(`quorumSign${idx}`),
+  revokeChk: document.getElementById(`quorumRevoke${idx}`),
+}));
+
+function updateQuorumBadges() {
+  quorumSignerEls.forEach((el) => {
+    const revoked = !!el.revokeChk.checked;
+    const signed = !!el.signChk.checked;
+    el.card.classList.toggle('revoked', revoked);
+    if (revoked) {
+      el.badge.className = 'badge badge-delete';
+      el.badge.textContent = t('quorumStateRevoked');
+    } else if (signed) {
+      el.badge.className = 'badge badge-add';
+      el.badge.textContent = t('quorumStateActive');
+    } else {
+      el.badge.className = 'badge badge-unchanged';
+      el.badge.textContent = t('quorumStateUnsigned');
+    }
+  });
+}
+
+async function ensureQuorumSigners(forceNew = false) {
+  if (quorumState?.signers?.length === 3 && !forceNew) return quorumState;
+  const mod = await loadEngine();
+  const names = ['Alice', 'Bob', 'Carol'];
+  const signers = [];
+  for (let i = 0; i < 3; i++) {
+    const seed = new Uint8Array(32);
+    crypto.getRandomValues(seed);
+    const kp = JSON.parse(await mod.ed25519_keypair_from_seed_json(seed));
+    if (!kp.ok) throw new Error(kp.error || 'Ed25519 keygen failed');
+    signers.push({ name: names[i], seed, kp });
+    quorumSignerEls[i].meta.textContent = `key_id: ${kp.key_id}\npub: ${kp.public_key_hex.slice(0, 22)}…`;
+  }
+  quorumState = { signers, lastKeyringJson: null, lastBundleJson: null };
+  updateQuorumBadges();
+  return quorumState;
+}
+
+async function runQuorumEvaluation(tamperPayload = false) {
+  try {
+    const state = await ensureQuorumSigners(false);
+    updateQuorumBadges();
+    const mod = await loadEngine();
+    const minQuorum = Number(quorumMinSelect.value) || 2;
+    const trustedKeys = state.signers.map((s) => s.kp.public_key_hex);
+    const revokedIds = state.signers
+      .filter((_, idx) => quorumSignerEls[idx].revokeChk.checked)
+      .map((s) => s.kp.key_id);
+
+    const krRes = JSON.parse(
+      await mod.create_trust_keyring_json(
+        JSON.stringify(trustedKeys),
+        JSON.stringify(revokedIds),
+        minQuorum,
+      ),
+    );
+    if (!krRes.ok) {
+      state.lastKeyringJson = null;
+      state.lastBundleJson = null;
+      quorumDetails.hidden = true;
+      quorumOut.className = 'lab-out err';
+      quorumOut.textContent = `✕ Keyring policy rejected (${krRes.error}) — active keys (${3 - revokedIds.length}) < min_quorum (${minQuorum})`;
+      quorumDlKeyringBtn.disabled = true;
+      quorumDlBundleBtn.disabled = true;
+      return;
+    }
+    state.lastKeyringJson = krRes.keyring_json;
+    quorumDlKeyringBtn.disabled = false;
+
+    const payloadBytes = new TextEncoder().encode(quorumPayloadInput.value || '');
+    const selectedSigners = state.signers.filter((_, idx) => quorumSignerEls[idx].signChk.checked);
+    if (selectedSigners.length === 0) {
+      state.lastBundleJson = null;
+      quorumDetails.hidden = true;
+      quorumOut.className = 'lab-out err';
+      quorumOut.textContent = '✕ Select at least 1 signer checkbox to assemble signatures.';
+      quorumDlBundleBtn.disabled = true;
+      return;
+    }
+
+    const sigJsons = [];
+    for (const signer of selectedSigners) {
+      const signed = JSON.parse(await mod.ed25519_sign_bytes_json(signer.seed, payloadBytes));
+      if (!signed.ok) throw new Error(signed.error || 'Sign failed');
+      sigJsons.push(signed.signature_json);
+    }
+
+    let verifyBytes = payloadBytes;
+    if (tamperPayload) {
+      verifyBytes = new Uint8Array(payloadBytes.length || 1);
+      verifyBytes.set(payloadBytes);
+      verifyBytes[0] = (verifyBytes[0] ^ 0x01) & 0xff;
+    }
+
+    const t0 = performance.now();
+    const qRes = JSON.parse(
+      await mod.verify_quorum_bytes_json(JSON.stringify(sigJsons), krRes.keyring_json, verifyBytes),
+    );
+    const elapsed = performance.now() - t0;
+
+    if (qRes.ok) {
+      state.lastBundleJson = qRes.bundle_json;
+      quorumDlBundleBtn.disabled = false;
+      quorumOut.className = 'lab-out blocked';
+      const revNote = qRes.revoked_hits.length ? ` · revoked_hits=[${qRes.revoked_hits.join(', ')}]` : '';
+      quorumOut.textContent = `✓ QUORUM VERIFIED (${qRes.verified_key_ids.length}/${qRes.required_quorum} required · ${elapsed.toFixed(1)} ms) — verified=[${qRes.verified_key_ids.join(', ')}]${revNote}`;
+      quorumJsonPreview.textContent =
+        `// TrustKeyring (Schema 4)\n${krRes.keyring_json.trim()}\n\n// SignatureBundle (Schema 4)\n${qRes.bundle_json.trim()}`;
+      quorumDetails.hidden = false;
+    } else {
+      state.lastBundleJson = null;
+      quorumDlBundleBtn.disabled = true;
+      const expectedTamper = tamperPayload && String(qRes.error).startsWith('DigestMismatch');
+      quorumOut.className = 'lab-out ' + (expectedTamper ? 'blocked' : 'err');
+      quorumOut.textContent = tamperPayload
+        ? `✕ ${qRes.error} — 1-byte payload tamper rejected by quorum verifier!`
+        : `✕ QUORUM FAILED (${qRes.error} · ${elapsed.toFixed(1)} ms) — signed=${selectedSigners.length}, revoked=${revokedIds.length}, required=${minQuorum}`;
+      quorumJsonPreview.textContent = `// TrustKeyring (Schema 4)\n${krRes.keyring_json.trim()}`;
+      quorumDetails.hidden = false;
+    }
+  } catch (err) {
+    quorumOut.className = 'lab-out err';
+    quorumOut.textContent = `✕ Quorum error: ${errMessage(err)}`;
+  }
+}
+
+quorumGenBtn.addEventListener('click', async () => {
+  try {
+    await ensureQuorumSigners(true);
+    await runQuorumEvaluation(false);
+  } catch (err) {
+    quorumOut.className = 'lab-out err';
+    quorumOut.textContent = `✕ Quorum error: ${errMessage(err)}`;
+  }
+});
+quorumVerifyBtn.addEventListener('click', () => runQuorumEvaluation(false));
+quorumTamperBtn.addEventListener('click', () => runQuorumEvaluation(true));
+quorumMinSelect.addEventListener('change', () => {
+  if (quorumState) runQuorumEvaluation(false);
+});
+quorumSignerEls.forEach((el) => {
+  el.signChk.addEventListener('change', () => {
+    updateQuorumBadges();
+    if (quorumState) runQuorumEvaluation(false);
+  });
+  el.revokeChk.addEventListener('change', () => {
+    updateQuorumBadges();
+    if (quorumState) runQuorumEvaluation(false);
+  });
+});
+quorumDlKeyringBtn.addEventListener('click', () => {
+  if (quorumState?.lastKeyringJson) {
+    downloadBlob(quorumState.lastKeyringJson, 'trust-keyring.json', 'application/json');
+  }
+});
+quorumDlBundleBtn.addEventListener('click', () => {
+  if (quorumState?.lastBundleJson) {
+    downloadBlob(quorumState.lastBundleJson, 'quorum-bundle.msig.json', 'application/json');
   }
 });
 

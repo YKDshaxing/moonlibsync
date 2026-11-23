@@ -6,13 +6,35 @@ import {
 }
 
 // Values
+pub fn compress_deflate(BytesView, Int64, Int64, level? : Int32) -> Bytes raise @moonlibsync.SyncError
+
 pub fn compress_gzip(BytesView, Int64, Int64, level? : Int32) -> Bytes raise @moonlibsync.SyncError
 
+pub fn compress_zlib(BytesView, Int64, Int64, level? : Int32) -> Bytes raise @moonlibsync.SyncError
+
+pub fn decompress_deflate(BytesView, Int64, Int64) -> Bytes raise @moonlibsync.SyncError
+
 pub fn decompress_gzip(BytesView, Int64, Int64) -> Bytes raise @moonlibsync.SyncError
+
+pub fn decompress_zlib(BytesView, Int64, Int64) -> Bytes raise @moonlibsync.SyncError
 
 // Errors
 
 // Types and methods
+pub struct DeflateDecoder {
+  // private fields
+}
+pub fn DeflateDecoder::finish(Self) -> GzipSummary raise @moonlibsync.SyncError
+pub fn DeflateDecoder::new(Int64, Int64) -> Self raise @moonlibsync.SyncError
+pub fn DeflateDecoder::step(Self, BytesView, FixedArray[Byte]) -> GzipStep raise @moonlibsync.SyncError
+
+pub struct DeflateEncoder {
+  // private fields
+}
+pub fn DeflateEncoder::new(Int64, Int64, level? : Int32) -> Self raise @moonlibsync.SyncError
+pub fn DeflateEncoder::step(Self, BytesView, FixedArray[Byte], finish? : Bool) -> GzipStep raise @moonlibsync.SyncError
+pub fn DeflateEncoder::summary(Self) -> GzipSummary raise @moonlibsync.SyncError
+
 pub struct GzipDecoder {
   // private fields
 }
@@ -43,6 +65,20 @@ pub(all) struct GzipSummary {
   input_bytes : Int64
   output_bytes : Int64
 }
+
+pub struct ZlibDecoder {
+  // private fields
+}
+pub fn ZlibDecoder::finish(Self) -> GzipSummary raise @moonlibsync.SyncError
+pub fn ZlibDecoder::new(Int64, Int64) -> Self raise @moonlibsync.SyncError
+pub fn ZlibDecoder::step(Self, BytesView, FixedArray[Byte]) -> GzipStep raise @moonlibsync.SyncError
+
+pub struct ZlibEncoder {
+  // private fields
+}
+pub fn ZlibEncoder::new(Int64, Int64, level? : Int32) -> Self raise @moonlibsync.SyncError
+pub fn ZlibEncoder::step(Self, BytesView, FixedArray[Byte], finish? : Bool) -> GzipStep raise @moonlibsync.SyncError
+pub fn ZlibEncoder::summary(Self) -> GzipSummary raise @moonlibsync.SyncError
 
 // Type aliases
 

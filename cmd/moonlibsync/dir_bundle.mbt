@@ -303,28 +303,59 @@ async fn execute_dir_signatures(plan : Plan, sig_dir : String) -> Unit {
   publish_dir("dir-signatures", sig_dir, staging => {
     let sigs_dir = @path.Path(staging).join(@path.Path("sigs")).to_string()
     @fs.mkdir(sigs_dir, permission=0o700, recursive=false, allow_existing=false)
-    let entries : Array[@lib.DirSignatureEntry] = Array(
-      capacity=snapshot.entries.length(),
-    )
-    for i in 0..<snapshot.entries.length() {
-      let item = snapshot.entries[i]
-      let src_path = resolve_safe_regular_under(root_dir, item.path)
-      let sig_rel = "sigs/" + zero_pad6(i) + ".sig"
-      let sig_dst = join_rel_posix(staging, sig_rel)
-      let sig_digest = write_single_dir_signature(
-        plan,
-        src_path,
-        sig_dst,
-        item.digest,
-        limits,
-        progress~,
+    let entries : Array[@lib.DirSignatureEntry] = if plan.jobs <= 1 ||
+      snapshot.entries.length() <= 1 {
+      let arr : Array[@lib.DirSignatureEntry] = Array(
+        capacity=snapshot.entries.length(),
       )
-      entries.push({
-        path: item.path,
-        basis: item.digest,
-        signature_path: sig_rel,
-        signature: sig_digest,
-      })
+      for i in 0..<snapshot.entries.length() {
+        let item = snapshot.entries[i]
+        let src_path = resolve_safe_regular_under(root_dir, item.path)
+        let sig_rel = "sigs/" + zero_pad6(i) + ".sig"
+        let sig_dst = join_rel_posix(staging, sig_rel)
+        let sig_digest = write_single_dir_signature(
+          plan,
+          src_path,
+          sig_dst,
+          item.digest,
+          limits,
+          progress~,
+        )
+        arr.push({
+          path: item.path,
+          basis: item.digest,
+          signature_path: sig_rel,
+          signature: sig_digest,
+        })
+      }
+      arr
+    } else {
+      let tasks : Array[async () -> @lib.DirSignatureEntry] = Array(
+        capacity=snapshot.entries.length(),
+      )
+      for i in 0..<snapshot.entries.length() {
+        let item = snapshot.entries[i]
+        let sig_rel = "sigs/" + zero_pad6(i) + ".sig"
+        let sig_dst = join_rel_posix(staging, sig_rel)
+        tasks.push(async fn() {
+          let src_path = resolve_safe_regular_under(root_dir, item.path)
+          let sig_digest = write_single_dir_signature(
+            plan,
+            src_path,
+            sig_dst,
+            item.digest,
+            limits,
+            progress~,
+          )
+          {
+            path: item.path,
+            basis: item.digest,
+            signature_path: sig_rel,
+            signature: sig_digest,
+          }
+        })
+      }
+      @async.all(tasks, max_concurrency=plan.jobs)
     }
     let index = @lib.create_dir_signature_index(entries, dir_limits, limits)
     let encoded = @lib.encode_dir_signature_index(index, dir_limits, limits)
@@ -727,6 +758,26 @@ async fn pack_moved_update_or_add(
 }
 
 ///|
+priv enum PackActionTask {
+  StaticEntry(@lib.DirBundleEntry)
+  PackAddFull(String, @lib.FileDigest, Int32)
+  PackMovedUpdate(
+    String,
+    String,
+    @lib.FileDigest,
+    @lib.DirSignatureEntry,
+    Int32,
+  )
+  PackUpdate(
+    String,
+    @lib.FileDigest,
+    @lib.FileDigest,
+    @lib.DirSignatureEntry,
+    Int32,
+  )
+}
+
+///|
 async fn build_staged_bundle(
   plan : Plan,
   staging : String,
@@ -766,7 +817,7 @@ async fn build_staged_bundle(
       }
     }
   }
-  let bundle_entries : Array[@lib.DirBundleEntry] = Array(
+  let work_items : Array[PackActionTask] = Array(
     capacity=sync_plan.actions.length(),
   )
   let mut payload_idx = 0
@@ -776,28 +827,28 @@ async fn build_staged_bundle(
         guard act.basis is Some(b) else {
           raise @lib.ManifestError::InvalidField("action")
         }
-        bundle_entries.push({ path: act.path, action: Unchanged(b), })
+        work_items.push(StaticEntry({ path: act.path, action: Unchanged(b), }))
       }
       Delete => {
         guard act.basis is Some(b) else {
           raise @lib.ManifestError::InvalidField("action")
         }
-        bundle_entries.push({ path: act.path, action: Delete(b), })
+        work_items.push(StaticEntry({ path: act.path, action: Delete(b), }))
       }
       CopyFromBasis(src_path) => {
         guard act.target is Some(t) else {
           raise @lib.ManifestError::InvalidField("action")
         }
-        bundle_entries.push({
-          path: act.path,
-          action: CopyFromBasis(src_path, t),
-        })
+        work_items.push(
+          StaticEntry({ path: act.path, action: CopyFromBasis(src_path, t), }),
+        )
       }
       AddFull => {
         guard act.target is Some(t) else {
           raise @lib.ManifestError::InvalidField("action")
         }
-        let target_src = resolve_safe_regular_under(target_dir, act.path)
+        let assigned_idx = payload_idx
+        payload_idx = payload_idx + 1
         let candidate_src : String? = if plan.detect_moves {
           match deleted_by_basename.get(posix_basename(act.path)) {
             Some(matches) if matches.length() > 0 => Some(matches[0])
@@ -818,56 +869,19 @@ async fn build_staged_bundle(
                 (
                   sig_entry.basis.byte_length != t.byte_length ||
                   sig_entry.basis.sha256 != t.sha256
-                ) => {
-                let action = pack_moved_update_or_add(
-                  plan,
-                  sig_dir,
-                  src_path,
-                  target_src,
-                  staging,
-                  payload_idx,
-                  t,
-                  sig_entry,
-                  progress~,
+                ) =>
+                work_items.push(
+                  PackMovedUpdate(
+                    act.path,
+                    src_path,
+                    t,
+                    sig_entry,
+                    assigned_idx,
+                  ),
                 )
-                payload_idx = payload_idx + 1
-                bundle_entries.push({ path: act.path, action, })
-              }
-              _ => {
-                let payload_rel = "payloads/" + zero_pad6(payload_idx) + ".full"
-                payload_idx = payload_idx + 1
-                let dst = join_rel_posix(staging, payload_rel)
-                stream_copy_verified_file(
-                  target_src,
-                  dst,
-                  t,
-                  max_new,
-                  "target",
-                  progress~,
-                )
-                bundle_entries.push({
-                  path: act.path,
-                  action: AddFull(payload_rel, t),
-                })
-              }
+              _ => work_items.push(PackAddFull(act.path, t, assigned_idx))
             }
-          None => {
-            let payload_rel = "payloads/" + zero_pad6(payload_idx) + ".full"
-            payload_idx = payload_idx + 1
-            let dst = join_rel_posix(staging, payload_rel)
-            stream_copy_verified_file(
-              target_src,
-              dst,
-              t,
-              max_new,
-              "target",
-              progress~,
-            )
-            bundle_entries.push({
-              path: act.path,
-              action: AddFull(payload_rel, t),
-            })
-          }
+          None => work_items.push(PackAddFull(act.path, t, assigned_idx))
         }
       }
       UpdateCandidate => {
@@ -878,22 +892,76 @@ async fn build_staged_bundle(
           Some(se) => se
           None => raise @lib.ManifestError::BindingMismatch("signature_index")
         }
-        let target_src = resolve_safe_regular_under(target_dir, act.path)
+        let assigned_idx = payload_idx
+        payload_idx = payload_idx + 1
+        work_items.push(PackUpdate(act.path, b, t, sig_entry, assigned_idx))
+      }
+    }
+  }
+  async fn run_pack_item(item : PackActionTask) -> @lib.DirBundleEntry {
+    match item {
+      StaticEntry(e) => e
+      PackAddFull(path, t, assigned_idx) => {
+        let target_src = resolve_safe_regular_under(target_dir, path)
+        let payload_rel = "payloads/" + zero_pad6(assigned_idx) + ".full"
+        let dst = join_rel_posix(staging, payload_rel)
+        stream_copy_verified_file(
+          target_src,
+          dst,
+          t,
+          max_new,
+          "target",
+          progress~,
+        )
+        { path, action: AddFull(payload_rel, t), }
+      }
+      PackMovedUpdate(path, src_path, t, sig_entry, assigned_idx) => {
+        let target_src = resolve_safe_regular_under(target_dir, path)
+        let action = pack_moved_update_or_add(
+          plan,
+          sig_dir,
+          src_path,
+          target_src,
+          staging,
+          assigned_idx,
+          t,
+          sig_entry,
+          progress~,
+        )
+        { path, action, }
+      }
+      PackUpdate(path, b, t, sig_entry, assigned_idx) => {
+        let target_src = resolve_safe_regular_under(target_dir, path)
         let action = pack_update_candidate(
           plan,
           sig_dir,
           target_src,
           staging,
-          payload_idx,
+          assigned_idx,
           b,
           t,
           sig_entry,
           progress~,
         )
-        payload_idx = payload_idx + 1
-        bundle_entries.push({ path: act.path, action, })
+        { path, action, }
       }
     }
+  }
+  let bundle_entries : Array[@lib.DirBundleEntry] = if plan.jobs <= 1 ||
+    work_items.length() <= 1 {
+    let arr : Array[@lib.DirBundleEntry] = Array(capacity=work_items.length())
+    for item in work_items {
+      arr.push(run_pack_item(item))
+    }
+    arr
+  } else {
+    let tasks : Array[async () -> @lib.DirBundleEntry] = Array(
+      capacity=work_items.length(),
+    )
+    for item in work_items {
+      tasks.push(async fn() { run_pack_item(item) })
+    }
+    @async.all(tasks, max_concurrency=plan.jobs)
   }
   @lib.create_dir_bundle_manifest(bundle_entries, dir_limits, limits)
 }
@@ -1061,6 +1129,7 @@ async fn execute_dir_pack(plan : Plan, bundle_out : String) -> Unit {
     target_entries,
     excludes=effective_excludes,
     progress~,
+    jobs=plan.jobs,
   )
   let target_snap = @lib.create_dir_snapshot(target_entries, dir_limits)
   let sync_plan = @lib.plan_dir_sync_with_options(
@@ -1917,6 +1986,109 @@ async fn publish_dir_apply_tx(
 }
 
 ///|
+fn validate_dir_metadata_against_manifest(
+  manifest : @lib.DirBundleManifest,
+  meta : @lib.DirMetadata,
+) -> Unit raise CliError {
+  let active_files : Map[String, String] = Map([])
+  let active_anc_dirs : Map[String, String] = Map([])
+  for entry in manifest.entries {
+    match entry.action {
+      Delete(_) => ()
+      _ => {
+        let lower = dir_ascii_lower(entry.path)
+        active_files[lower] = entry.path
+        let segs = split_posix_segments(entry.path)
+        let prefix = StringBuilder()
+        for i in 0..<(segs.length() - 1) {
+          if i > 0 {
+            prefix.write_char('/')
+          }
+          prefix.write_string(segs[i])
+          let anc = prefix.to_string()
+          active_anc_dirs[dir_ascii_lower(anc)] = anc
+        }
+      }
+    }
+  }
+  for exec_path in meta.executable_paths {
+    match active_files.get(dir_ascii_lower(exec_path)) {
+      Some(actual) =>
+        if actual != exec_path {
+          raise FileFailure("metadata path_collision: " + exec_path)
+        }
+      None =>
+        raise FileFailure(
+          "metadata executable_path absent from applied bundle: " + exec_path,
+        )
+    }
+  }
+  for empty_dir in meta.empty_dirs {
+    let segs = split_posix_segments(empty_dir)
+    let prefix = StringBuilder()
+    for i in 0..<segs.length() {
+      if i > 0 {
+        prefix.write_char('/')
+      }
+      prefix.write_string(segs[i])
+      let anc = prefix.to_string()
+      let anc_lower = dir_ascii_lower(anc)
+      guard !active_files.contains(anc_lower) else {
+        raise FileFailure("metadata empty_dir collides with file: " + empty_dir)
+      }
+      match active_anc_dirs.get(anc_lower) {
+        Some(actual_dir) => {
+          guard actual_dir == anc else {
+            raise FileFailure("metadata path_collision: " + empty_dir)
+          }
+          if i == segs.length() - 1 {
+            raise FileFailure(
+              "metadata empty_dir is non-empty directory: " + empty_dir,
+            )
+          }
+        }
+        None => ()
+      }
+    }
+  }
+}
+
+///|
+async fn apply_dir_metadata_staged(
+  staging : String,
+  manifest : @lib.DirBundleManifest,
+  meta : @lib.DirMetadata,
+) -> Unit {
+  validate_dir_metadata_against_manifest(manifest, meta)
+  for empty_dir in meta.empty_dirs {
+    let segs = split_posix_segments(empty_dir)
+    let mut cur = @path.Path(staging)
+    for seg in segs {
+      guard seg.length() > 0 && seg != "." && seg != ".." else {
+        raise @lib.ManifestError::InvalidField("path")
+      }
+      cur = cur.join(@path.Path(seg))
+      let cur_str = cur.to_string()
+      @fs.mkdir(cur_str, permission=0o700, recursive=false, allow_existing=true)
+      guard @fs.kind(cur_str, follow_symlink=false) is @fs.FileKind::Directory else {
+        raise FileFailure("metadata empty_dir collides with file: " + empty_dir)
+      }
+    }
+  }
+  for exec_path in meta.executable_paths {
+    let target_file = resolve_safe_regular_under(staging, exec_path)
+    if @path.sep == '/' {
+      guard @fs.kind(target_file, follow_symlink=false) is @fs.FileKind::Regular else {
+        raise FileFailure(
+          "unsupported directory entry kind or symlink: " + target_file,
+        )
+      }
+      @fs.chmod(target_file, 0o700)
+    }
+  }
+}
+
+///|
 async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
   let limits = plan.limits
   let dir_limits = plan.dir_limits
@@ -1928,6 +2100,13 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
     raise FileFailure(
       "unsupported input kind or symlink directory: " + basis_dir,
     )
+  }
+  let meta_opt : @lib.DirMetadata? = match plan.meta_file {
+    Some(meta_path) => {
+      let meta_bytes = bounded_read(meta_path, dir_limits.max_snapshot_bytes)
+      Some(@lib.parse_dir_metadata(meta_bytes, dir_limits))
+    }
+    None => None
   }
   let rb_final_opt : String? = match plan.save_rollback {
     Some(rb_path) => Some(prepare_output(rb_path))
@@ -1962,6 +2141,10 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
         apply_bundle_entries(
           plan, basis_dir, unpack_dir, staging, manifest, progress,
         )
+        match meta_opt {
+          Some(meta) => apply_dir_metadata_staged(staging, manifest, meta)
+          None => ()
+        }
         @fs.remove(unpack_dir, recursive=true, allow_missing=true)
         manifest
       } catch {
@@ -2012,6 +2195,10 @@ async fn execute_dir_apply(plan : Plan, out_dir : String) -> Unit {
       apply_bundle_entries(
         plan, basis_dir, bundle_input, staging, bundle, progress,
       )
+      match meta_opt {
+        Some(meta) => apply_dir_metadata_staged(staging, bundle, meta)
+        None => ()
+      }
       bundle
     })
     finish_progress(progress)

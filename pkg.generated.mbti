@@ -1,7 +1,13 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "YKDshaxing/moonlibsync"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
+pub fn apply_range_fetch(Bytes, RangeFetchPlan, Array[Bytes], Limits) -> Bytes raise SyncError
+
 pub fn apply_update(Bytes?, Bytes, TransferManifest, Limits) -> Bytes raise ManifestError
 
 pub fn bundle_archive_magic() -> Bytes
@@ -10,9 +16,15 @@ pub fn bundle_expected_payloads(DirBundleManifest) -> Array[(String, Int64)]
 
 pub fn check_patch(Int64, Bytes, Limits) -> PatchCheck raise SyncError
 
+pub fn compose_delta_chain(Array[Bytes], Limits) -> Bytes raise SyncError
+
+pub fn compose_deltas(Bytes, Bytes, Limits) -> Bytes raise SyncError
+
 pub fn create_basis_info(Bytes, Bytes, Limits) -> BasisInfo raise ManifestError
 
 pub fn create_dir_bundle_manifest(Array[DirBundleEntry], DirLimits, Limits) -> DirBundleManifest raise ManifestError
+
+pub fn create_dir_metadata(Array[String], Array[String], DirLimits) -> DirMetadata raise ManifestError
 
 pub fn create_dir_signature_index(Array[DirSignatureEntry], DirLimits, Limits) -> DirSignatureIndex raise ManifestError
 
@@ -38,6 +50,8 @@ pub fn encode_bundle_payload_header(String, Int64, DirLimits) -> Bytes raise Man
 
 pub fn encode_dir_bundle_manifest(DirBundleManifest, DirLimits, Limits) -> Bytes raise ManifestError
 
+pub fn encode_dir_metadata(DirMetadata, DirLimits) -> Bytes raise ManifestError
+
 pub fn encode_dir_plan(DirSyncPlan, DirLimits) -> Bytes raise ManifestError
 
 pub fn encode_dir_signature_index(DirSignatureIndex, DirLimits, Limits) -> Bytes raise ManifestError
@@ -45,6 +59,8 @@ pub fn encode_dir_signature_index(DirSignatureIndex, DirLimits, Limits) -> Bytes
 pub fn encode_dir_snapshot(DirSnapshot, DirLimits) -> Bytes raise ManifestError
 
 pub fn encode_dir_verify_report(DirVerifyReport, DirLimits) -> Bytes raise ManifestError
+
+pub fn encode_range_plan_json(RangeFetchPlan) -> Bytes
 
 pub fn encode_transfer_manifest(TransferManifest, Limits) -> Bytes raise ManifestError
 
@@ -64,6 +80,8 @@ pub fn parse_dir_bundle_manifest(Bytes, DirLimits, Limits) -> DirBundleManifest 
 
 pub fn parse_dir_exclude_file(Bytes, DirLimits) -> Array[String] raise ManifestError
 
+pub fn parse_dir_metadata(Bytes, DirLimits) -> DirMetadata raise ManifestError
+
 pub fn parse_dir_plan(Bytes, DirLimits) -> DirSyncPlan raise ManifestError
 
 pub fn parse_dir_signature_index(Bytes, DirLimits, Limits) -> DirSignatureIndex raise ManifestError
@@ -78,9 +96,13 @@ pub fn parse_update_manifest(Bytes, Limits) -> UpdateManifest raise ManifestErro
 
 pub fn patch(Bytes, Bytes, Limits) -> Bytes raise SyncError
 
+pub fn plan_dir_metadata(DirMetadata, DirMetadata, DirLimits) -> DirMetadataPlan raise ManifestError
+
 pub fn plan_dir_sync(DirSnapshot, DirSnapshot, DirLimits) -> DirSyncPlan raise ManifestError
 
 pub fn plan_dir_sync_with_options(DirSnapshot, DirSnapshot, DirPlanOptions, DirLimits) -> DirSyncPlan raise ManifestError
+
+pub fn plan_range_fetch(Bytes, Int64, Bytes, RangeFetchOptions, Limits) -> RangeFetchPlan raise SyncError
 
 pub fn plan_update(Bytes, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 
@@ -142,6 +164,13 @@ pub(all) enum BundleArchiveStep {
   PayloadChunk(BytesView)
   EndPayload(String)
 }
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ByteRange {
+  start : Int64
+  length : Int64
+}
+pub fn ByteRange::http_range_spec(Self) -> String
 
 pub(all) struct DecodedBundleArchive {
   manifest : DirBundleManifest
@@ -214,6 +243,21 @@ pub(all) struct DirLimits {
 }
 pub fn DirLimits::default() -> Self
 pub fn DirLimits::validate(Self) -> Unit raise ManifestError
+
+#derive(Eq, @debug.Debug)
+pub(all) struct DirMetadata {
+  executable_paths : Array[String]
+  empty_dirs : Array[String]
+}
+pub fn DirMetadata::empty() -> Self
+
+#derive(Eq, @debug.Debug)
+pub(all) struct DirMetadataPlan {
+  chmod_exec : Array[String]
+  chmod_nonexec : Array[String]
+  mkdir_empty : Array[String]
+  rmdir_empty : Array[String]
+}
 
 pub(all) struct DirPlanOptions {
   detect_moves : Bool
@@ -327,6 +371,29 @@ pub struct PreparedSignature {
 pub fn PreparedSignature::delta(Self, Bytes, Limits) -> Bytes raise SyncError
 pub fn PreparedSignature::plan_update(Self, Bytes, UpdateOptions, Limits) -> UpdatePlan raise SyncError
 pub fn PreparedSignature::summary(Self) -> SignatureSummary
+
+pub(all) struct RangeFetchOptions {
+  merge_gap_bytes : Int64
+  max_ranges : Int64
+}
+pub fn RangeFetchOptions::default() -> Self
+
+pub(all) struct RangeFetchPlan {
+  target_length : Int64
+  block_len : Int32
+  profile : SignatureProfile
+  ops : Array[RangePlanOp]
+  ranges : Array[ByteRange]
+  reused_bytes : Int64
+  fetch_bytes : Int64
+  request_bytes : Int64
+}
+
+#derive(Eq, @debug.Debug)
+pub(all) enum RangePlanOp {
+  CopyLocal(Int64, Int64)
+  FetchRemote(Int64, Int64)
+}
 
 pub struct Sha256Hasher {
   // private fields

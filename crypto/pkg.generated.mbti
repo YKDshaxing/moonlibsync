@@ -2,6 +2,10 @@
 package "YKDshaxing/moonlibsync/crypto"
 
 // Values
+pub fn create_signature_bundle(Array[PublisherSignature]) -> SignatureBundle raise CryptoError
+
+pub fn create_trust_keyring(Array[Bytes], Array[String], Int32) -> TrustKeyring raise CryptoError
+
 pub fn crypto_error_tag(CryptoError) -> String
 
 pub fn decode_key_hex(String, Int32, String) -> Bytes raise CryptoError
@@ -12,6 +16,14 @@ pub fn encode_key_hex(Bytes) -> String
 
 pub fn encode_publisher_signature(PublisherSignature) -> Bytes raise CryptoError
 
+pub fn encode_signature_bundle(SignatureBundle) -> Bytes raise CryptoError
+
+pub fn encode_trust_keyring(TrustKeyring) -> Bytes raise CryptoError
+
+pub fn envelope_magic() -> Bytes
+
+pub fn inspect_envelope_header(BytesView, SealLimits) -> EnvelopeHeader raise CryptoError
+
 pub fn inspect_seal_header(BytesView, SealLimits) -> SealHeader raise CryptoError
 
 pub fn key_id_from_public_key(Bytes) -> String raise CryptoError
@@ -19,6 +31,12 @@ pub fn key_id_from_public_key(Bytes) -> String raise CryptoError
 pub fn keypair_from_seed(Bytes) -> Ed25519KeyPair raise CryptoError
 
 pub fn parse_publisher_signature(Bytes) -> PublisherSignature raise CryptoError
+
+pub fn parse_signature_bundle(Bytes) -> SignatureBundle raise CryptoError
+
+pub fn parse_trust_keyring(Bytes) -> TrustKeyring raise CryptoError
+
+pub fn seal_envelope(Bytes, Array[Bytes], Bytes, Bytes, Bytes, SealOptions, SealLimits) -> Bytes raise CryptoError
 
 pub fn seal_magic() -> Bytes
 
@@ -30,6 +48,8 @@ pub fn sign_bytes(Bytes, Bytes) -> PublisherSignature raise CryptoError
 
 pub fn sign_digest(Bytes, Int64, String) -> PublisherSignature raise CryptoError
 
+pub fn unseal_envelope(Bytes, Bytes, SealLimits) -> Bytes raise CryptoError
+
 pub fn unseal_with_key(Bytes, Bytes, SealLimits) -> Bytes raise CryptoError
 
 pub fn unseal_with_passphrase(Bytes, Bytes, SealLimits) -> Bytes raise CryptoError
@@ -39,6 +59,16 @@ pub fn validate_public_key(Bytes) -> Unit raise CryptoError
 pub fn verify_bytes(PublisherSignature, Array[Bytes], Bytes) -> Unit raise CryptoError
 
 pub fn verify_digest(PublisherSignature, Array[Bytes], Int64, String) -> Unit raise CryptoError
+
+pub fn verify_quorum_bytes(SignatureBundle, TrustKeyring, Bytes) -> QuorumVerifyReport raise CryptoError
+
+pub fn verify_quorum_digest(SignatureBundle, TrustKeyring, Int64, String) -> QuorumVerifyReport raise CryptoError
+
+pub fn x25519_key_id(Bytes) -> String raise CryptoError
+
+pub fn x25519_keypair_from_secret(Bytes) -> X25519KeyPair raise CryptoError
+
+pub fn x25519_public_from_secret(Bytes) -> Bytes raise CryptoError
 
 // Errors
 #derive(Eq)
@@ -67,6 +97,16 @@ pub fn Ed25519KeyPair::equal(Self, Self) -> Bool
 pub fn Ed25519KeyPair::not_equal(Self, Self) -> Bool
 
 #derive(Eq)
+pub(all) struct EnvelopeHeader {
+  ephemeral_public_key : Bytes
+  recipient_key_ids : Array[String]
+  chunk_size : Int32
+  nonce_prefix : Bytes
+}
+pub fn EnvelopeHeader::equal(Self, Self) -> Bool
+pub fn EnvelopeHeader::not_equal(Self, Self) -> Bool
+
+#derive(Eq)
 pub(all) struct PublisherSignature {
   algorithm : String
   key_id : String
@@ -77,6 +117,16 @@ pub(all) struct PublisherSignature {
 }
 pub fn PublisherSignature::equal(Self, Self) -> Bool
 pub fn PublisherSignature::not_equal(Self, Self) -> Bool
+
+#derive(Eq)
+pub(all) struct QuorumVerifyReport {
+  verified_key_ids : Array[String]
+  rejected_key_ids : Array[String]
+  revoked_hits : Array[String]
+  required_quorum : Int32
+}
+pub fn QuorumVerifyReport::equal(Self, Self) -> Bool
+pub fn QuorumVerifyReport::not_equal(Self, Self) -> Bool
 
 pub struct SealDecoder {
   // private fields
@@ -132,6 +182,32 @@ pub(all) struct SealOptions {
 pub fn SealOptions::default() -> Self
 pub fn SealOptions::equal(Self, Self) -> Bool
 pub fn SealOptions::not_equal(Self, Self) -> Bool
+
+#derive(Eq)
+pub(all) struct SignatureBundle {
+  payload_length : Int64
+  payload_sha256 : String
+  signatures : Array[PublisherSignature]
+}
+pub fn SignatureBundle::equal(Self, Self) -> Bool
+pub fn SignatureBundle::not_equal(Self, Self) -> Bool
+
+#derive(Eq)
+pub(all) struct TrustKeyring {
+  trusted_keys : Array[Bytes]
+  revoked_key_ids : Array[String]
+  min_quorum : Int32
+}
+pub fn TrustKeyring::equal(Self, Self) -> Bool
+pub fn TrustKeyring::not_equal(Self, Self) -> Bool
+
+#derive(Eq)
+pub(all) struct X25519KeyPair {
+  secret_key : Bytes
+  public_key : Bytes
+}
+pub fn X25519KeyPair::equal(Self, Self) -> Bool
+pub fn X25519KeyPair::not_equal(Self, Self) -> Bool
 
 // Type aliases
 

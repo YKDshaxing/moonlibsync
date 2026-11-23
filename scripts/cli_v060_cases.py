@@ -69,9 +69,9 @@ def exercise(root, case, report, links):
         ))
         return p
 
-    # 0. Version & help listing all 28 commands.
+    # 0. Version & help listing all 35 commands.
     ver = inspect_run('version', ['--version'])
-    assert ver.stdout.decode('utf-8') == 'MoonLibSync 0.6.1\n'
+    assert ver.stdout.decode('utf-8') == 'MoonLibSync 0.7.0\n'
     hlp = inspect_run('help', ['--help']).stdout.decode('utf-8')
     all_28 = [
         'signature', 'delta', 'patch', 'reverse-delta', 'basis-info',
@@ -82,8 +82,12 @@ def exercise(root, case, report, links):
         'dir-plan', 'dir-verify', 'dir-signatures', 'dir-pack', 'dir-apply',
         'completions',
     ]
-    assert len(all_28) == 28
-    for cmd_name in all_28:
+    all_35 = all_28 + [
+        'compose-delta', 'range-plan', 'fetch-sync', 'x25519-keygen',
+        'keyring-init', 'sign-combine', 'verify-quorum',
+    ]
+    assert len(all_35) == 35
+    for cmd_name in all_35:
         assert f'moonlibsync {cmd_name}' in hlp, ('missing command in --help', cmd_name)
 
     # 1. --profile rollsum-blake2 (0x72730137) + inspect-signature + delta/patch/basis-info.
@@ -453,7 +457,8 @@ def exercise(root, case, report, links):
             assert cmd_name in text, (shell, cmd_name)
         assert '--detect-moves' in text and '--save-rollback' in text and '--verify-sig' in text
         if shell == 'zsh':
-            assert 'delta|patch|basis-info|make-manifest|compress|decompress|sign)' in text
+            assert 'delta|patch|basis-info|make-manifest|sign)' in text
+            assert 'compress|decompress)' in text
             assert 'inspect-signature|inspect-manifest)' in text
             assert 'inspect-delta|check-patch)' in text
 

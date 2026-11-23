@@ -29,6 +29,18 @@ async fn execute(plan : Plan) -> Unit {
         execute_compress_op(plan, output)
       } else if plan.operation == "keygen" {
         execute_keygen(plan, output)
+      } else if plan.operation == "x25519-keygen" {
+        execute_x25519_keygen(plan, output)
+      } else if plan.operation == "keyring-init" {
+        execute_keyring_init(plan, output)
+      } else if plan.operation == "sign-combine" {
+        execute_sign_combine(plan, output)
+      } else if plan.operation == "range-plan" {
+        execute_range_plan(plan, Some(output))
+      } else if plan.operation == "fetch-sync" {
+        execute_fetch_sync(plan, output)
+      } else if plan.operation == "compose-delta" {
+        execute_compose_delta(plan, output)
       } else if plan.operation == "sign" {
         execute_sign(plan, output)
       } else if plan.operation == "seal" || plan.operation == "unseal" {
@@ -53,6 +65,10 @@ async fn execute(plan : Plan) -> Unit {
         execute_dir_verify(plan, json)
       } else if plan.operation == "verify" {
         execute_verify(plan, json)
+      } else if plan.operation == "verify-quorum" {
+        execute_verify_quorum(plan, json)
+      } else if plan.operation == "range-plan" {
+        execute_range_plan(plan, None)
       } else if plan.operation == "inspect-bundle" {
         execute_inspect_bundle(plan, json)
       } else if plan.operation == "completions" {
@@ -149,7 +165,7 @@ async fn main {
     if args.length() == 2 && args[1] == "--help" {
       @stdio.stdout.write(@utf8.encode(help_text + "\n"))
     } else if args.length() == 2 && args[1] == "--version" {
-      @stdio.stdout.write(b"MoonLibSync 0.6.1\n")
+      @stdio.stdout.write(b"MoonLibSync 0.7.0\n")
     } else {
       execute(parse_plan(args[1:]))
     }

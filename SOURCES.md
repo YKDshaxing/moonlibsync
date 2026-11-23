@@ -1,5 +1,13 @@
 # 来源与固定版本
 
+## 0.7.0 增量说明
+
+- 纯零 IO 根库新增文件 `range_sync.mbt` / `compose_delta.mbt` / `dir_metadata.mbt`（及各自 `_test.mbt`）均为本项目原创 LGPL-2.1-or-later 代码，仅复用既有核心包实现，保持零新增依赖与零 `allow-experimental-packages`。
+- 压缩子包 `compress/zlib.mbt` / `compress/zlib_test.mbt` 为本项目原创 LGPL-2.1-or-later 封装，显式调用已锁定 `0.10.22+124d61d05` 标准库中的 `moonbitlang/core/compress/zlib` 与 `compress/flate`（原 Apache-2.0 声明与 `licenses/MoonBit-core-{LICENSE,NOTICE}` 保留）。
+- 密码学子包 `crypto/x25519_envelope.mbt` / `crypto/keyring.mbt` / `crypto/v070_test.mbt` 为本项目原创 LGPL-2.1-or-later 代码，显式调用已锁定 `moonbitstack/mooncrypt@0.4.5` 的 `kex/x25519` 与 `kdf/hkdf`（零新增依赖、零 `allow-experimental-packages`）。
+- Native CLI 新增 `cmd/moonlibsync/range_cli.mbt` 与 `v070_wbtest.mbt`，以及 `dir.mbt` / `dir_bundle.mbt` / `crypto_cli.mbt` / `compress_cli.mbt` / `completions.mbt` 扩展均为本项目原创 LGPL-2.1-or-later 适配，显式复用已锁定 `0.10.22+124d61d05` `core/async/http` 与 `@async.all`。
+- `examples/web-demo/`（37 导出 Web Studio）与 `js/`（`@ykdshaxing/moonlibsync@0.7.0`）增量代码与类型定义均为本项目原创 LGPL-2.1-or-later 代码，零 npm 运行依赖。
+
 ## 0.6.1 增量说明
 
 - 将 `toolchain.lock.json` 升级至官方固定版本 `0.10.22+124d61d05`（`2026-11-19`、`moon 0.1.20261119`），并核对配套 `moonbitlang/core` 的 `LICENSE` / `NOTICE` 与 `licenses/MoonBit-core-LICENSE`、`licenses/MoonBit-core-NOTICE` 逐字节一致；`dependencies.lock.json`（`mooncrypt@0.4.5` 等 4 项依赖）不变。

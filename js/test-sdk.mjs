@@ -847,4 +847,713 @@ assertSyncError(
   'applyPatchOrGzip wraps BigInt JSON.stringify TypeError',
 );
 
+const toHex = (bytes) =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+// 16. [0.7.0] zsync-style HTTP Range fetch planning & reconstruction (RK + Rollsum).
+const rangeTargetSig = client.createSignature(newBytes, {
+  blockLen: 512,
+  strongSumLen: 16,
+});
+const rangePlan = client.planRangeFetch(rangeTargetSig, newBytes.length, oldBytes, {
+  mergeGapBytes: 2048,
+  maxRanges: 64,
+});
+assert.equal(rangePlan.schema, 3);
+assert.equal(rangePlan.kind, 'moonlibsync-range-plan');
+assert.equal(rangePlan.target_length, newBytes.length);
+assert.equal(rangePlan.block_len, 512);
+assert.equal(rangePlan.profile, 'rk-blake2');
+assert.ok(rangePlan.reused_bytes >= 70000);
+assert.ok(rangePlan.fetch_bytes > 0);
+assert.equal(rangePlan.reused_bytes + rangePlan.fetch_bytes, newBytes.length);
+assert.ok(rangePlan.ranges.length >= 1);
+for (const r of rangePlan.ranges) {
+  assert.equal(r.http_range, `bytes=${r.start}-${r.start + r.length - 1}`);
+}
+
+const fetchedSlices = rangePlan.ranges.map((r) =>
+  newBytes.subarray(r.start, r.start + r.length),
+);
+const rangeApplied = client.applyRangeFetch(
+  rangeTargetSig,
+  newBytes.length,
+  oldBytes,
+  fetchedSlices,
+  { mergeGapBytes: 2048, maxRanges: 64 },
+);
+assert.deepEqual(rangeApplied.restored, newBytes);
+assert.equal(rangeApplied.restoredBytes, newBytes.length);
+assert.equal(rangeApplied.restoredSha256, syncRes.new_sha256);
+assert.equal(rangeApplied.reusedBytes, rangePlan.reused_bytes);
+assert.equal(rangeApplied.fetchBytes, rangePlan.fetch_bytes);
+assert.equal(rangeApplied.requestBytes, rangePlan.request_bytes);
+assert.equal(rangeApplied.rangeCount, rangePlan.ranges.length);
+
+// Hex-encoded slices work identically to Uint8Array slices.
+const rangeAppliedHex = client.applyRangeFetch(
+  rangeTargetSig,
+  newBytes.length,
+  oldBytes,
+  fetchedSlices.map(toHex),
+  { mergeGapBytes: 2048, maxRanges: 64 },
+);
+assert.deepEqual(rangeAppliedHex.restored, newBytes);
+
+// Rollsum+BLAKE2b profile works seamlessly with range fetch planning & apply.
+const rollsumTargetSig = client.createSignature(newBytes, {
+  blockLen: 512,
+  strongSumLen: 16,
+  profile: 'rollsum-blake2',
+});
+const rollsumPlan = client.planRangeFetch(rollsumTargetSig, newBytes.length, oldBytes);
+assert.equal(rollsumPlan.profile, 'rollsum-blake2');
+const rollsumRangeApplied = client.applyRangeFetch(
+  rollsumTargetSig,
+  newBytes.length,
+  oldBytes,
+  rollsumPlan.ranges.map((r) => newBytes.subarray(r.start, r.start + r.length)),
+);
+assert.deepEqual(rollsumRangeApplied.restored, newBytes);
+
+// Identical basis -> 0 remote ranges, empty fetchedSlices array allowed.
+const identicalPlan = client.planRangeFetch(rangeTargetSig, newBytes.length, newBytes);
+assert.equal(identicalPlan.ranges.length, 0);
+assert.equal(identicalPlan.reused_bytes, newBytes.length);
+assert.equal(identicalPlan.fetch_bytes, 0);
+const identicalApplied = client.applyRangeFetch(
+  rangeTargetSig,
+  newBytes.length,
+  newBytes,
+  [],
+);
+assert.deepEqual(identicalApplied.restored, newBytes);
+
+// Empty target -> 0 bytes restored cleanly.
+const emptyTargetSig = client.createSignature(new Uint8Array(0), {
+  blockLen: 512,
+  strongSumLen: 16,
+});
+const emptyRangeApplied = client.applyRangeFetch(emptyTargetSig, 0, oldBytes, []);
+assert.equal(emptyRangeApplied.restoredBytes, 0);
+assert.equal(emptyRangeApplied.restored.length, 0);
+
+// Range fetch validation & error handling.
+assertSyncError(
+  () => client.planRangeFetch(rangeTargetSig, -1, oldBytes),
+  'InvalidOptions:target_length',
+  'planRangeFetch rejects negative targetLength',
+);
+assertSyncError(
+  () => client.planRangeFetch(rangeTargetSig, newBytes.length, oldBytes, { mergeGapBytes: -1 }),
+  'InvalidOptions:merge_gap_bytes',
+  'planRangeFetch rejects negative mergeGapBytes',
+);
+assertSyncError(
+  () => client.planRangeFetch(rangeTargetSig, newBytes.length, oldBytes, { maxRanges: 0 }),
+  'InvalidOptions:max_ranges',
+  'planRangeFetch rejects maxRanges: 0',
+);
+assertSyncError(
+  () => client.planRangeFetch(rangeTargetSig, newBytes.length, oldBytes, { maxRanges: 70000 }),
+  'InvalidOptions:max_ranges',
+  'planRangeFetch rejects maxRanges > 65536',
+);
+assertSyncError(
+  () =>
+    client.applyRangeFetch(rangeTargetSig, newBytes.length, oldBytes, [], {
+      mergeGapBytes: 2048,
+      maxRanges: 64,
+    }),
+  'InvalidOptions:fetched_slices',
+  'applyRangeFetch rejects wrong slice count',
+);
+assertSyncError(
+  () =>
+    client.applyRangeFetch(
+      rangeTargetSig,
+      newBytes.length,
+      oldBytes,
+      fetchedSlices.map((s) => s.subarray(0, Math.max(0, s.length - 1))),
+      { mergeGapBytes: 2048, maxRanges: 64 },
+    ),
+  'InvalidOptions:fetched_slices',
+  'applyRangeFetch rejects truncated slice',
+);
+assertSyncError(
+  () =>
+    client.applyRangeFetch(rangeTargetSig, newBytes.length, oldBytes, ['not-valid-hex!'], {
+      mergeGapBytes: 2048,
+      maxRanges: 64,
+    }),
+  'InvalidHex',
+  'applyRangeFetch rejects bad hex slice',
+);
+
+// 17. [0.7.0] Algebraic librsync delta composition (v0 -> v1 -> v2 ==> v0 -> v2).
+const v0 = new Uint8Array(16384);
+for (let i = 0; i < v0.length; i++) {
+  v0[i] = (i * 53 + 11) & 0xff;
+}
+const midInsert = enc.encode('V1-MIDDLE-CHANGE-'.repeat(16));
+const v1 = new Uint8Array(v0.length + midInsert.length);
+v1.set(v0.subarray(0, 8192), 0);
+v1.set(midInsert, 8192);
+v1.set(v0.subarray(8192), 8192 + midInsert.length);
+
+const v2Prefix = enc.encode('V2-HEADER-PREFIX-');
+const v2Tail = enc.encode('-V2-TRAILING-BLOCK');
+const v2 = new Uint8Array(v2Prefix.length + 6000 + (v1.length - 10000) + v2Tail.length);
+v2.set(v2Prefix, 0);
+v2.set(v1.subarray(0, 6000), v2Prefix.length);
+v2.set(v1.subarray(10000), v2Prefix.length + 6000);
+v2.set(v2Tail, v2Prefix.length + 6000 + (v1.length - 10000));
+
+const sigV0 = client.createSignature(v0, { blockLen: 512, strongSumLen: 16 });
+const d01 = client.createDelta(sigV0, v1);
+const sigV1 = client.createSignature(v1, { blockLen: 512, strongSumLen: 16 });
+const d12 = client.createDelta(sigV1, v2);
+
+const composed = client.composeDeltas([d01, d12]);
+assert.equal(composed.composedBytes, composed.composed.length);
+assert.equal(composed.composedSha256, client.sha256Hex(composed.composed));
+assert.equal(composed.inputTotalBytes, d01.length + d12.length);
+assert.equal(composed.outputBytes, v2.length);
+assert.equal(composed.instructionCount, composed.copyCount + composed.literalCount);
+assert.equal(composed.copyBytes + composed.literalBytes, v2.length);
+assert.deepEqual(client.applyPatch(v0, composed.composed), v2);
+
+// Mixed Uint8Array and hex string deltas compose identically.
+const composedHex = client.composeDeltas([d01, toHex(d12)]);
+assert.deepEqual(composedHex.composed, composed.composed);
+
+// 1-element chain normalizes and applies identically.
+const composedSingle = client.composeDeltas([d01]);
+assert.deepEqual(client.applyPatch(v0, composedSingle.composed), v1);
+
+assertSyncError(
+  () => client.composeDeltas([]),
+  'InvalidOptions:deltas',
+  'composeDeltas rejects empty array',
+);
+assertSyncError(
+  () => client.composeDeltas(['zzzz']),
+  'InvalidHex',
+  'composeDeltas rejects bad hex',
+);
+assertSyncError(
+  () => client.composeDeltas([d01, new Uint8Array([0x72, 0x73, 0x02, 0x36])]),
+  'TruncatedInput',
+  'composeDeltas rejects truncated delta',
+);
+const emptyFromV0 = client.createDelta(sigV0, new Uint8Array(0));
+assertSyncError(
+  () => client.composeDeltas([emptyFromV0, d12]),
+  'CopyOutOfBounds',
+  'composeDeltas rejects out-of-bounds copy against prior delta output',
+);
+
+// 18. [0.7.0] Bounded RFC 1950 Zlib compression & zip-bomb-safe decompression.
+const zDelta = client.compressZlib(deltaBytes, { level: 6 });
+assert.equal(zDelta[0] & 0x0f, 8);
+assert.equal(((zDelta[0] << 8) | zDelta[1]) % 31, 0);
+
+const zDecomp = client.decompressZlib(zDelta);
+assert.equal(zDecomp.ok, true);
+if (zDecomp.ok) {
+  assert.deepEqual(zDecomp.data, deltaBytes);
+  assert.equal(zDecomp.inputBytes, zDelta.length);
+  assert.equal(zDecomp.outputBytes, deltaBytes.length);
+  assert.equal(zDecomp.outputSha256, client.sha256Hex(deltaBytes));
+}
+
+const zArtifact = client.inspectArtifact(zDelta);
+assert.equal(zArtifact.artifact_kind, 'zlib');
+assert.equal(zArtifact.uncompressed_bytes, String(deltaBytes.length));
+assert.equal(zArtifact.uncompressed_sha256, client.sha256Hex(deltaBytes));
+
+// Levels 0 & 9 and empty payload roundtrip.
+for (const lvl of [0, 9]) {
+  const zLvl = client.compressZlib(deltaBytes, { level: lvl });
+  const decLvl = client.decompressZlib(zLvl);
+  assert.equal(decLvl.ok, true);
+  if (decLvl.ok) {
+    assert.deepEqual(decLvl.data, deltaBytes);
+  }
+}
+const zEmpty = client.compressZlib(new Uint8Array(0));
+const decEmpty = client.decompressZlib(zEmpty);
+assert.equal(decEmpty.ok, true);
+if (decEmpty.ok) {
+  assert.equal(decEmpty.outputBytes, 0);
+  assert.equal(decEmpty.data.length, 0);
+}
+
+// Zip-bomb, maxInput, trailing data, truncated frame, and bad Adler-32 return { ok: false, error }.
+const zBomb = client.compressZlib(new Uint8Array(262144), { level: 6 });
+const zBombRes = client.decompressZlib(zBomb, { maxOutput: 4096 });
+assert.deepEqual(zBombRes, { ok: false, error: 'LimitExceeded' });
+
+const zInputLimitRes = client.decompressZlib(zDelta, { maxInput: 2 });
+assert.deepEqual(zInputLimitRes, { ok: false, error: 'LimitExceeded' });
+
+const zTrailing = new Uint8Array(zDelta.length + 1);
+zTrailing.set(zDelta, 0);
+zTrailing[zDelta.length] = 0x42;
+assert.deepEqual(client.decompressZlib(zTrailing), { ok: false, error: 'TrailingData' });
+
+assert.deepEqual(client.decompressZlib(zDelta.subarray(0, zDelta.length - 1)), {
+  ok: false,
+  error: 'TruncatedInput',
+});
+
+const zCorrupt = zDelta.slice();
+zCorrupt[zCorrupt.length - 1] ^= 0xff;
+assert.deepEqual(client.decompressZlib(zCorrupt), { ok: false, error: 'InvalidDelta' });
+
+// Strict option validation for compressZlib / decompressZlib.
+assertSyncError(
+  () => client.compressZlib(deltaBytes, { level: -1 }),
+  'InvalidOptions:level',
+  'compressZlib rejects negative level',
+);
+assertSyncError(
+  () => client.compressZlib(deltaBytes, { level: 10 }),
+  'InvalidOptions:level',
+  'compressZlib rejects level > 9',
+);
+assertSyncError(
+  () => client.compressZlib(deltaBytes, { maxInput: -1 }),
+  'InvalidOptions:max_input',
+  'compressZlib rejects negative maxInput',
+);
+assertSyncError(
+  () => client.compressZlib(deltaBytes, { maxOutput: -1 }),
+  'InvalidOptions:max_output',
+  'compressZlib rejects negative maxOutput',
+);
+assertSyncError(
+  () => client.compressZlib(deltaBytes, { maxOutput: 4 }),
+  'LimitExceeded',
+  'compressZlib rejects exceeded maxOutput',
+);
+assertSyncError(
+  () => client.decompressZlib(zDelta, { maxInput: -1 }),
+  'InvalidOptions:max_input',
+  'decompressZlib rejects negative maxInput',
+);
+assertSyncError(
+  () => client.decompressZlib(zDelta, { maxOutput: -1 }),
+  'InvalidOptions:max_output',
+  'decompressZlib rejects negative maxOutput',
+);
+
+// 19. [0.7.0] X25519 key derivation (RFC 7748) & MLSENC02 multi-recipient envelope sealing.
+const aliceSkHex = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a';
+const alicePkWant = '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a';
+const bobSkHex = '5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb';
+const bobPkWant = 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f';
+
+const aliceKp = client.x25519KeypairFromSecret(aliceSkHex);
+assert.equal(aliceKp.secretKeyHex, aliceSkHex);
+assert.equal(aliceKp.publicKeyHex, alicePkWant);
+assert.equal(aliceKp.secretKey.length, 32);
+assert.equal(aliceKp.publicKey.length, 32);
+assert.equal(aliceKp.keyId.length, 16);
+
+const bobKp = client.x25519KeypairFromSecret(bobSkHex);
+assert.equal(bobKp.publicKeyHex, bobPkWant);
+
+// Auto-CSPRNG keypair generation when secretHex is omitted.
+const carolKp = client.x25519KeypairFromSecret();
+const outsiderKp = client.x25519KeypairFromSecret();
+assert.equal(carolKp.secretKeyHex.length, 64);
+assert.equal(carolKp.publicKeyHex.length, 64);
+assert.equal(carolKp.keyId.length, 16);
+assert.notEqual(carolKp.publicKeyHex, outsiderKp.publicKeyHex);
+
+// Multi-recipient MLSENC02 roundtrip with auto-CSPRNG ephemeral secret / CEK / noncePrefix.
+const envSealed = client.sealEnvelope(
+  secretPlain,
+  [aliceKp.publicKeyHex, bobKp.publicKeyHex, carolKp.publicKeyHex],
+  { chunkSize: 1024 },
+);
+assert.equal(new TextDecoder().decode(envSealed.ciphertext.subarray(0, 8)), 'MLSENC02');
+assert.equal(envSealed.ciphertextBytes, envSealed.ciphertext.length);
+assert.equal(envSealed.ciphertextSha256, client.sha256Hex(envSealed.ciphertext));
+assert.equal(envSealed.recipientCount, 3);
+assert.deepEqual(envSealed.recipientKeyIds, [aliceKp.keyId, bobKp.keyId, carolKp.keyId]);
+assert.equal(envSealed.ephemeralPublicKeyHex.length, 64);
+assert.equal(envSealed.chunkSize, 1024);
+
+const envArtifact = client.inspectArtifact(envSealed.ciphertext);
+assert.equal(envArtifact.artifact_kind, 'envelope-archive');
+if (envArtifact.artifact_kind === 'envelope-archive') {
+  assert.equal(envArtifact.summary.magic, 'MLSENC02');
+  assert.equal(envArtifact.summary.recipient_count, 3);
+  assert.deepEqual(envArtifact.summary.recipient_key_ids, [
+    aliceKp.keyId,
+    bobKp.keyId,
+    carolKp.keyId,
+  ]);
+}
+
+// Each authorized recipient recovers exact plaintext.
+for (const kp of [aliceKp, bobKp, carolKp]) {
+  const opened = client.unsealEnvelope(envSealed.ciphertext, kp.secretKeyHex);
+  assert.deepEqual(opened.plaintext, secretPlain);
+  assert.equal(opened.plaintextBytes, secretPlain.length);
+  assert.equal(opened.plaintextSha256, client.sha256Hex(secretPlain));
+  assert.equal(opened.recipientCount, 3);
+  assert.deepEqual(opened.recipientKeyIds, [aliceKp.keyId, bobKp.keyId, carolKp.keyId]);
+  assert.equal(opened.ephemeralPublicKeyHex, envSealed.ephemeralPublicKeyHex);
+}
+
+// Fresh CSPRNG sealing uses a fresh ephemeral key each call.
+const envSealed2 = client.sealEnvelope(
+  secretPlain,
+  [aliceKp.publicKeyHex, bobKp.publicKeyHex],
+  { chunkSize: 1024 },
+);
+assert.notEqual(envSealed2.ephemeralPublicKeyHex, envSealed.ephemeralPublicKeyHex);
+
+// Deterministic explicit options produce byte-identical ciphertexts, including empty plaintext.
+const detEnvOpts = {
+  chunkSize: 1024,
+  ephemeralSecretHex: '11'.repeat(32),
+  contentKeyHex: '22'.repeat(32),
+  noncePrefixHex: 'a1b2c3d4',
+};
+const detEnv1 = client.sealEnvelope(new Uint8Array(0), [aliceKp.publicKeyHex], detEnvOpts);
+const detEnv2 = client.sealEnvelope(new Uint8Array(0), [aliceKp.publicKeyHex], detEnvOpts);
+assert.deepEqual(detEnv1.ciphertext, detEnv2.ciphertext);
+const openedEmptyEnv = client.unsealEnvelope(detEnv1.ciphertext, aliceKp.secretKeyHex);
+assert.equal(openedEmptyEnv.plaintextBytes, 0);
+assert.equal(openedEmptyEnv.plaintext.length, 0);
+
+// Unauthorized recipient, header/slot/body tamper, truncation, trailing byte, and bad options.
+assertSyncError(
+  () => client.unsealEnvelope(envSealed.ciphertext, outsiderKp.secretKeyHex),
+  'AuthenticationFailed',
+  'unsealEnvelope rejects unauthorized recipient',
+);
+
+const tamperedEnvBody = envSealed.ciphertext.slice();
+tamperedEnvBody[tamperedEnvBody.length - 1] ^= 0x01;
+assertSyncError(
+  () => client.unsealEnvelope(tamperedEnvBody, aliceKp.secretKeyHex),
+  'AuthenticationFailed',
+  'unsealEnvelope rejects tampered ciphertext body',
+);
+
+const tamperedEnvHeader = envSealed.ciphertext.slice();
+tamperedEnvHeader[60] ^= 0x01; // flips wrapped CEK slot byte bound into header AAD
+assertSyncError(
+  () => client.unsealEnvelope(tamperedEnvHeader, bobKp.secretKeyHex),
+  'AuthenticationFailed',
+  'unsealEnvelope rejects tampered header/slot',
+);
+
+assertSyncError(
+  () =>
+    client.unsealEnvelope(
+      envSealed.ciphertext.subarray(0, envSealed.ciphertext.length - 5),
+      aliceKp.secretKeyHex,
+    ),
+  'TruncatedInput',
+  'unsealEnvelope rejects truncated envelope',
+);
+
+const trailingEnv = new Uint8Array(envSealed.ciphertext.length + 1);
+trailingEnv.set(envSealed.ciphertext, 0);
+trailingEnv[envSealed.ciphertext.length] = 0x77;
+assertSyncError(
+  () => client.unsealEnvelope(trailingEnv, aliceKp.secretKeyHex),
+  'TrailingData',
+  'unsealEnvelope rejects trailing byte',
+);
+
+assertSyncError(
+  () => client.sealEnvelope(secretPlain, [aliceKp.publicKeyHex, aliceKp.publicKeyHex]),
+  'InvalidOptions:duplicate_recipient',
+  'sealEnvelope rejects duplicate recipients',
+);
+assertSyncError(
+  () => client.sealEnvelope(secretPlain, [`01${'00'.repeat(31)}`]),
+  'InvalidKey:recipient_public_key',
+  'sealEnvelope rejects low-order Curve25519 recipient public key',
+);
+assertSyncError(
+  () => client.x25519KeypairFromSecret('00'.repeat(32)),
+  'InvalidKey:x25519_secret',
+  'x25519KeypairFromSecret rejects all-zero secret',
+);
+assertSyncError(
+  () => client.x25519KeypairFromSecret('not-hex!'),
+  'InvalidHex',
+  'x25519KeypairFromSecret rejects bad hex',
+);
+assertSyncError(
+  () => client.x25519KeypairFromSecret('abcd'),
+  'InvalidKey:x25519_secret',
+  'x25519KeypairFromSecret rejects short secret',
+);
+assertSyncError(
+  () => client.sealEnvelope(secretPlain, []),
+  'InvalidOptions:recipient_count',
+  'sealEnvelope rejects empty recipients',
+);
+assertSyncError(
+  () => client.sealEnvelope(secretPlain, [aliceKp.publicKeyHex], { chunkSize: 0 }),
+  'InvalidOptions:chunk_size',
+  'sealEnvelope rejects chunkSize: 0',
+);
+assertSyncError(
+  () => client.sealEnvelope(secretPlain, [aliceKp.publicKeyHex], { chunkSize: -1 }),
+  'InvalidOptions:chunk_size',
+  'sealEnvelope rejects negative chunkSize',
+);
+assertSyncError(
+  () =>
+    client.sealEnvelope(secretPlain, [aliceKp.publicKeyHex], {
+      noncePrefixHex: '001122334455',
+    }),
+  'InvalidOptions:nonce_prefix',
+  'sealEnvelope rejects wrong noncePrefixHex byte length',
+);
+assertSyncError(
+  () => client.unsealEnvelope(envSealed.ciphertext, 'zz'.repeat(32)),
+  'InvalidHex',
+  'unsealEnvelope rejects bad hex secret',
+);
+
+// 20. [0.7.0] Ed25519 TrustKeyring creation, revocation, and M-of-N threshold quorum verification.
+const seedC = new Uint8Array(32);
+const seedD = new Uint8Array(32);
+for (let i = 0; i < 32; i++) {
+  seedC[i] = (i * 19 + 3) & 0xff;
+  seedD[i] = (i * 23 + 11) & 0xff;
+}
+const kpC = client.ed25519KeypairFromSeed(seedC);
+const kpD = client.ed25519KeypairFromSeed(seedD); // untrusted signer
+
+const quorumPayload = enc.encode('moonlibsync-070-quorum-release-artifact');
+const sigA = client.ed25519Sign(seedA, quorumPayload);
+const sigB = client.ed25519Sign(seedB, quorumPayload);
+const sigC = client.ed25519Sign(seedC, quorumPayload);
+const sigD = client.ed25519Sign(seedD, quorumPayload);
+
+const keyring2of3 = client.createTrustKeyring(
+  [kpA.publicKeyHex, kpB.publicKeyHex, kpC.publicKeyHex],
+  { minQuorum: 2 },
+);
+assert.equal(keyring2of3.trustedCount, 3);
+assert.equal(keyring2of3.revokedCount, 0);
+assert.equal(keyring2of3.minQuorum, 2);
+assert.equal(keyring2of3.keyIds.length, 3);
+
+const keyringArtifact = client.inspectArtifact(enc.encode(keyring2of3.keyringJson));
+assert.equal(keyringArtifact.artifact_kind, 'moonlibsync-keyring');
+if (keyringArtifact.artifact_kind === 'moonlibsync-keyring') {
+  assert.equal(keyringArtifact.schema_version, 4);
+  assert.equal(keyringArtifact.summary.min_quorum, 2);
+  assert.equal(keyringArtifact.summary.trusted_count, 3);
+}
+
+// Verify 2-of-3 quorum via signature JSON strings.
+const qResStrings = client.verifyQuorum(
+  [sigA.signatureJson, sigB.signatureJson],
+  keyring2of3.keyringJson,
+  quorumPayload,
+);
+assert.equal(qResStrings.requiredQuorum, 2);
+assert.deepEqual(qResStrings.verifiedKeyIds, [kpA.keyId, kpB.keyId]);
+assert.deepEqual(qResStrings.rejectedKeyIds, []);
+assert.deepEqual(qResStrings.revokedHits, []);
+
+const sigBundleArtifact = client.inspectArtifact(enc.encode(qResStrings.bundleJson));
+assert.equal(sigBundleArtifact.artifact_kind, 'moonlibsync-signature-bundle');
+if (sigBundleArtifact.artifact_kind === 'moonlibsync-signature-bundle') {
+  assert.equal(sigBundleArtifact.schema_version, 4);
+  assert.equal(sigBundleArtifact.summary.signature_count, 2);
+}
+
+// Verify via PublisherSignature objects and via encoded SignatureBundle JSON string.
+const qResObjects = client.verifyQuorum(
+  [sigA.signature, sigC.signature],
+  keyring2of3.keyringJson,
+  quorumPayload,
+);
+assert.deepEqual(qResObjects.verifiedKeyIds, [kpA.keyId, kpC.keyId]);
+
+const qResBundleStr = client.verifyQuorum(
+  qResStrings.bundleJson,
+  keyring2of3.keyringJson,
+  quorumPayload,
+);
+assert.deepEqual(qResBundleStr.verifiedKeyIds, [kpA.keyId, kpB.keyId]);
+
+// Untrusted 3rd signer is recorded in rejectedKeyIds while 2 trusted signers satisfy quorum.
+const qResWithUntrusted = client.verifyQuorum(
+  [sigA.signatureJson, sigB.signatureJson, sigD.signatureJson],
+  keyring2of3.keyringJson,
+  quorumPayload,
+);
+assert.deepEqual(qResWithUntrusted.verifiedKeyIds, [kpA.keyId, kpB.keyId]);
+assert.deepEqual(qResWithUntrusted.rejectedKeyIds, [kpD.keyId]);
+assert.deepEqual(qResWithUntrusted.revokedHits, []);
+
+// Below quorum or untrusted signer fails with UntrustedKey:quorum_not_met.
+assertSyncError(
+  () => client.verifyQuorum([sigA.signatureJson], keyring2of3.keyringJson, quorumPayload),
+  'UntrustedKey:quorum_not_met',
+  'verifyQuorum rejects 1-of-2 quorum',
+);
+assertSyncError(
+  () =>
+    client.verifyQuorum(
+      [sigA.signatureJson, sigD.signatureJson],
+      keyring2of3.keyringJson,
+      quorumPayload,
+    ),
+  'UntrustedKey:quorum_not_met',
+  'verifyQuorum rejects untrusted signer filling quorum',
+);
+
+// Revocation enforcement: revoking kpC invalidates [A, C] and flags revokedHits in [A, B, C].
+const keyringRevokedC = client.createTrustKeyring(
+  [kpA.publicKeyHex, kpB.publicKeyHex, kpC.publicKeyHex],
+  { revokedKeyIds: [kpC.keyId], minQuorum: 2 },
+);
+assert.equal(keyringRevokedC.revokedCount, 1);
+
+assertSyncError(
+  () =>
+    client.verifyQuorum(
+      [sigA.signatureJson, sigC.signatureJson],
+      keyringRevokedC.keyringJson,
+      quorumPayload,
+    ),
+  'UntrustedKey:quorum_not_met',
+  'verifyQuorum rejects revoked key attempting to meet quorum',
+);
+
+const qResRevokedHit = client.verifyQuorum(
+  [sigA.signatureJson, sigB.signatureJson, sigC.signatureJson],
+  keyringRevokedC.keyringJson,
+  quorumPayload,
+);
+assert.deepEqual(qResRevokedHit.verifiedKeyIds, [kpA.keyId, kpB.keyId]);
+assert.deepEqual(qResRevokedHit.revokedHits, [kpC.keyId]);
+assert.deepEqual(qResRevokedHit.rejectedKeyIds, [kpC.keyId]);
+
+// Tampered payload and duplicate signers are rejected cleanly.
+const tamperedQuorumPayload = quorumPayload.slice();
+tamperedQuorumPayload[0] ^= 0xff;
+assertSyncError(
+  () =>
+    client.verifyQuorum(
+      [sigA.signatureJson, sigB.signatureJson],
+      keyring2of3.keyringJson,
+      tamperedQuorumPayload,
+    ),
+  /^DigestMismatch:/,
+  'verifyQuorum rejects tampered payload',
+);
+assertSyncError(
+  () =>
+    client.verifyQuorum(
+      [sigA.signatureJson, sigA.signatureJson],
+      keyring2of3.keyringJson,
+      quorumPayload,
+    ),
+  'InvalidSignature:duplicate_signer',
+  'verifyQuorum rejects duplicate signer',
+);
+
+// Keyring & quorum strict input validation.
+assertSyncError(
+  () =>
+    client.createTrustKeyring([kpA.publicKeyHex, kpB.publicKeyHex, kpC.publicKeyHex], {
+      revokedKeyIds: [kpC.keyId],
+      minQuorum: 3,
+    }),
+  'InvalidOptions:min_quorum',
+  'createTrustKeyring rejects minQuorum > activeCount',
+);
+assertSyncError(
+  () => client.createTrustKeyring([kpA.publicKeyHex], { minQuorum: 0 }),
+  'InvalidOptions:min_quorum',
+  'createTrustKeyring rejects minQuorum: 0',
+);
+assertSyncError(
+  () => client.createTrustKeyring([kpA.publicKeyHex], { minQuorum: -1 }),
+  'InvalidOptions:min_quorum',
+  'createTrustKeyring rejects negative minQuorum',
+);
+assertSyncError(
+  () => client.createTrustKeyring([]),
+  'InvalidOptions:trustedPublicKeysHex',
+  'createTrustKeyring rejects empty key list',
+);
+assertSyncError(
+  () => client.createTrustKeyring(['not-hex!']),
+  'InvalidHex',
+  'createTrustKeyring rejects bad hex public key',
+);
+assertSyncError(
+  () => client.createTrustKeyring([kpA.publicKeyHex], { revokedKeyIds: ['abcd'] }),
+  'InvalidFormat:revoked_key_id',
+  'createTrustKeyring rejects short revokedKeyId',
+);
+assertSyncError(
+  () => client.verifyQuorum([], keyring2of3.keyringJson, quorumPayload),
+  'InvalidOptions:signature_count',
+  'verifyQuorum rejects empty signatures array',
+);
+assertSyncError(
+  () => client.verifyQuorum([sigA.signatureJson], '', quorumPayload),
+  'InvalidOptions:keyringJson',
+  'verifyQuorum rejects empty keyringJson',
+);
+
+// Red-Team hardening: uppercase hex normalization in envelope/keyring + inspectArtifact(range-plan).
+const upperPlain = enc.encode('moonlibsync-070-upper-hex-envelope-test');
+const upperX1 = client.x25519KeypairFromSecret();
+const upperX2 = client.x25519KeypairFromSecret();
+const upperEnv = client.sealEnvelope(upperPlain, [upperX1.publicKeyHex.toUpperCase()], {
+  chunkSize: 1024,
+});
+const upperOpened = client.unsealEnvelope(upperEnv.ciphertext, upperX1.secretKeyHex.toUpperCase());
+assert.deepEqual(upperOpened.plaintext, upperPlain);
+const upperKr = client.createTrustKeyring(
+  [kpA.publicKeyHex.toUpperCase(), kpB.publicKeyHex.toUpperCase()],
+  { revokedKeyIds: [kpB.keyId.toUpperCase()], minQuorum: 1 },
+);
+assert.equal(upperKr.trustedCount, 2);
+assert.deepEqual([...upperKr.keyIds].sort(), [kpA.keyId, kpB.keyId].sort());
+
+const upperRangePlanArtifact = client.inspectArtifact(
+  enc.encode(
+    JSON.stringify({
+      schema: 3,
+      kind: 'moonlibsync-range-plan',
+      target_length: 8192,
+      block_len: 2048,
+      profile: 'rollsum-blake2',
+      reused_bytes: 4096,
+      fetch_bytes: 4096,
+      request_bytes: 4096,
+      ranges: [{ start: 4096, length: 4096, http_range: 'bytes=4096-8191' }],
+    }),
+  ),
+);
+assert.equal(upperRangePlanArtifact.artifact_kind, 'moonlibsync-range-plan');
+if (upperRangePlanArtifact.artifact_kind === 'moonlibsync-range-plan') {
+  assert.equal(upperRangePlanArtifact.schema_version, 3);
+  assert.equal(upperRangePlanArtifact.summary.profile, 'rollsum-blake2');
+  assert.equal(upperRangePlanArtifact.summary.range_count, 1);
+}
+void upperX2;
+
 console.log('JS_SDK_OK');

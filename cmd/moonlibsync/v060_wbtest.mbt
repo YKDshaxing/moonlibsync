@@ -1015,7 +1015,7 @@ async test "cli v060 redteam2 Windows device guard seal output ceiling and zsh c
   let zsh = completion_script_for_shell("zsh")
   assert_true(
     zsh.contains(
-      "delta|patch|basis-info|make-manifest|compress|decompress|sign)\n      _arguments '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;",
+      "delta|patch|basis-info|make-manifest|sign)\n      _arguments '--streaming[Stream 64 KiB chunks]' '--progress[Emit progress to stderr]' $limit_opts '*:file:_files' ;;",
     ),
   )
   assert_true(

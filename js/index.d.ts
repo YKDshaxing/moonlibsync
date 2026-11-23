@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 /**
- * Low-level synchronous 27-export contract of MoonLibSync's pure MoonBit JS core module.
+ * Low-level synchronous 37-export contract of MoonLibSync's pure MoonBit JS core module.
  */
 export interface MoonLibSyncRawModule {
   run_streaming_sync_json(
@@ -90,6 +90,56 @@ export interface MoonLibSyncRawModule {
     cipher: Uint8Array,
     secret: Uint8Array,
     usePassphrase: boolean,
+  ): string;
+  plan_range_fetch_json(
+    targetSig: Uint8Array,
+    targetLength: number,
+    basis: Uint8Array,
+    mergeGapBytes: number,
+    maxRanges: number,
+  ): string;
+  apply_range_fetch_json(
+    targetSig: Uint8Array,
+    targetLength: number,
+    basis: Uint8Array,
+    mergeGapBytes: number,
+    maxRanges: number,
+    slicesJson: string,
+  ): string;
+  compose_deltas_json(deltasJson: string): string;
+  compress_zlib_bytes(
+    input: Uint8Array,
+    maxInput: number,
+    maxOutput: number,
+    level: number,
+  ): Uint8Array;
+  decompress_zlib_check_json(
+    input: Uint8Array,
+    maxInput: number,
+    maxOutput: number,
+  ): string;
+  x25519_keypair_from_secret_json(secretHex: string): string;
+  seal_envelope_json(
+    plaintext: Uint8Array,
+    recipientPubsJson: string,
+    ephemeralSecretHex: string,
+    contentKeyHex: string,
+    noncePrefixHex: string,
+    chunkSize: number,
+  ): string;
+  unseal_envelope_json(
+    ciphertext: Uint8Array,
+    recipientSecretHex: string,
+  ): string;
+  create_trust_keyring_json(
+    trustedKeysJson: string,
+    revokedIdsJson: string,
+    minQuorum: number,
+  ): string;
+  verify_quorum_bytes_json(
+    signaturesJson: string,
+    keyringJson: string,
+    payload: Uint8Array,
   ): string;
 }
 
@@ -502,13 +552,95 @@ export interface DirVerifyArtifactInspection {
   };
 }
 
+export interface ZlibArtifactInspection {
+  ok: true;
+  artifact_kind: 'zlib';
+  compressed_bytes: string;
+  uncompressed_bytes: string;
+  uncompressed_sha256: string;
+}
+
+export interface EnvelopeArtifactSummary {
+  magic: 'MLSENC02';
+  version: 2;
+  recipient_count: number;
+  recipient_key_ids: string[];
+  chunk_size: number;
+  nonce_prefix_hex: string;
+  ephemeral_public_key_hex: string;
+  byte_length: string;
+}
+
+export interface EnvelopeArchiveArtifactInspection {
+  ok: true;
+  artifact_kind: 'envelope-archive';
+  byte_length: string;
+  summary: EnvelopeArtifactSummary;
+}
+
+export interface DirMetadataArtifactInspection {
+  ok: true;
+  artifact_kind: 'moonlibsync-dir-metadata';
+  schema_version: 3;
+  summary: {
+    executable_count: number;
+    empty_dir_count: number;
+    executable_paths: string[];
+    empty_dirs: string[];
+  };
+}
+
+export interface RangePlanArtifactInspection {
+  ok: true;
+  artifact_kind: 'moonlibsync-range-plan';
+  schema_version: 3;
+  summary: {
+    target_length: string;
+    block_len: string;
+    profile: SignatureProfile;
+    reused_bytes: string;
+    fetch_bytes: string;
+    request_bytes: string;
+    range_count: number;
+  };
+}
+
+export interface TrustKeyringArtifactInspection {
+  ok: true;
+  artifact_kind: 'moonlibsync-keyring';
+  schema_version: 4;
+  summary: {
+    trusted_count: number;
+    revoked_count: number;
+    min_quorum: number;
+    key_ids: string[];
+    revoked_key_ids: string[];
+  };
+}
+
+export interface SignatureBundleArtifactInspection {
+  ok: true;
+  artifact_kind: 'moonlibsync-signature-bundle';
+  schema_version: 4;
+  summary: {
+    signature_count: number;
+    signer_key_ids: string[];
+    payload_length: string;
+    payload_sha256: string;
+  };
+}
+
 export type ArtifactInspection =
   | SignatureArtifactInspection
   | DeltaArtifactInspection
   | GzipArtifactInspection
+  | ZlibArtifactInspection
   | BundleArchiveArtifactInspection
   | SealArtifactInspection
+  | EnvelopeArchiveArtifactInspection
   | PublisherSignatureInspection
+  | TrustKeyringArtifactInspection
+  | SignatureBundleArtifactInspection
   | TransferDeltaArtifactInspection
   | TransferFullArtifactInspection
   | UpdateManifestArtifactInspection
@@ -517,7 +649,9 @@ export type ArtifactInspection =
   | DirPlanArtifactInspection
   | DirSignaturesArtifactInspection
   | DirBundleArtifactInspection
-  | DirVerifyArtifactInspection;
+  | DirVerifyArtifactInspection
+  | DirMetadataArtifactInspection
+  | RangePlanArtifactInspection;
 
 export type BlockBenchmarkLabel = 'auto' | '256' | '512' | '2048' | '4096';
 
@@ -831,6 +965,213 @@ export interface UnsealResult {
   plain: Uint8Array;
 }
 
+export interface RangeFetchOptions {
+  /**
+   * Maximum byte gap between adjacent remote spans to coalesce into one HTTP Range. Default: `4096`.
+   */
+  mergeGapBytes?: number;
+  /**
+   * Maximum number of coalesced HTTP Range requests allowed (`1..65536`). Default: `256`.
+   */
+  maxRanges?: number;
+}
+
+export interface ByteRangeSpec {
+  start: number;
+  length: number;
+  http_range: string;
+}
+
+export type RangePlanOpKind = 'copy_local' | 'fetch_remote';
+
+export interface RangePlanOp {
+  op: RangePlanOpKind;
+  offset: number;
+  length: number;
+}
+
+export interface RangeFetchPlan {
+  schema: 3;
+  kind: 'moonlibsync-range-plan';
+  target_length: number;
+  block_len: number;
+  profile: SignatureProfile;
+  reused_bytes: number;
+  fetch_bytes: number;
+  request_bytes: number;
+  ranges: ByteRangeSpec[];
+  ops: RangePlanOp[];
+}
+
+export interface RangeFetchApplyResult {
+  restored: Uint8Array;
+  restoredBytes: number;
+  restoredSha256: string;
+  reusedBytes: number;
+  fetchBytes: number;
+  requestBytes: number;
+  rangeCount: number;
+}
+
+export interface ComposedDeltaResult {
+  composed: Uint8Array;
+  composedBytes: number;
+  composedSha256: string;
+  inputTotalBytes: number;
+  instructionCount: number;
+  copyCount: number;
+  literalCount: number;
+  copyBytes: number;
+  literalBytes: number;
+  outputBytes: number;
+}
+
+export interface CompressZlibOptions {
+  /**
+   * Maximum allowed input byte length (`0..2147483647`). Default: `67108864` (64 MiB).
+   */
+  maxInput?: number;
+  /**
+   * Maximum allowed compressed output byte length (`0..2147483647`). Default: `67108864` (64 MiB).
+   */
+  maxOutput?: number;
+  /**
+   * RFC 1950 zlib / DEFLATE compression level (`0..9`). Default: `6`.
+   */
+  level?: number;
+}
+
+export interface DecompressZlibOptions {
+  /**
+   * Maximum allowed compressed input byte length (`0..2147483647`). Default: `67108864` (64 MiB).
+   */
+  maxInput?: number;
+  /**
+   * Maximum allowed decompressed output byte length (`0..2147483647`). Default: `67108864` (64 MiB).
+   */
+  maxOutput?: number;
+}
+
+export interface ZlibDecompressOk {
+  ok: true;
+  data: Uint8Array;
+  inputBytes: number;
+  outputBytes: number;
+  outputSha256: string;
+}
+
+export interface ZlibDecompressErr {
+  ok: false;
+  error: string;
+}
+
+export type ZlibDecompressResult = ZlibDecompressOk | ZlibDecompressErr;
+
+export interface X25519KeyPair {
+  secretKeyHex: string;
+  publicKeyHex: string;
+  secretKey: Uint8Array;
+  publicKey: Uint8Array;
+  keyId: string;
+}
+
+export interface SealEnvelopeOptions {
+  /**
+   * AEAD chunk size in bytes (`1024..1048576`). Default: `65536`.
+   */
+  chunkSize?: number;
+  /**
+   * Optional 32-byte (64 lowercase hex chars) ephemeral X25519 secret scalar.
+   * Auto-generated via `globalThis.crypto.getRandomValues` when omitted.
+   */
+  ephemeralSecretHex?: string;
+  /**
+   * Optional 32-byte (64 lowercase hex chars) content encryption key (CEK).
+   * Auto-generated via `globalThis.crypto.getRandomValues` when omitted.
+   */
+  contentKeyHex?: string;
+  /**
+   * Optional 4-byte (8 lowercase hex chars) `MLSENC02` nonce prefix.
+   * Auto-generated via `globalThis.crypto.getRandomValues` when omitted.
+   */
+  noncePrefixHex?: string;
+}
+
+export interface SealEnvelopeResult {
+  ciphertext: Uint8Array;
+  ciphertextBytes: number;
+  ciphertextSha256: string;
+  recipientCount: number;
+  recipientKeyIds: string[];
+  ephemeralPublicKeyHex: string;
+  chunkSize: number;
+}
+
+export interface UnsealEnvelopeResult {
+  plaintext: Uint8Array;
+  plaintextBytes: number;
+  plaintextSha256: string;
+  recipientCount: number;
+  recipientKeyIds: string[];
+  ephemeralPublicKeyHex: string;
+}
+
+export interface CreateTrustKeyringOptions {
+  /**
+   * Optional list of 16-hex revoked Ed25519 key IDs. Default: `[]`.
+   */
+  revokedKeyIds?: readonly string[];
+  /**
+   * Minimum number of distinct non-revoked trusted signers required (`1..activeCount`). Default: `1`.
+   */
+  minQuorum?: number;
+}
+
+export interface TrustKeyringDocument {
+  schema: 4;
+  kind: 'moonlibsync-keyring';
+  min_quorum: number;
+  trusted_keys_hex: string[];
+  revoked_key_ids: string[];
+}
+
+export interface TrustKeyringResult {
+  keyringJson: string;
+  trustedCount: number;
+  revokedCount: number;
+  minQuorum: number;
+  keyIds: string[];
+}
+
+export interface SignatureBundleEntry {
+  algorithm: 'ed25519';
+  key_id: string;
+  public_key: string;
+  payload_length: string;
+  payload_sha256: string;
+  signature: string;
+}
+
+export interface SignatureBundle {
+  schema: 4;
+  kind: 'moonlibsync-signature-bundle';
+  payload_length: string;
+  payload_sha256: string;
+  signatures: SignatureBundleEntry[];
+}
+
+export type QuorumSignatureInput =
+  | string
+  | readonly (string | PublisherSignature | SignatureBundleEntry | Record<string, unknown>)[];
+
+export interface QuorumVerifyResult {
+  bundleJson: string;
+  verifiedKeyIds: string[];
+  rejectedKeyIds: string[];
+  revokedHits: string[];
+  requiredQuorum: number;
+}
+
 export class MoonLibSyncClient {
   readonly raw: Readonly<MoonLibSyncRawModule>;
   constructor(rawModule: MoonLibSyncRawModule);
@@ -901,6 +1242,44 @@ export class MoonLibSyncClient {
   ): Ed25519VerifyResult;
   seal(plain: Uint8Array, options: SealInputOptions): SealResult;
   unseal(cipher: Uint8Array, options: UnsealInputOptions): UnsealResult;
+  planRangeFetch(
+    targetSignature: Uint8Array,
+    targetLength: number,
+    basis: Uint8Array,
+    options?: RangeFetchOptions,
+  ): RangeFetchPlan;
+  applyRangeFetch(
+    targetSignature: Uint8Array,
+    targetLength: number,
+    basis: Uint8Array,
+    fetchedSlices: readonly (Uint8Array | string)[],
+    options?: RangeFetchOptions,
+  ): RangeFetchApplyResult;
+  composeDeltas(deltas: readonly (Uint8Array | string)[]): ComposedDeltaResult;
+  compressZlib(input: Uint8Array, options?: CompressZlibOptions): Uint8Array;
+  decompressZlib(
+    input: Uint8Array,
+    options?: DecompressZlibOptions,
+  ): ZlibDecompressResult;
+  x25519KeypairFromSecret(secretHex?: string): X25519KeyPair;
+  sealEnvelope(
+    plaintext: Uint8Array,
+    recipientPublicKeysHex: readonly string[],
+    options?: SealEnvelopeOptions,
+  ): SealEnvelopeResult;
+  unsealEnvelope(
+    ciphertext: Uint8Array,
+    recipientSecretHex: string,
+  ): UnsealEnvelopeResult;
+  createTrustKeyring(
+    trustedPublicKeysHex: readonly string[],
+    options?: CreateTrustKeyringOptions,
+  ): TrustKeyringResult;
+  verifyQuorum(
+    signatures: QuorumSignatureInput,
+    keyringJson: string,
+    payload: Uint8Array,
+  ): QuorumVerifyResult;
 }
 
 export function createClient(rawModule: MoonLibSyncRawModule): MoonLibSyncClient;

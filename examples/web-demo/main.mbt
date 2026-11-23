@@ -735,13 +735,120 @@ fn is_generic_json_mismatch(err : Error) -> Bool {
 }
 
 ///|
-fn is_schema12_tree_limit(err : Error) -> Bool {
-  match err {
-    @lib.ManifestError::ResourceLimit("manifest_depth")
-    | @lib.ManifestError::ResourceLimit("manifest_fields")
-    | @lib.ManifestError::ResourceLimit("manifest_bytes") => true
-    _ => false
+fn starts_with_json_object(data : Bytes) -> Bool {
+  let mut i = 0
+  let n = data.length()
+  while i < n {
+    let b = data[i]
+    if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+      i = i + 1
+    } else {
+      return b == b'{'
+    }
   }
+  false
+}
+
+///|
+fn parse_range_plan_inspect_json(
+  data : Bytes,
+  dir_limits : @lib.DirLimits,
+) -> String? raise {
+  guard data.length().to_int64() <= dir_limits.max_snapshot_bytes else {
+    raise @lib.ManifestError::ResourceLimit("range_plan_bytes")
+  }
+  let text = @utf8.decode(data) catch {
+    _ => raise @lib.ManifestError::InvalidUtf8
+  }
+  if text.has_prefix("\u{feff}") {
+    raise @lib.ManifestError::InvalidUtf8
+  }
+  let parsed = @json.parse(
+    text,
+    max_nesting_depth=16,
+    reject_duplicate_keys=true,
+    preserve_number_repr=true,
+  ) catch {
+    @json.ParseError::DepthLimitExceeded =>
+      raise @lib.ManifestError::ResourceLimit("manifest_depth")
+    _ => raise @lib.ManifestError::InvalidJson
+  }
+  guard parsed is @json.Json::Object(fields) else { return None }
+  guard fields.get("schema") is Some(@json.Json::Number(3.0, repr=Some("3"))) else {
+    return None
+  }
+  guard fields.get("kind") is Some(@json.Json::String("moonlibsync-range-plan")) else {
+    return None
+  }
+  guard fields.get("target_length")
+    is Some(@json.Json::Number(_, repr=Some(target_len))) else {
+    raise @lib.ManifestError::InvalidField("target_length")
+  }
+  ignore(parse_nonneg_decimal_str(target_len))
+  guard fields.get("block_len")
+    is Some(@json.Json::Number(_, repr=Some(block_len))) else {
+    raise @lib.ManifestError::InvalidField("block_len")
+  }
+  ignore(parse_nonneg_decimal_str(block_len))
+  guard fields.get("profile") is Some(@json.Json::String(profile)) &&
+    (profile == "rk-blake2" || profile == "rollsum-blake2") else {
+    raise @lib.ManifestError::InvalidField("profile")
+  }
+  guard fields.get("reused_bytes")
+    is Some(@json.Json::Number(_, repr=Some(reused_bytes))) else {
+    raise @lib.ManifestError::InvalidField("reused_bytes")
+  }
+  ignore(parse_nonneg_decimal_str(reused_bytes))
+  guard fields.get("fetch_bytes")
+    is Some(@json.Json::Number(_, repr=Some(fetch_bytes))) else {
+    raise @lib.ManifestError::InvalidField("fetch_bytes")
+  }
+  ignore(parse_nonneg_decimal_str(fetch_bytes))
+  guard fields.get("request_bytes")
+    is Some(@json.Json::Number(_, repr=Some(request_bytes))) else {
+    raise @lib.ManifestError::InvalidField("request_bytes")
+  }
+  ignore(parse_nonneg_decimal_str(request_bytes))
+  guard fields.get("ranges") is Some(@json.Json::Array(ranges)) else {
+    raise @lib.ManifestError::InvalidField("ranges")
+  }
+  for item in ranges {
+    guard item is @json.Json::Object(_) else {
+      raise @lib.ManifestError::InvalidField("ranges")
+    }
+  }
+  Some(
+    "{\"ok\":true,\"artifact_kind\":\"moonlibsync-range-plan\",\"schema_version\":3,\"summary\":{\"target_length\":\"\{target_len}\",\"block_len\":\"\{block_len}\",\"profile\":\"\{json_escape_str(profile)}\",\"reused_bytes\":\"\{reused_bytes}\",\"fetch_bytes\":\"\{fetch_bytes}\",\"request_bytes\":\"\{request_bytes}\",\"range_count\":\{ranges.length()}}}",
+  )
+}
+
+///|
+fn json_string_array(items : Array[String]) -> String {
+  let sb = StringBuilder()
+  sb.write_char('[')
+  for i in 0..<items.length() {
+    if i > 0 {
+      sb.write_char(',')
+    }
+    sb.write_char('"')
+    sb.write_string(json_escape_str(items[i]))
+    sb.write_char('"')
+  }
+  sb.write_char(']')
+  sb.to_string()
+}
+
+///|
+fn has_zlib_header(data : Bytes) -> Bool {
+  if data.length() < 2 {
+    return false
+  }
+  let cmf = data[0].to_int()
+  let flg = data[1].to_int()
+  (cmf & 0x0f) == 8 &&
+  cmf >> 4 <= 7 &&
+  (flg & 0x20) == 0 &&
+  ((cmf << 8) | flg) % 31 == 0
 }
 
 ///|
@@ -800,95 +907,199 @@ fn inspect_artifact_impl(data : Bytes) -> String raise {
     let header_hex = bytes_view_to_hex(data[0:56])
     return "{\"ok\":true,\"artifact_kind\":\"seal-archive\",\"byte_length\":\"\{data.length()}\",\"summary\":{\"kdf_mode\":\{kdf_mode},\"kdf_name\":\"\{kdf_name}\",\"chunk_size\":\{hdr.chunk_size},\"argon2_memory_kib\":\{hdr.argon2_memory_kib},\"argon2_passes\":\{hdr.argon2_passes},\"argon2_lanes\":\{hdr.argon2_lanes},\"salt_hex\":\"\{salt_hex}\",\"nonce_prefix_hex\":\"\{nonce_prefix_hex}\",\"byte_length\":\"\{data.length()}\",\"header_hex\":\"\{header_hex}\"}}"
   }
+  if has_prefix_bytes(data, @crypto.envelope_magic()) {
+    let seal_limits = @crypto.SealLimits::default()
+    let hdr = @crypto.inspect_envelope_header(data[:], seal_limits)
+    let eph_hex = @crypto.encode_key_hex(hdr.ephemeral_public_key)
+    let nonce_prefix_hex = @crypto.encode_key_hex(hdr.nonce_prefix)
+    let rec_ids_json = json_string_array(hdr.recipient_key_ids)
+    return "{\"ok\":true,\"artifact_kind\":\"envelope-archive\",\"byte_length\":\"\{data.length()}\",\"summary\":{\"magic\":\"MLSENC02\",\"version\":2,\"recipient_count\":\{hdr.recipient_key_ids.length()},\"recipient_key_ids\":\{rec_ids_json},\"chunk_size\":\{hdr.chunk_size},\"nonce_prefix_hex\":\"\{nonce_prefix_hex}\",\"ephemeral_public_key_hex\":\"\{eph_hex}\",\"byte_length\":\"\{data.length()}\"}}"
+  }
 
   let mut specific_err : Error? = None
-  try {
-    let tm = @lib.parse_transfer_manifest(data, limits)
-    match tm {
-      Delta(m) =>
-        return "{\"ok\":true,\"artifact_kind\":\"librsync-delta\",\"schema_version\":2,\"summary\":{\"mode\":\"delta\",\"basis_bytes\":\"\{m.basis.byte_length}\",\"signature_bytes\":\"\{m.signature.byte_length}\",\"payload_bytes\":\"\{m.delta.byte_length}\",\"result_bytes\":\"\{m.result.byte_length}\",\"result_sha256\":\"\{m.result.sha256}\"}}"
-      Full(p, r) =>
-        return "{\"ok\":true,\"artifact_kind\":\"full-file\",\"schema_version\":2,\"summary\":{\"mode\":\"full\",\"payload_bytes\":\"\{p.byte_length}\",\"result_bytes\":\"\{r.byte_length}\",\"result_sha256\":\"\{r.sha256}\"}}"
+  let mut limit_err : Error? = None
+  let record_manifest_err = fn(err : Error) {
+    match err {
+      @lib.ManifestError::ResourceLimit(_) =>
+        if limit_err is None {
+          limit_err = Some(err)
+        }
+      _ => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
     }
-  } catch {
-    err =>
-      if !is_generic_json_mismatch(err) && !is_schema12_tree_limit(err) {
-        specific_err = Some(err)
-      }
   }
-  try {
-    let um = @lib.parse_update_manifest(data, limits)
-    return "{\"ok\":true,\"artifact_kind\":\"librsync-delta\",\"schema_version\":1,\"summary\":{\"basis_bytes\":\"\{um.basis.byte_length}\",\"signature_bytes\":\"\{um.signature.byte_length}\",\"delta_bytes\":\"\{um.delta.byte_length}\",\"result_bytes\":\"\{um.result.byte_length}\",\"result_sha256\":\"\{um.result.sha256}\"}}"
-  } catch {
-    err =>
-      if !is_generic_json_mismatch(err) && !is_schema12_tree_limit(err) {
-        specific_err = Some(err)
+  if starts_with_json_object(data) {
+    try {
+      let tm = @lib.parse_transfer_manifest(data, limits)
+      match tm {
+        Delta(m) =>
+          return "{\"ok\":true,\"artifact_kind\":\"librsync-delta\",\"schema_version\":2,\"summary\":{\"mode\":\"delta\",\"basis_bytes\":\"\{m.basis.byte_length}\",\"signature_bytes\":\"\{m.signature.byte_length}\",\"payload_bytes\":\"\{m.delta.byte_length}\",\"result_bytes\":\"\{m.result.byte_length}\",\"result_sha256\":\"\{m.result.sha256}\"}}"
+        Full(p, r) =>
+          return "{\"ok\":true,\"artifact_kind\":\"full-file\",\"schema_version\":2,\"summary\":{\"mode\":\"full\",\"payload_bytes\":\"\{p.byte_length}\",\"result_bytes\":\"\{r.byte_length}\",\"result_sha256\":\"\{r.sha256}\"}}"
       }
-  }
-  try {
-    let bi = @lib.parse_basis_info(data, limits)
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-basis-info\",\"schema_version\":1,\"summary\":{\"basis_bytes\":\"\{bi.basis.byte_length}\",\"basis_sha256\":\"\{bi.basis.sha256}\",\"signature_bytes\":\"\{bi.signature.byte_length}\",\"signature_sha256\":\"\{bi.signature.sha256}\"}}"
-  } catch {
-    err =>
-      if !is_generic_json_mismatch(err) && !is_schema12_tree_limit(err) {
-        specific_err = Some(err)
-      }
-  }
-  try {
-    let snap = @lib.parse_dir_snapshot(data, dir_limits)
-    let mut total_bytes = 0UL
-    for e in snap.entries {
-      total_bytes = total_bytes + e.digest.byte_length.reinterpret_as_uint64()
+    } catch {
+      err => record_manifest_err(err)
     }
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-snapshot\",\"schema_version\":3,\"summary\":{\"entries\":\"\{snap.entries.length()}\",\"total_bytes\":\"\{total_bytes}\"}}"
-  } catch {
-    err => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
-  }
-  try {
-    let plan = @lib.parse_dir_plan(data, dir_limits)
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-plan\",\"schema_version\":3,\"summary\":{\"unchanged\":\"\{plan.unchanged_count}\",\"add\":\"\{plan.add_count}\",\"update\":\"\{plan.update_count}\",\"delete\":\"\{plan.delete_count}\",\"copy_from_basis\":\"\{plan.copy_from_basis_count}\",\"transfer_upper_bound_bytes\":\"\{plan.transfer_upper_bound_bytes}\"}}"
-  } catch {
-    err => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
-  }
-  try {
-    let idx = @lib.parse_dir_signature_index(data, dir_limits, limits)
-    let mut total_basis = 0UL
-    let mut total_sig = 0UL
-    for e in idx.entries {
-      total_basis = total_basis + e.basis.byte_length.reinterpret_as_uint64()
-      total_sig = total_sig + e.signature.byte_length.reinterpret_as_uint64()
+    try {
+      let um = @lib.parse_update_manifest(data, limits)
+      return "{\"ok\":true,\"artifact_kind\":\"librsync-delta\",\"schema_version\":1,\"summary\":{\"basis_bytes\":\"\{um.basis.byte_length}\",\"signature_bytes\":\"\{um.signature.byte_length}\",\"delta_bytes\":\"\{um.delta.byte_length}\",\"result_bytes\":\"\{um.result.byte_length}\",\"result_sha256\":\"\{um.result.sha256}\"}}"
+    } catch {
+      err => record_manifest_err(err)
     }
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-signatures\",\"schema_version\":3,\"summary\":{\"entries\":\"\{idx.entries.length()}\",\"total_basis_bytes\":\"\{total_basis}\",\"total_signature_bytes\":\"\{total_sig}\"}}"
-  } catch {
-    err => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
-  }
-  try {
-    let b = @lib.parse_dir_bundle_manifest(data, dir_limits, limits)
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-bundle\",\"schema_version\":3,\"summary\":{\"unchanged\":\"\{b.unchanged_count}\",\"add_full\":\"\{b.add_full_count}\",\"update_delta\":\"\{b.update_delta_count}\",\"update_full\":\"\{b.update_full_count}\",\"delete\":\"\{b.delete_count}\",\"copy_from_basis\":\"\{b.copy_from_basis_count}\",\"total_payload_bytes\":\"\{b.total_payload_bytes}\"}}"
-  } catch {
-    err => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
-  }
-  try {
-    let r = @lib.parse_dir_verify_report(data, dir_limits)
-    return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-verify\",\"schema_version\":3,\"summary\":{\"ok\":\{r.ok},\"matched\":\"\{r.matched_count}\",\"modified\":\"\{r.modified_count}\",\"missing\":\"\{r.missing_count}\",\"extra\":\"\{r.extra_count}\"}}"
-  } catch {
-    err => if !is_generic_json_mismatch(err) { specific_err = Some(err) }
-  }
-  try {
-    let ps = @crypto.parse_publisher_signature(data)
-    return "{\"ok\":true,\"artifact_kind\":\"publisher-signature\",\"schema_version\":1,\"summary\":{\"algorithm\":\"\{ps.algorithm}\",\"key_id\":\"\{ps.key_id}\",\"public_key\":\"\{ps.public_key_hex}\",\"payload_length\":\"\{ps.payload_length}\",\"payload_sha256\":\"\{ps.payload_sha256}\",\"signature\":\"\{ps.signature_hex}\"}}"
-  } catch {
-    err =>
-      match err {
-        @crypto.CryptoError::InvalidFormat("json")
-        | @crypto.CryptoError::InvalidFormat("schema")
-        | @crypto.CryptoError::InvalidFormat("kind")
-        | @crypto.CryptoError::InvalidFormat("schema_version")
-        | @crypto.CryptoError::InvalidFormat("utf8")
-        | @crypto.CryptoError::LimitExceeded("signature_json_bytes")
-        | @crypto.CryptoError::LimitExceeded("signature_json_depth") => ()
-        _ => specific_err = Some(err)
+    try {
+      let bi = @lib.parse_basis_info(data, limits)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-basis-info\",\"schema_version\":1,\"summary\":{\"basis_bytes\":\"\{bi.basis.byte_length}\",\"basis_sha256\":\"\{bi.basis.sha256}\",\"signature_bytes\":\"\{bi.signature.byte_length}\",\"signature_sha256\":\"\{bi.signature.sha256}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let snap = @lib.parse_dir_snapshot(data, dir_limits)
+      let mut total_bytes = 0UL
+      for e in snap.entries {
+        total_bytes = total_bytes + e.digest.byte_length.reinterpret_as_uint64()
       }
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-snapshot\",\"schema_version\":3,\"summary\":{\"entries\":\"\{snap.entries.length()}\",\"total_bytes\":\"\{total_bytes}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let plan = @lib.parse_dir_plan(data, dir_limits)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-plan\",\"schema_version\":3,\"summary\":{\"unchanged\":\"\{plan.unchanged_count}\",\"add\":\"\{plan.add_count}\",\"update\":\"\{plan.update_count}\",\"delete\":\"\{plan.delete_count}\",\"copy_from_basis\":\"\{plan.copy_from_basis_count}\",\"transfer_upper_bound_bytes\":\"\{plan.transfer_upper_bound_bytes}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let idx = @lib.parse_dir_signature_index(data, dir_limits, limits)
+      let mut total_basis = 0UL
+      let mut total_sig = 0UL
+      for e in idx.entries {
+        total_basis = total_basis + e.basis.byte_length.reinterpret_as_uint64()
+        total_sig = total_sig + e.signature.byte_length.reinterpret_as_uint64()
+      }
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-signatures\",\"schema_version\":3,\"summary\":{\"entries\":\"\{idx.entries.length()}\",\"total_basis_bytes\":\"\{total_basis}\",\"total_signature_bytes\":\"\{total_sig}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let b = @lib.parse_dir_bundle_manifest(data, dir_limits, limits)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-bundle\",\"schema_version\":3,\"summary\":{\"unchanged\":\"\{b.unchanged_count}\",\"add_full\":\"\{b.add_full_count}\",\"update_delta\":\"\{b.update_delta_count}\",\"update_full\":\"\{b.update_full_count}\",\"delete\":\"\{b.delete_count}\",\"copy_from_basis\":\"\{b.copy_from_basis_count}\",\"total_payload_bytes\":\"\{b.total_payload_bytes}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let r = @lib.parse_dir_verify_report(data, dir_limits)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-verify\",\"schema_version\":3,\"summary\":{\"ok\":\{r.ok},\"matched\":\"\{r.matched_count}\",\"modified\":\"\{r.modified_count}\",\"missing\":\"\{r.missing_count}\",\"extra\":\"\{r.extra_count}\"}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let meta = @lib.parse_dir_metadata(data, dir_limits)
+      let exec_json = json_string_array(meta.executable_paths)
+      let empty_json = json_string_array(meta.empty_dirs)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-dir-metadata\",\"schema_version\":3,\"summary\":{\"executable_count\":\{meta.executable_paths.length()},\"empty_dir_count\":\{meta.empty_dirs.length()},\"executable_paths\":\{exec_json},\"empty_dirs\":\{empty_json}}}"
+    } catch {
+      err => record_manifest_err(err)
+    }
+    try {
+      let ps = @crypto.parse_publisher_signature(data)
+      return "{\"ok\":true,\"artifact_kind\":\"publisher-signature\",\"schema_version\":1,\"summary\":{\"algorithm\":\"\{ps.algorithm}\",\"key_id\":\"\{ps.key_id}\",\"public_key\":\"\{ps.public_key_hex}\",\"payload_length\":\"\{ps.payload_length}\",\"payload_sha256\":\"\{ps.payload_sha256}\",\"signature\":\"\{ps.signature_hex}\"}}"
+    } catch {
+      err =>
+        match err {
+          @crypto.CryptoError::InvalidFormat("json")
+          | @crypto.CryptoError::InvalidFormat("schema")
+          | @crypto.CryptoError::InvalidFormat("kind")
+          | @crypto.CryptoError::InvalidFormat("schema_version")
+          | @crypto.CryptoError::InvalidFormat("utf8")
+          | @crypto.CryptoError::InvalidFormat("utf8_bom")
+          | @crypto.CryptoError::LimitExceeded("signature_json_bytes")
+          | @crypto.CryptoError::LimitExceeded("signature_json_depth") => ()
+          _ => specific_err = Some(err)
+        }
+    }
+    try {
+      let kr = @crypto.parse_trust_keyring(data)
+      let key_ids : Array[String] = Array(capacity=kr.trusted_keys.length())
+      for pk in kr.trusted_keys {
+        key_ids.push(@crypto.key_id_from_public_key(pk))
+      }
+      let key_ids_json = json_string_array(key_ids)
+      let revoked_json = json_string_array(kr.revoked_key_ids)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-keyring\",\"schema_version\":4,\"summary\":{\"trusted_count\":\{kr.trusted_keys.length()},\"revoked_count\":\{kr.revoked_key_ids.length()},\"min_quorum\":\{kr.min_quorum},\"key_ids\":\{key_ids_json},\"revoked_key_ids\":\{revoked_json}}}"
+    } catch {
+      err =>
+        match err {
+          @crypto.CryptoError::InvalidFormat("json")
+          | @crypto.CryptoError::InvalidFormat("schema")
+          | @crypto.CryptoError::InvalidFormat("kind")
+          | @crypto.CryptoError::InvalidFormat("utf8")
+          | @crypto.CryptoError::InvalidFormat("utf8_bom")
+          | @crypto.CryptoError::LimitExceeded("keyring_json_bytes")
+          | @crypto.CryptoError::LimitExceeded("keyring_json_depth") => ()
+          _ => specific_err = Some(err)
+        }
+    }
+    try {
+      let bundle = @crypto.parse_signature_bundle(data)
+      let signer_ids : Array[String] = Array(
+        capacity=bundle.signatures.length(),
+      )
+      for sig in bundle.signatures {
+        signer_ids.push(sig.key_id)
+      }
+      let signer_ids_json = json_string_array(signer_ids)
+      return "{\"ok\":true,\"artifact_kind\":\"moonlibsync-signature-bundle\",\"schema_version\":4,\"summary\":{\"signature_count\":\{bundle.signatures.length()},\"signer_key_ids\":\{signer_ids_json},\"payload_length\":\"\{bundle.payload_length}\",\"payload_sha256\":\"\{bundle.payload_sha256}\"}}"
+    } catch {
+      err =>
+        match err {
+          @crypto.CryptoError::InvalidFormat("json")
+          | @crypto.CryptoError::InvalidFormat("schema")
+          | @crypto.CryptoError::InvalidFormat("kind")
+          | @crypto.CryptoError::InvalidFormat("utf8")
+          | @crypto.CryptoError::InvalidFormat("utf8_bom")
+          | @crypto.CryptoError::LimitExceeded("signature_bundle_json_bytes")
+          | @crypto.CryptoError::LimitExceeded("signature_bundle_json_depth") =>
+            ()
+          _ => specific_err = Some(err)
+        }
+    }
+    try {
+      match parse_range_plan_inspect_json(data, dir_limits) {
+        Some(out) => return out
+        None => ()
+      }
+    } catch {
+      err => record_manifest_err(err)
+    }
+    if specific_err is None {
+      specific_err = limit_err
+    }
+  }
+  if specific_err is None && has_zlib_header(data) {
+    try {
+      let plain = @compress.decompress_zlib(
+        data[:],
+        limits.max_delta_bytes,
+        limits.max_output_bytes,
+      )
+      let h = @lib.Sha256Hasher::new(limits.max_output_bytes)
+      h.update(plain[:])
+      let dig = h.finish()
+      return "{\"ok\":true,\"artifact_kind\":\"zlib\",\"compressed_bytes\":\"\{data.length()}\",\"uncompressed_bytes\":\"\{dig.byte_length}\",\"uncompressed_sha256\":\"\{dig.sha256}\"}"
+    } catch {
+      err =>
+        match err {
+          @lib.SyncError::LimitExceeded | @lib.SyncError::TrailingData =>
+            specific_err = Some(err)
+          _ => {
+            let cmf = data[0].to_int()
+            let flg = data[1].to_int()
+            if cmf == 0x78 &&
+              (flg == 0x01 || flg == 0x5e || flg == 0x9c || flg == 0xda) {
+              specific_err = Some(err)
+            }
+          }
+        }
+    }
   }
 
   match specific_err {
@@ -899,7 +1110,7 @@ fn inspect_artifact_impl(data : Bytes) -> String raise {
 
 ///|
 /// Auto-detect and validate any MoonLibSync binary artifact (.sig, .delta, .gz,
-/// .mbundle, .menc) or Schema 1/2/3/4 JSON document and return structured summary JSON.
+/// .zlib, .mbundle, .menc, MLSENC02) or Schema 1/2/3/4 JSON document and return structured summary JSON.
 pub fn inspect_artifact_json(data : Bytes) -> String {
   inspect_artifact_impl(data) catch {
     err => "{\"ok\":false,\"error\":\"\{sync_err_label(err)}\"}"
@@ -1924,6 +2135,532 @@ pub fn unseal_bytes_json(
   use_passphrase : Bool,
 ) -> String {
   unseal_bytes_impl(cipher, secret, use_passphrase) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn plan_range_fetch_impl(
+  target_sig : Bytes,
+  target_length : Int32,
+  basis : Bytes,
+  merge_gap_bytes : Int32,
+  max_ranges : Int32,
+) -> String raise {
+  let limits = @lib.Limits::default()
+  let plan = @lib.plan_range_fetch(
+    target_sig,
+    target_length.to_int64(),
+    basis,
+    {
+      merge_gap_bytes: merge_gap_bytes.to_int64(),
+      max_ranges: max_ranges.to_int64(),
+    },
+    limits,
+  )
+  let raw = @lib.encode_range_plan_json(plan)
+  let plan_json = trim_ascii_whitespace(
+    @utf8.decode(raw) catch {
+      _ => raise @lib.ManifestError::InvalidUtf8
+    },
+  )
+  "{\"ok\":true,\"plan\":\{plan_json}}"
+}
+
+///|
+/// Plan a client-pull HTTP Range fetch (`zsync`-style) from a remote librsync
+/// signature, remote target byte length, and local basis bytes.
+pub fn plan_range_fetch_json(
+  target_sig : Bytes,
+  target_length : Int32,
+  basis : Bytes,
+  merge_gap_bytes : Int32,
+  max_ranges : Int32,
+) -> String {
+  plan_range_fetch_impl(
+    target_sig, target_length, basis, merge_gap_bytes, max_ranges,
+  ) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn apply_range_fetch_impl(
+  target_sig : Bytes,
+  target_length : Int32,
+  basis : Bytes,
+  merge_gap_bytes : Int32,
+  max_ranges : Int32,
+  slices_json : String,
+) -> String raise {
+  let limits = @lib.Limits::default()
+  let plan = @lib.plan_range_fetch(
+    target_sig,
+    target_length.to_int64(),
+    basis,
+    {
+      merge_gap_bytes: merge_gap_bytes.to_int64(),
+      max_ranges: max_ranges.to_int64(),
+    },
+    limits,
+  )
+  let parsed = @json.parse(
+    slices_json,
+    max_nesting_depth=2,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @lib.ManifestError::InvalidJson
+  }
+  guard parsed is @json.Json::Array(items) else {
+    raise @lib.ManifestError::InvalidSchema
+  }
+  guard items.length() == plan.ranges.length() else {
+    raise @lib.SyncError::InvalidOptions("fetched_slices")
+  }
+  let slices : Array[Bytes] = Array(capacity=items.length())
+  let mut total_slice_bytes = 0L
+  for item in items {
+    guard item is @json.Json::String(hex_str) else {
+      raise @lib.ManifestError::InvalidField("slices")
+    }
+    let slice = decode_hex_bytes(hex_str, "slices", limits.max_output_bytes)
+    guard slice.length().to_int64() <=
+      limits.max_output_bytes - total_slice_bytes else {
+      raise @lib.SyncError::LimitExceeded
+    }
+    total_slice_bytes = total_slice_bytes + slice.length().to_int64()
+    slices.push(slice)
+  }
+  let restored = @lib.apply_range_fetch(basis, plan, slices, limits)
+  let digest = sha256_file_digest(restored, limits.max_output_bytes)
+  let restored_hex = bytes_view_to_hex(restored[:])
+  "{\"ok\":true,\"restored_hex\":\"\{restored_hex}\",\"restored_bytes\":\{restored.length()},\"restored_sha256\":\"\{digest.sha256}\",\"reused_bytes\":\{plan.reused_bytes},\"fetch_bytes\":\{plan.fetch_bytes},\"request_bytes\":\{plan.request_bytes},\"range_count\":\{plan.ranges.length()}}"
+}
+
+///|
+/// Reconstruct a target file from local `basis` and hex-encoded HTTP Range slices
+/// matching the deterministic plan computed from `(target_sig, target_length)`.
+pub fn apply_range_fetch_json(
+  target_sig : Bytes,
+  target_length : Int32,
+  basis : Bytes,
+  merge_gap_bytes : Int32,
+  max_ranges : Int32,
+  slices_json : String,
+) -> String {
+  apply_range_fetch_impl(
+    target_sig, target_length, basis, merge_gap_bytes, max_ranges, slices_json,
+  ) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn compose_deltas_impl(deltas_json : String) -> String raise {
+  let limits = @lib.Limits::default()
+  let parsed = @json.parse(
+    deltas_json,
+    max_nesting_depth=2,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @lib.ManifestError::InvalidJson
+  }
+  guard parsed is @json.Json::Array(items) else {
+    raise @lib.ManifestError::InvalidSchema
+  }
+  guard items.length() >= 1 else {
+    raise @lib.SyncError::InvalidOptions("deltas")
+  }
+  guard items.length() <= 256 else {
+    raise @lib.ManifestError::ResourceLimit("deltas")
+  }
+  let deltas : Array[Bytes] = Array(capacity=items.length())
+  let mut input_total_bytes = 0L
+  for item in items {
+    guard item is @json.Json::String(hex_str) else {
+      raise @lib.ManifestError::InvalidField("deltas")
+    }
+    let d = decode_hex_bytes(hex_str, "deltas", limits.max_delta_bytes)
+    input_total_bytes = input_total_bytes + d.length().to_int64()
+    deltas.push(d)
+  }
+  let composed = @lib.compose_delta_chain(deltas, limits)
+  let summary = @lib.inspect_delta(composed, limits)
+  let digest = sha256_file_digest(composed, limits.max_delta_bytes)
+  let composed_hex = bytes_view_to_hex(composed[:])
+  "{\"ok\":true,\"composed_hex\":\"\{composed_hex}\",\"composed_bytes\":\{composed.length()},\"composed_sha256\":\"\{digest.sha256}\",\"input_total_bytes\":\{input_total_bytes},\"instruction_count\":\{summary.instruction_count},\"copy_count\":\{summary.copy_commands},\"literal_count\":\{summary.literal_commands},\"copy_bytes\":\{summary.copy_bytes},\"literal_bytes\":\{summary.literal_bytes},\"output_bytes\":\{summary.output_bytes}}"
+}
+
+///|
+/// Compose a non-empty chain of hex-encoded librsync `0x72730236` deltas
+/// (`v0->v1`, `v1->v2`, ..., `v(k-1)->vk`) into one direct `v0->vk` delta.
+pub fn compose_deltas_json(deltas_json : String) -> String {
+  compose_deltas_impl(deltas_json) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+/// Compress bytes into a bounded RFC 1950 zlib stream (`level` 0..=9).
+/// Returns empty bytes on invalid options or exceeded limits.
+pub fn compress_zlib_bytes(
+  input : Bytes,
+  max_input : Int32,
+  max_output : Int32,
+  level : Int32,
+) -> Bytes {
+  @compress.compress_zlib(
+    input[:],
+    max_input.to_int64(),
+    max_output.to_int64(),
+    level~,
+  ) catch {
+    _ => b""
+  }
+}
+
+///|
+fn decompress_zlib_check_impl(
+  input : Bytes,
+  max_input : Int32,
+  max_output : Int32,
+) -> String raise {
+  let plain = @compress.decompress_zlib(
+    input[:],
+    max_input.to_int64(),
+    max_output.to_int64(),
+  )
+  let digest = sha256_file_digest(plain, plain.length().to_int64())
+  let output_hex = bytes_view_to_hex(plain[:])
+  "{\"ok\":true,\"input_bytes\":\{input.length()},\"output_bytes\":\{plain.length()},\"output_sha256\":\"\{digest.sha256}\",\"output_hex\":\"\{output_hex}\"}"
+}
+
+///|
+/// Decompress a bounded RFC 1950 zlib stream and return structured JSON diagnostics,
+/// plaintext hex, and SHA-256 (rejecting zip bombs, trailing data, and truncation).
+pub fn decompress_zlib_check_json(
+  input : Bytes,
+  max_input : Int32,
+  max_output : Int32,
+) -> String {
+  decompress_zlib_check_impl(input, max_input, max_output) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn x25519_keypair_from_secret_impl(secret_hex : String) -> String raise {
+  let secret = @crypto.decode_key_hex(secret_hex, 32, "x25519_secret")
+  let kp = @crypto.x25519_keypair_from_secret(secret)
+  let key_id = @crypto.x25519_key_id(kp.public_key)
+  let sk_hex = @crypto.encode_key_hex(kp.secret_key)
+  let pk_hex = @crypto.encode_key_hex(kp.public_key)
+  "{\"ok\":true,\"secret_key_hex\":\"\{sk_hex}\",\"public_key_hex\":\"\{pk_hex}\",\"key_id\":\"\{key_id}\"}"
+}
+
+///|
+/// Derive a canonical X25519 key pair and 16-hex key ID from a 64-hex secret scalar.
+pub fn x25519_keypair_from_secret_json(secret_hex : String) -> String {
+  x25519_keypair_from_secret_impl(secret_hex) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn seal_envelope_impl(
+  plaintext : Bytes,
+  recipient_pubs_json : String,
+  ephemeral_secret_hex : String,
+  content_key_hex : String,
+  nonce_prefix_hex : String,
+  chunk_size : Int32,
+) -> String raise {
+  guard chunk_size >= 0 else {
+    raise @crypto.CryptoError::InvalidOptions("chunk_size")
+  }
+  let actual_chunk = if chunk_size == 0 { 65536 } else { chunk_size }
+  let parsed = @json.parse(
+    recipient_pubs_json,
+    max_nesting_depth=2,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("recipient_pubs_json")
+  }
+  guard parsed is @json.Json::Array(items) else {
+    raise @crypto.CryptoError::InvalidFormat("recipient_pubs")
+  }
+  guard items.length() <= 64 else {
+    raise @crypto.CryptoError::InvalidOptions("recipient_count")
+  }
+  let recipient_pubs : Array[Bytes] = Array(capacity=items.length())
+  for item in items {
+    guard item is @json.Json::String(pk_hex) else {
+      raise @crypto.CryptoError::InvalidFormat("recipient_pubs")
+    }
+    recipient_pubs.push(
+      @crypto.decode_key_hex(pk_hex, 32, "recipient_public_key"),
+    )
+  }
+  let ephemeral_secret = @crypto.decode_key_hex(
+    ephemeral_secret_hex, 32, "ephemeral_secret",
+  )
+  let content_key = @crypto.decode_key_hex(content_key_hex, 32, "content_key")
+  let nonce_prefix = @crypto.decode_key_hex(nonce_prefix_hex, 4, "nonce_prefix")
+  let opts : @crypto.SealOptions = {
+    chunk_size: actual_chunk,
+    argon2_memory_kib: 16384,
+    argon2_passes: 2,
+    argon2_lanes: 1,
+  }
+  let limits = @crypto.SealLimits::default()
+  let cipher = @crypto.seal_envelope(
+    plaintext, recipient_pubs, ephemeral_secret, content_key, nonce_prefix, opts,
+    limits,
+  )
+  let hdr = @crypto.inspect_envelope_header(cipher[:], limits)
+  let digest = sha256_file_digest(cipher, limits.max_output_bytes)
+  let cipher_hex = bytes_view_to_hex(cipher[:])
+  let eph_hex = @crypto.encode_key_hex(hdr.ephemeral_public_key)
+  let rec_ids_json = json_string_array(hdr.recipient_key_ids)
+  "{\"ok\":true,\"ciphertext_hex\":\"\{cipher_hex}\",\"ciphertext_bytes\":\{cipher.length()},\"ciphertext_sha256\":\"\{digest.sha256}\",\"recipient_count\":\{hdr.recipient_key_ids.length()},\"recipient_key_ids\":\{rec_ids_json},\"ephemeral_public_key_hex\":\"\{eph_hex}\",\"chunk_size\":\{hdr.chunk_size}}"
+}
+
+///|
+/// Seal `plaintext` into an authenticated `MLSENC02` multi-recipient X25519
+/// ChaCha20-Poly1305 envelope for 1..=64 recipients.
+pub fn seal_envelope_json(
+  plaintext : Bytes,
+  recipient_pubs_json : String,
+  ephemeral_secret_hex : String,
+  content_key_hex : String,
+  nonce_prefix_hex : String,
+  chunk_size : Int32,
+) -> String {
+  seal_envelope_impl(
+    plaintext, recipient_pubs_json, ephemeral_secret_hex, content_key_hex, nonce_prefix_hex,
+    chunk_size,
+  ) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn unseal_envelope_impl(
+  ciphertext : Bytes,
+  recipient_secret_hex : String,
+) -> String raise {
+  let recipient_secret = @crypto.decode_key_hex(
+    recipient_secret_hex, 32, "x25519_secret",
+  )
+  let limits = @crypto.SealLimits::default()
+  let plain = @crypto.unseal_envelope(ciphertext, recipient_secret, limits)
+  let hdr = @crypto.inspect_envelope_header(ciphertext[:], limits)
+  let digest = sha256_file_digest(plain, limits.max_output_bytes)
+  let plain_hex = bytes_view_to_hex(plain[:])
+  let eph_hex = @crypto.encode_key_hex(hdr.ephemeral_public_key)
+  let rec_ids_json = json_string_array(hdr.recipient_key_ids)
+  "{\"ok\":true,\"plaintext_hex\":\"\{plain_hex}\",\"plaintext_bytes\":\{plain.length()},\"plaintext_sha256\":\"\{digest.sha256}\",\"recipient_count\":\{hdr.recipient_key_ids.length()},\"recipient_key_ids\":\{rec_ids_json},\"ephemeral_public_key_hex\":\"\{eph_hex}\"}"
+}
+
+///|
+/// Unseal and authenticate an `MLSENC02` multi-recipient envelope using one
+/// recipient's 64-hex X25519 secret scalar.
+pub fn unseal_envelope_json(
+  ciphertext : Bytes,
+  recipient_secret_hex : String,
+) -> String {
+  unseal_envelope_impl(ciphertext, recipient_secret_hex) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn create_trust_keyring_impl(
+  trusted_keys_json : String,
+  revoked_ids_json : String,
+  min_quorum : Int32,
+) -> String raise {
+  let parsed_keys = @json.parse(
+    trusted_keys_json,
+    max_nesting_depth=2,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("trusted_keys_json")
+  }
+  guard parsed_keys is @json.Json::Array(key_items) else {
+    raise @crypto.CryptoError::InvalidFormat("trusted_keys")
+  }
+  guard key_items.length() <= 256 else {
+    raise @crypto.CryptoError::LimitExceeded("trusted_keys")
+  }
+  let trusted_keys : Array[Bytes] = Array(capacity=key_items.length())
+  for item in key_items {
+    guard item is @json.Json::String(pk_hex) else {
+      raise @crypto.CryptoError::InvalidFormat("trusted_keys")
+    }
+    trusted_keys.push(@crypto.decode_key_hex(pk_hex, 32, "trusted_keys"))
+  }
+  let parsed_rev = @json.parse(
+    revoked_ids_json,
+    max_nesting_depth=2,
+    reject_duplicate_keys=true,
+  ) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("revoked_ids_json")
+  }
+  guard parsed_rev is @json.Json::Array(rev_items) else {
+    raise @crypto.CryptoError::InvalidFormat("revoked_ids")
+  }
+  guard rev_items.length() <= 256 else {
+    raise @crypto.CryptoError::LimitExceeded("revoked_ids")
+  }
+  let revoked_ids : Array[String] = Array(capacity=rev_items.length())
+  for item in rev_items {
+    guard item is @json.Json::String(id_str) else {
+      raise @crypto.CryptoError::InvalidFormat("revoked_ids")
+    }
+    revoked_ids.push(id_str)
+  }
+  let kr = @crypto.create_trust_keyring(trusted_keys, revoked_ids, min_quorum)
+  let raw = @crypto.encode_trust_keyring(kr)
+  let kr_str = @utf8.decode(raw) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("utf8")
+  }
+  let key_ids : Array[String] = Array(capacity=kr.trusted_keys.length())
+  for pk in kr.trusted_keys {
+    key_ids.push(@crypto.key_id_from_public_key(pk))
+  }
+  let kr_escaped = json_escape_str(kr_str)
+  let key_ids_json = json_string_array(key_ids)
+  "{\"ok\":true,\"keyring_json\":\"\{kr_escaped}\",\"trusted_count\":\{kr.trusted_keys.length()},\"revoked_count\":\{kr.revoked_key_ids.length()},\"min_quorum\":\{kr.min_quorum},\"key_ids\":\{key_ids_json}}"
+}
+
+///|
+/// Construct and encode a canonical Schema 4 Ed25519 `TrustKeyring` JSON with
+/// optional revoked key IDs and an M-of-N threshold quorum policy.
+pub fn create_trust_keyring_json(
+  trusted_keys_json : String,
+  revoked_ids_json : String,
+  min_quorum : Int32,
+) -> String {
+  create_trust_keyring_impl(trusted_keys_json, revoked_ids_json, min_quorum) catch {
+    err => err_json(err)
+  }
+}
+
+///|
+fn parse_sig_json_object(
+  fields : Map[String, @json.Json],
+) -> @crypto.PublisherSignature raise @crypto.CryptoError {
+  let len = fields.length()
+  if len == 8 {
+    guard fields.get("schema_version")
+      is Some(@json.Json::Number(1.0, repr=Some("1"))) else {
+      raise @crypto.CryptoError::InvalidFormat("schema_version")
+    }
+    guard fields.get("kind")
+      is Some(@json.Json::String("moonlibsync-signature")) else {
+      raise @crypto.CryptoError::InvalidFormat("kind")
+    }
+  } else if len != 6 {
+    raise @crypto.CryptoError::InvalidFormat("signature_schema")
+  }
+  guard fields.get("algorithm") is Some(@json.Json::String(algorithm)) else {
+    raise @crypto.CryptoError::InvalidFormat("algorithm")
+  }
+  guard fields.get("key_id") is Some(@json.Json::String(key_id)) else {
+    raise @crypto.CryptoError::InvalidFormat("key_id")
+  }
+  guard fields.get("public_key") is Some(@json.Json::String(public_key_hex)) else {
+    raise @crypto.CryptoError::InvalidFormat("public_key")
+  }
+  guard fields.get("payload_length") is Some(@json.Json::String(len_str)) else {
+    raise @crypto.CryptoError::InvalidFormat("payload_length")
+  }
+  guard fields.get("payload_sha256") is Some(@json.Json::String(payload_sha256)) else {
+    raise @crypto.CryptoError::InvalidFormat("payload_sha256")
+  }
+  guard fields.get("signature") is Some(@json.Json::String(signature_hex)) else {
+    raise @crypto.CryptoError::InvalidFormat("signature")
+  }
+  let payload_length = parse_nonneg_decimal_str(len_str) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("payload_length")
+  }
+  {
+    algorithm,
+    key_id,
+    public_key_hex,
+    payload_length,
+    payload_sha256,
+    signature_hex,
+  }
+}
+
+///|
+fn verify_quorum_bytes_impl(
+  signatures_json : String,
+  keyring_json : String,
+  payload : Bytes,
+) -> String raise {
+  let trimmed = trim_ascii_whitespace(signatures_json)
+  let bundle = if trimmed.has_prefix("[") {
+    let raw_bytes = @utf8.encode(trimmed)
+    guard raw_bytes.length() <= 131072 else {
+      raise @crypto.CryptoError::LimitExceeded("signature_bundle_json_bytes")
+    }
+    let parsed = @json.parse(
+      trimmed,
+      max_nesting_depth=4,
+      reject_duplicate_keys=true,
+      preserve_number_repr=true,
+    ) catch {
+      @json.ParseError::DepthLimitExceeded =>
+        raise @crypto.CryptoError::LimitExceeded("signature_bundle_json_depth")
+      _ => raise @crypto.CryptoError::InvalidFormat("json")
+    }
+    guard parsed is @json.Json::Array(items) else {
+      raise @crypto.CryptoError::InvalidFormat("signatures")
+    }
+    guard items.length() >= 1 && items.length() <= 64 else {
+      raise @crypto.CryptoError::InvalidOptions("signature_count")
+    }
+    let sigs : Array[@crypto.PublisherSignature] = Array(
+      capacity=items.length(),
+    )
+    for item in items {
+      match item {
+        @json.Json::String(sig_str) =>
+          sigs.push(@crypto.parse_publisher_signature(@utf8.encode(sig_str)))
+        @json.Json::Object(fields) => sigs.push(parse_sig_json_object(fields))
+        _ => raise @crypto.CryptoError::InvalidFormat("signatures")
+      }
+    }
+    @crypto.create_signature_bundle(sigs)
+  } else {
+    @crypto.parse_signature_bundle(@utf8.encode(signatures_json))
+  }
+  let keyring = @crypto.parse_trust_keyring(@utf8.encode(keyring_json))
+  let report = @crypto.verify_quorum_bytes(bundle, keyring, payload)
+  let bundle_raw = @crypto.encode_signature_bundle(bundle)
+  let bundle_str = @utf8.decode(bundle_raw) catch {
+    _ => raise @crypto.CryptoError::InvalidFormat("utf8")
+  }
+  let bundle_escaped = json_escape_str(bundle_str)
+  let verified_json = json_string_array(report.verified_key_ids)
+  let rejected_json = json_string_array(report.rejected_key_ids)
+  let revoked_json = json_string_array(report.revoked_hits)
+  "{\"ok\":true,\"bundle_json\":\"\{bundle_escaped}\",\"verified_key_ids\":\{verified_json},\"rejected_key_ids\":\{rejected_json},\"revoked_hits\":\{revoked_json},\"required_quorum\":\{report.required_quorum}}"
+}
+
+///|
+/// Verify an M-of-N Ed25519 quorum from either a Schema 4 `SignatureBundle`
+/// JSON string or a JSON array of `PublisherSignature` JSON strings/objects
+/// against a Schema 4 `TrustKeyring` JSON and raw `payload` bytes.
+pub fn verify_quorum_bytes_json(
+  signatures_json : String,
+  keyring_json : String,
+  payload : Bytes,
+) -> String {
+  verify_quorum_bytes_impl(signatures_json, keyring_json, payload) catch {
     err => err_json(err)
   }
 }

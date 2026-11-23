@@ -28,11 +28,29 @@ const REQUIRED_EXPORTS = Object.freeze([
   'ed25519_verify_bytes_json',
   'seal_bytes_json',
   'unseal_bytes_json',
+  'plan_range_fetch_json',
+  'apply_range_fetch_json',
+  'compose_deltas_json',
+  'compress_zlib_bytes',
+  'decompress_zlib_check_json',
+  'x25519_keypair_from_secret_json',
+  'seal_envelope_json',
+  'unseal_envelope_json',
+  'create_trust_keyring_json',
+  'verify_quorum_bytes_json',
 ]);
 
 const INT32_MIN = -2147483648;
 const INT32_MAX = 2147483647;
 const DEFAULT_MAX_GZIP_OUTPUT = 67108864;
+const DEFAULT_MAX_ZLIB_INPUT = 67108864;
+const DEFAULT_MAX_ZLIB_OUTPUT = 67108864;
+const DEFAULT_RANGE_MERGE_GAP_BYTES = 4096;
+const DEFAULT_RANGE_MAX_RANGES = 256;
+const MAX_RANGE_FETCH_RANGES = 65536;
+const MIN_SEAL_CHUNK_SIZE = 1024;
+const MAX_SEAL_CHUNK_SIZE = 1048576;
+const MAX_ENVELOPE_RECIPIENTS = 64;
 const DEFAULT_SEAL_CHUNK_SIZE = 65536;
 const DEFAULT_ARGON2_MEMORY_KIB = 16384;
 const DEFAULT_ARGON2_PASSES = 2;
@@ -164,17 +182,73 @@ function hexToBytes(hex, label) {
   return out;
 }
 
+function assertHexBytesString(value, name, expectedByteLen, lengthErrorCode) {
+  if (typeof value !== 'string') {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected hexadecimal string for "${name}"`,
+    );
+  }
+  if ((value.length & 1) !== 0) {
+    throw new MoonLibSyncError(
+      'InvalidHex',
+      `Expected even-length hexadecimal string for "${name}"`,
+    );
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (hexNibble(value.charCodeAt(i)) < 0) {
+      throw new MoonLibSyncError(
+        'InvalidHex',
+        `Invalid hexadecimal character in "${name}"`,
+      );
+    }
+  }
+  if (expectedByteLen !== undefined && value.length !== expectedByteLen * 2) {
+    throw new MoonLibSyncError(
+      lengthErrorCode || `InvalidOptions:${name}`,
+      `Expected ${expectedByteLen}-byte (${expectedByteLen * 2}-hex-char) string for "${name}"`,
+    );
+  }
+  return value.toLowerCase();
+}
+
+function assertNonNegInt32(value, name) {
+  const n = assertInt32(value, name);
+  if (n < 0) {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected non-negative 32-bit integer for "${name}"`,
+    );
+  }
+  return n;
+}
+
 function randomBytes(length) {
   const cryptoObj = globalThis.crypto;
   if (!cryptoObj || typeof cryptoObj.getRandomValues !== 'function') {
     throw new MoonLibSyncError(
       'CryptoUnavailable',
-      'globalThis.crypto.getRandomValues is required to generate random salt/nonce bytes',
+      'globalThis.crypto.getRandomValues is required to generate random cryptographic bytes',
     );
   }
   const out = new Uint8Array(length);
   cryptoObj.getRandomValues(out);
   return out;
+}
+
+function randomNonZeroBytes(length) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const out = randomBytes(length);
+    for (let i = 0; i < out.length; i++) {
+      if (out[i] !== 0) {
+        return out;
+      }
+    }
+  }
+  throw new MoonLibSyncError(
+    'CryptoUnavailable',
+    'CSPRNG failed to produce non-zero key bytes',
+  );
 }
 
 function generateNoncePrefix12() {
@@ -523,6 +597,141 @@ function serializeTrustedPublicKeys(trustedPublicKeys) {
     }
   }
   return stringifyJsonStrict(normalized, 'trustedPublicKeys');
+}
+
+function resolveRangeFetchOptions(options) {
+  const opts = assertOptionsObject(options);
+  const mergeGapBytes = assertNonNegInt32(
+    opts.mergeGapBytes ?? DEFAULT_RANGE_MERGE_GAP_BYTES,
+    'merge_gap_bytes',
+  );
+  const maxRanges = assertInt32(
+    opts.maxRanges ?? DEFAULT_RANGE_MAX_RANGES,
+    'max_ranges',
+  );
+  if (maxRanges < 1 || maxRanges > MAX_RANGE_FETCH_RANGES) {
+    throw new MoonLibSyncError(
+      'InvalidOptions:max_ranges',
+      `maxRanges must be an integer between 1 and ${MAX_RANGE_FETCH_RANGES}`,
+    );
+  }
+  return { mergeGapBytes, maxRanges };
+}
+
+function serializeBytesOrHexArray(items, name, allowEmpty) {
+  if (!Array.isArray(items)) {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected an array of Uint8Array or hex string items for "${name}"`,
+    );
+  }
+  if (!allowEmpty && items.length === 0) {
+    throw new MoonLibSyncError(
+      `InvalidOptions:${name}`,
+      `Expected a non-empty array for "${name}"`,
+    );
+  }
+  const normalized = new Array(items.length);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item instanceof Uint8Array) {
+      normalized[i] = bytesToHex(assertBytes(item, `${name}[${i}]`));
+    } else if (typeof item === 'string') {
+      normalized[i] = assertHexBytesString(item, `${name}[${i}]`).toLowerCase();
+    } else {
+      throw new MoonLibSyncError(
+        `InvalidOptions:${name}`,
+        `Expected Uint8Array or hex string at ${name}[${i}]`,
+      );
+    }
+  }
+  return stringifyJsonStrict(normalized, name);
+}
+
+function serializeHexStringArray(
+  items,
+  name,
+  expectedByteLen,
+  lengthErrorCode,
+  minLen,
+  maxLen,
+  countErrorCode,
+) {
+  if (!Array.isArray(items)) {
+    throw new MoonLibSyncError(
+      countErrorCode || `InvalidOptions:${name}`,
+      `Expected an array of hexadecimal strings for "${name}"`,
+    );
+  }
+  if (items.length < minLen || (maxLen !== undefined && items.length > maxLen)) {
+    const rangeDesc =
+      maxLen !== undefined
+        ? `between ${minLen} and ${maxLen}`
+        : `at least ${minLen}`;
+    throw new MoonLibSyncError(
+      countErrorCode || `InvalidOptions:${name}`,
+      `Expected ${rangeDesc} item(s) for "${name}"`,
+    );
+  }
+  const normalized = new Array(items.length);
+  for (let i = 0; i < items.length; i++) {
+    normalized[i] = assertHexBytesString(
+      items[i],
+      `${name}[${i}]`,
+      expectedByteLen,
+      lengthErrorCode,
+    );
+  }
+  return stringifyJsonStrict(normalized, name);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function serializeQuorumSignatures(signatures) {
+  if (typeof signatures === 'string') {
+    if (signatures.trim().length === 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:signatures',
+        'Expected non-empty SignatureBundle JSON string or signatures array',
+      );
+    }
+    return signatures;
+  }
+  if (!Array.isArray(signatures)) {
+    throw new MoonLibSyncError(
+      'InvalidOptions:signatures',
+      'Expected a SignatureBundle JSON string or an array of publisher signatures',
+    );
+  }
+  if (signatures.length === 0) {
+    throw new MoonLibSyncError(
+      'InvalidOptions:signature_count',
+      'Expected a non-empty array of signatures',
+    );
+  }
+  const normalized = new Array(signatures.length);
+  for (let i = 0; i < signatures.length; i++) {
+    const item = signatures[i];
+    if (typeof item === 'string') {
+      if (item.trim().length === 0) {
+        throw new MoonLibSyncError(
+          'InvalidOptions:signatures',
+          `Expected non-empty signature string at signatures[${i}]`,
+        );
+      }
+      normalized[i] = item;
+    } else if (isPlainObject(item)) {
+      normalized[i] = item;
+    } else {
+      throw new MoonLibSyncError(
+        'InvalidOptions:signatures',
+        `Expected signature JSON string or object at signatures[${i}]`,
+      );
+    }
+  }
+  return stringifyJsonStrict(normalized, 'signatures');
 }
 
 function getMissingExports(mod) {
@@ -1375,6 +1584,465 @@ export class MoonLibSyncClient {
       plainBytes: Number(res.plain_bytes),
       plainSha256: String(res.plain_sha256),
       plain,
+    };
+  }
+
+  /**
+   * Compute a deterministic zsync-style HTTP Range fetch plan (`schema: 3`,
+   * `kind: "moonlibsync-range-plan"`) from a remote librsync signature (`0x72730147`
+   * or `0x72730137`), remote `targetLength`, and local `basis` bytes.
+   * @param {Uint8Array} targetSignature
+   * @param {number} targetLength
+   * @param {Uint8Array} basis
+   * @param {{ mergeGapBytes?: number, maxRanges?: number }} [options]
+   */
+  planRangeFetch(targetSignature, targetLength, basis, options = {}) {
+    const sig = assertBytes(targetSignature, 'targetSignature');
+    const tLen = assertNonNegInt32(targetLength, 'target_length');
+    const basisBytes = assertBytes(basis, 'basis');
+    const { mergeGapBytes, maxRanges } = resolveRangeFetchOptions(options);
+    const res = parseOkJson(
+      this.raw.plan_range_fetch_json(sig, tLen, basisBytes, mergeGapBytes, maxRanges),
+      'plan_range_fetch_json',
+    );
+    const plan = res.plan;
+    if (
+      !isPlainObject(plan) ||
+      plan.schema !== 3 ||
+      plan.kind !== 'moonlibsync-range-plan' ||
+      !Array.isArray(plan.ranges) ||
+      !Array.isArray(plan.ops)
+    ) {
+      throw new MoonLibSyncError(
+        'InvalidSchema',
+        'plan_range_fetch_json returned an unexpected RangeFetchPlan payload',
+      );
+    }
+    return plan;
+  }
+
+  /**
+   * Reconstruct remote target bytes from local `basis` and fetched HTTP range slices
+   * corresponding to `planRangeFetch(targetSignature, targetLength, basis, options).ranges`.
+   * @param {Uint8Array} targetSignature
+   * @param {number} targetLength
+   * @param {Uint8Array} basis
+   * @param {ReadonlyArray<Uint8Array | string>} fetchedSlices
+   * @param {{ mergeGapBytes?: number, maxRanges?: number }} [options]
+   */
+  applyRangeFetch(targetSignature, targetLength, basis, fetchedSlices, options = {}) {
+    const sig = assertBytes(targetSignature, 'targetSignature');
+    const tLen = assertNonNegInt32(targetLength, 'target_length');
+    const basisBytes = assertBytes(basis, 'basis');
+    const { mergeGapBytes, maxRanges } = resolveRangeFetchOptions(options);
+    const slicesJson = serializeBytesOrHexArray(fetchedSlices, 'fetchedSlices', true);
+    const res = parseOkJson(
+      this.raw.apply_range_fetch_json(
+        sig,
+        tLen,
+        basisBytes,
+        mergeGapBytes,
+        maxRanges,
+        slicesJson,
+      ),
+      'apply_range_fetch_json',
+    );
+    const restored = hexToBytes(res.restored_hex, 'restored_hex');
+    const restoredBytes = Number(res.restored_bytes);
+    if (restored.length !== restoredBytes) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        `Range-fetch restored length mismatch: expected ${restoredBytes} bytes`,
+      );
+    }
+    return {
+      restored,
+      restoredBytes,
+      restoredSha256: String(res.restored_sha256),
+      reusedBytes: Number(res.reused_bytes),
+      fetchBytes: Number(res.fetch_bytes),
+      requestBytes: Number(res.request_bytes),
+      rangeCount: Number(res.range_count),
+    };
+  }
+
+  /**
+   * Compose a non-empty chain of standard `librsync 0x72730236` deltas
+   * `[v0->v1, v1->v2, ..., v(k-1)->vk]` into a single direct `v0->vk` delta
+   * without materializing intermediate versions.
+   * @param {ReadonlyArray<Uint8Array | string>} deltas
+   */
+  composeDeltas(deltas) {
+    const deltasJson = serializeBytesOrHexArray(deltas, 'deltas', false);
+    const res = parseOkJson(
+      this.raw.compose_deltas_json(deltasJson),
+      'compose_deltas_json',
+    );
+    const composed = hexToBytes(res.composed_hex, 'composed_hex');
+    const composedBytes = Number(res.composed_bytes);
+    if (composed.length !== composedBytes) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        `Composed delta length mismatch: expected ${composedBytes} bytes`,
+      );
+    }
+    return {
+      composed,
+      composedBytes,
+      composedSha256: String(res.composed_sha256),
+      inputTotalBytes: Number(res.input_total_bytes),
+      instructionCount: Number(res.instruction_count),
+      copyCount: Number(res.copy_count),
+      literalCount: Number(res.literal_count),
+      copyBytes: Number(res.copy_bytes),
+      literalBytes: Number(res.literal_bytes),
+      outputBytes: Number(res.output_bytes),
+    };
+  }
+
+  /**
+   * Compress bytes into a bounded RFC 1950 zlib stream (`level` 0..=9).
+   * @param {Uint8Array} input
+   * @param {{ maxInput?: number, maxOutput?: number, level?: number }} [options]
+   * @returns {Uint8Array}
+   */
+  compressZlib(input, options = {}) {
+    const bytes = assertBytes(input, 'input');
+    const opts = assertOptionsObject(options);
+    const maxInput = assertNonNegInt32(
+      opts.maxInput ?? DEFAULT_MAX_ZLIB_INPUT,
+      'max_input',
+    );
+    const maxOutput = assertNonNegInt32(
+      opts.maxOutput ?? DEFAULT_MAX_ZLIB_OUTPUT,
+      'max_output',
+    );
+    const level = assertInt32(opts.level ?? 6, 'level');
+    if (level < 0 || level > 9) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:level',
+        'Zlib compression level must be an integer between 0 and 9',
+      );
+    }
+    const out = this.raw.compress_zlib_bytes(bytes, maxInput, maxOutput, level);
+    if (!(out instanceof Uint8Array) || out.length === 0) {
+      throw new MoonLibSyncError(
+        'LimitExceeded',
+        'Failed to compress zlib payload (input or output exceeded limits)',
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Decompress a bounded RFC 1950 zlib stream with zip-bomb (`LimitExceeded`),
+   * trailing-byte (`TrailingData`), truncated-frame (`TruncatedInput`), and
+   * checksum/corrupt-stream (`InvalidDelta`) detection.
+   * Returns `{ ok: true, data, inputBytes, outputBytes, outputSha256 }` or `{ ok: false, error }`.
+   * @param {Uint8Array} input
+   * @param {{ maxInput?: number, maxOutput?: number }} [options]
+   */
+  decompressZlib(input, options = {}) {
+    const bytes = assertBytes(input, 'input');
+    const opts = assertOptionsObject(options);
+    const maxInput = assertNonNegInt32(
+      opts.maxInput ?? DEFAULT_MAX_ZLIB_INPUT,
+      'max_input',
+    );
+    const maxOutput = assertNonNegInt32(
+      opts.maxOutput ?? DEFAULT_MAX_ZLIB_OUTPUT,
+      'max_output',
+    );
+    const parsed = parseJsonStrict(
+      this.raw.decompress_zlib_check_json(bytes, maxInput, maxOutput),
+      'decompress_zlib_check_json',
+    );
+    if (isErrorEnvelope(parsed)) {
+      return {
+        ok: false,
+        error: parsed.error,
+      };
+    }
+    if (!isPlainObject(parsed) || parsed.ok !== true) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'decompress_zlib_check_json returned an unexpected payload',
+      );
+    }
+    const data = hexToBytes(parsed.output_hex, 'output_hex');
+    const outputBytes = Number(parsed.output_bytes);
+    if (data.length !== outputBytes) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        `Decompressed zlib length mismatch: expected ${outputBytes} bytes`,
+      );
+    }
+    return {
+      ok: true,
+      data,
+      inputBytes: Number(parsed.input_bytes),
+      outputBytes,
+      outputSha256: String(parsed.output_sha256),
+    };
+  }
+
+  /**
+   * Derive an RFC 7748 X25519 key pair and 16-hex SHA-256 key ID from a 32-byte
+   * hex secret scalar. Auto-generates 32 CSPRNG bytes via `globalThis.crypto.getRandomValues`
+   * when `secretHex` is omitted.
+   * @param {string} [secretHex]
+   */
+  x25519KeypairFromSecret(secretHex) {
+    const resolvedSecretHex =
+      secretHex === undefined
+        ? bytesToHex(randomNonZeroBytes(32))
+        : assertHexBytesString(
+            secretHex,
+            'secretHex',
+            32,
+            'InvalidKey:x25519_secret',
+          );
+    const res = parseOkJson(
+      this.raw.x25519_keypair_from_secret_json(resolvedSecretHex),
+      'x25519_keypair_from_secret_json',
+    );
+    const secretKey = hexToBytes(res.secret_key_hex, 'secret_key_hex');
+    const publicKey = hexToBytes(res.public_key_hex, 'public_key_hex');
+    return {
+      secretKeyHex: String(res.secret_key_hex),
+      publicKeyHex: String(res.public_key_hex),
+      secretKey,
+      publicKey,
+      keyId: String(res.key_id),
+    };
+  }
+
+  /**
+   * Seal `plaintext` into a multi-recipient `MLSENC02` X25519 + HKDF-SHA256 +
+   * ChaCha20-Poly1305 authenticated envelope for 1..=64 recipients.
+   * Auto-generates CSPRNG `ephemeralSecretHex` (32 bytes), `contentKeyHex` (32 bytes),
+   * and `noncePrefixHex` (4 bytes) via `globalThis.crypto.getRandomValues` when omitted.
+   * @param {Uint8Array} plaintext
+   * @param {ReadonlyArray<string>} recipientPublicKeysHex
+   * @param {{ chunkSize?: number, ephemeralSecretHex?: string, contentKeyHex?: string, noncePrefixHex?: string }} [options]
+   */
+  sealEnvelope(plaintext, recipientPublicKeysHex, options = {}) {
+    const plainBytes = assertBytes(plaintext, 'plaintext');
+    const recipientPubsJson = serializeHexStringArray(
+      recipientPublicKeysHex,
+      'recipientPublicKeysHex',
+      32,
+      'InvalidKey:recipient_public_key',
+      1,
+      MAX_ENVELOPE_RECIPIENTS,
+      'InvalidOptions:recipient_count',
+    );
+    const opts = assertOptionsObject(options);
+    const chunkSize = assertInt32(
+      opts.chunkSize ?? DEFAULT_SEAL_CHUNK_SIZE,
+      'chunk_size',
+    );
+    if (chunkSize < MIN_SEAL_CHUNK_SIZE || chunkSize > MAX_SEAL_CHUNK_SIZE) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:chunk_size',
+        `chunkSize must be an integer between ${MIN_SEAL_CHUNK_SIZE} and ${MAX_SEAL_CHUNK_SIZE}`,
+      );
+    }
+    const ephemeralSecretHex =
+      opts.ephemeralSecretHex !== undefined
+        ? assertHexBytesString(
+            opts.ephemeralSecretHex,
+            'ephemeralSecretHex',
+            32,
+            'InvalidKey:x25519_secret',
+          )
+        : bytesToHex(randomNonZeroBytes(32));
+    const contentKeyHex =
+      opts.contentKeyHex !== undefined
+        ? assertHexBytesString(
+            opts.contentKeyHex,
+            'contentKeyHex',
+            32,
+            'InvalidKey:content_key',
+          )
+        : bytesToHex(randomBytes(32));
+    const noncePrefixHex =
+      opts.noncePrefixHex !== undefined
+        ? assertHexBytesString(
+            opts.noncePrefixHex,
+            'noncePrefixHex',
+            4,
+            'InvalidOptions:nonce_prefix',
+          )
+        : bytesToHex(randomBytes(4));
+
+    const res = parseOkJson(
+      this.raw.seal_envelope_json(
+        plainBytes,
+        recipientPubsJson,
+        ephemeralSecretHex,
+        contentKeyHex,
+        noncePrefixHex,
+        chunkSize,
+      ),
+      'seal_envelope_json',
+    );
+    const ciphertext = hexToBytes(res.ciphertext_hex, 'ciphertext_hex');
+    const ciphertextBytes = Number(res.ciphertext_bytes);
+    if (ciphertext.length !== ciphertextBytes) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        `Envelope ciphertext length mismatch: expected ${ciphertextBytes} bytes`,
+      );
+    }
+    if (!Array.isArray(res.recipient_key_ids)) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'seal_envelope_json returned malformed recipient_key_ids',
+      );
+    }
+    return {
+      ciphertext,
+      ciphertextBytes,
+      ciphertextSha256: String(res.ciphertext_sha256),
+      recipientCount: Number(res.recipient_count),
+      recipientKeyIds: res.recipient_key_ids.map((id) => String(id)),
+      ephemeralPublicKeyHex: String(res.ephemeral_public_key_hex),
+      chunkSize: Number(res.chunk_size),
+    };
+  }
+
+  /**
+   * Unseal and authenticate a multi-recipient `MLSENC02` X25519 envelope using
+   * one recipient's 32-byte (64-hex) X25519 secret key.
+   * Throws `MoonLibSyncError('AuthenticationFailed', ...)` on unauthorized keys or tampering.
+   * @param {Uint8Array} ciphertext
+   * @param {string} recipientSecretHex
+   */
+  unsealEnvelope(ciphertext, recipientSecretHex) {
+    const cipherBytes = assertBytes(ciphertext, 'ciphertext');
+    const secretHex = assertHexBytesString(
+      recipientSecretHex,
+      'recipientSecretHex',
+      32,
+      'InvalidKey:x25519_secret',
+    );
+    const res = parseOkJson(
+      this.raw.unseal_envelope_json(cipherBytes, secretHex),
+      'unseal_envelope_json',
+    );
+    const plaintext = hexToBytes(res.plaintext_hex, 'plaintext_hex');
+    const plaintextBytes = Number(res.plaintext_bytes);
+    if (plaintext.length !== plaintextBytes) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        `Envelope plaintext length mismatch: expected ${plaintextBytes} bytes`,
+      );
+    }
+    if (!Array.isArray(res.recipient_key_ids)) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'unseal_envelope_json returned malformed recipient_key_ids',
+      );
+    }
+    return {
+      plaintext,
+      plaintextBytes,
+      plaintextSha256: String(res.plaintext_sha256),
+      recipientCount: Number(res.recipient_count),
+      recipientKeyIds: res.recipient_key_ids.map((id) => String(id)),
+      ephemeralPublicKeyHex: String(res.ephemeral_public_key_hex),
+    };
+  }
+
+  /**
+   * Construct and validate a canonical Schema 4 Ed25519 `TrustKeyring` JSON document
+   * with optional revoked 16-hex key IDs and an M-of-N `minQuorum` threshold.
+   * @param {ReadonlyArray<string>} trustedPublicKeysHex
+   * @param {{ revokedKeyIds?: ReadonlyArray<string>, minQuorum?: number }} [options]
+   */
+  createTrustKeyring(trustedPublicKeysHex, options = {}) {
+    const trustedKeysJson = serializeHexStringArray(
+      trustedPublicKeysHex,
+      'trustedPublicKeysHex',
+      32,
+      'InvalidKey:trusted_public_key',
+      1,
+      undefined,
+      'InvalidOptions:trustedPublicKeysHex',
+    );
+    const opts = assertOptionsObject(options);
+    const revokedIdsJson = serializeHexStringArray(
+      opts.revokedKeyIds ?? [],
+      'revokedKeyIds',
+      8,
+      'InvalidFormat:revoked_key_id',
+      0,
+      undefined,
+      'InvalidOptions:revokedKeyIds',
+    );
+    const minQuorum = assertInt32(opts.minQuorum ?? 1, 'min_quorum');
+    if (minQuorum < 1) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:min_quorum',
+        'minQuorum must be a positive 32-bit integer',
+      );
+    }
+    const res = parseOkJson(
+      this.raw.create_trust_keyring_json(trustedKeysJson, revokedIdsJson, minQuorum),
+      'create_trust_keyring_json',
+    );
+    if (!Array.isArray(res.key_ids)) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'create_trust_keyring_json returned malformed key_ids',
+      );
+    }
+    return {
+      keyringJson: String(res.keyring_json),
+      trustedCount: Number(res.trusted_count),
+      revokedCount: Number(res.revoked_count),
+      minQuorum: Number(res.min_quorum),
+      keyIds: res.key_ids.map((id) => String(id)),
+    };
+  }
+
+  /**
+   * Verify an M-of-N Ed25519 signature bundle (or array of publisher signatures)
+   * against a Schema 4 `TrustKeyring` JSON document and payload bytes, enforcing revocations.
+   * @param {ReadonlyArray<string | Record<string, unknown>> | string} signatures
+   * @param {string} keyringJson
+   * @param {Uint8Array} payload
+   */
+  verifyQuorum(signatures, keyringJson, payload) {
+    if (typeof keyringJson !== 'string' || keyringJson.trim().length === 0) {
+      throw new MoonLibSyncError(
+        'InvalidOptions:keyringJson',
+        'Expected non-empty trust keyring JSON string for "keyringJson"',
+      );
+    }
+    const payloadBytes = assertBytes(payload, 'payload');
+    const signaturesJson = serializeQuorumSignatures(signatures);
+    const res = parseOkJson(
+      this.raw.verify_quorum_bytes_json(signaturesJson, keyringJson, payloadBytes),
+      'verify_quorum_bytes_json',
+    );
+    if (
+      !Array.isArray(res.verified_key_ids) ||
+      !Array.isArray(res.rejected_key_ids) ||
+      !Array.isArray(res.revoked_hits)
+    ) {
+      throw new MoonLibSyncError(
+        'UnexpectedError',
+        'verify_quorum_bytes_json returned malformed key ID arrays',
+      );
+    }
+    return {
+      bundleJson: String(res.bundle_json),
+      verifiedKeyIds: res.verified_key_ids.map((id) => String(id)),
+      rejectedKeyIds: res.rejected_key_ids.map((id) => String(id)),
+      revokedHits: res.revoked_hits.map((id) => String(id)),
+      requiredQuorum: Number(res.required_quorum),
     };
   }
 }

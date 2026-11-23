@@ -88,5 +88,5 @@ try {
 const stat = fs.statSync(outFile);
 const relSource = path.relative(root, sourceBundle).replaceAll('\\', '/');
 console.log(
-  `Built js/moonlibsync-core.js (${stat.size} bytes, 27 exports verified) from ${relSource}`,
+  `Built js/moonlibsync-core.js (${stat.size} bytes, 37 exports verified) from ${relSource}`,
 );

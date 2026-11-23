@@ -53,8 +53,12 @@ v040_dir_names = [name for path in (ROOT / "dir_sync_test.mbt", ROOT / "dir_sync
 v050_bundle_names = re.findall(r'^test "([^"\n]*)"', (ROOT / "bundle_archive_test.mbt").read_text(encoding="utf-8"), re.M)
 v060_profile_names = [name for path in (ROOT / "rollsum_wbtest.mbt", ROOT / "signature_profile_test.mbt")
                       for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
-v040_compress_names = re.findall(r'^test "([^"\n]*)"', (ROOT / "compress/compress_test.mbt").read_text(encoding="utf-8"), re.M)
-v060_crypto_names = re.findall(r'^test "([^"\n]*)"', (ROOT / "crypto/crypto_test.mbt").read_text(encoding="utf-8"), re.M)
+v070_core_names = [name for path in (ROOT / "range_sync_test.mbt", ROOT / "compose_delta_test.mbt", ROOT / "dir_metadata_test.mbt")
+                   for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+v040_compress_names = [name for path in (ROOT / "compress/compress_test.mbt", ROOT / "compress/zlib_test.mbt")
+                       for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
+v060_crypto_names = [name for path in (ROOT / "crypto/crypto_test.mbt", ROOT / "crypto/v070_test.mbt")
+                     for name in re.findall(r'^test "([^"\n]*)"', path.read_text(encoding="utf-8"), re.M)]
 resource_report = {
     "format": 1, "status": "not_executed", "baseline_library_tests": 80,
     "resource_tests": len(resource_names), "resource_test_names": resource_names,
@@ -72,6 +76,7 @@ resource_report = {
     "v040_dir_tests": len(v040_dir_names), "v040_dir_test_names": v040_dir_names,
     "v050_bundle_tests": len(v050_bundle_names), "v050_bundle_test_names": v050_bundle_names,
     "v060_profile_tests": len(v060_profile_names), "v060_profile_test_names": v060_profile_names,
+    "v070_core_tests": len(v070_core_names), "v070_core_test_names": v070_core_names,
     "v040_compress_tests": len(v040_compress_names), "v040_compress_test_names": v040_compress_names,
     "v060_crypto_tests": len(v060_crypto_names), "v060_crypto_test_names": v060_crypto_names,
     "boundary_checks": {"signature": 4, "delta": 8, "patch": 4},
@@ -91,7 +96,7 @@ def test_target(target):
     print(result.stdout, end="", flush=True)
     (resource_dir / (target + ".log")).write_text(result.stdout, encoding="utf-8")
     totals = re.search(r"Total tests: (\d+), passed: (\d+), failed: (\d+)\.", result.stdout)
-    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names) + len(transfer_names) + len(prepared_extension_names) + len(v032_index_names) + len(v032_stream_names) + len(v040_stream_names) + len(v040_dir_names) + len(v050_bundle_names) + len(v060_profile_names)
+    expected = resource_report["baseline_library_tests"] + len(resource_names) + len(inspection_names) + len(prepared_names) + len(prepared_delta_names) + len(manifest_names) + len(verified_names) + len(auto_names) + len(transfer_names) + len(prepared_extension_names) + len(v032_index_names) + len(v032_stream_names) + len(v040_stream_names) + len(v040_dir_names) + len(v050_bundle_names) + len(v060_profile_names) + len(v070_core_names)
     complete = bool(totals and tuple(map(int, totals.groups())) == (expected, expected, 0) and result.returncode == 0)
     resource_report["targets"][target] = {
         "command": command, "exit_code": result.returncode,

@@ -287,26 +287,17 @@ fn validate_publisher_signature_fields(
 }
 
 ///|
-/// Verify a `PublisherSignature` against a non-empty trusted publisher key set
-/// and an expected `(payload_length, payload_sha256)` pair.
-pub fn verify_digest(
+fn verify_digest_with_validated_key(
   sig : PublisherSignature,
-  trusted_pubkeys : Array[Bytes],
+  pk_bytes : Bytes,
+  sig_bytes : Bytes,
+  trusted_pk : Bytes,
   payload_length : Int64,
   payload_sha256 : String,
 ) -> Unit raise CryptoError {
-  let (pk_bytes, sig_bytes) = validate_publisher_signature_fields(sig)
-  guard trusted_pubkeys.length() > 0 else {
-    raise InvalidOptions("trusted_pubkeys")
+  guard @spec.eq(pk_bytes[:], trusted_pk[:]) else {
+    raise UntrustedKey(sig.key_id)
   }
-  let mut trusted = false
-  for tk in trusted_pubkeys {
-    validate_public_key(tk)
-    if @spec.eq(pk_bytes[:], tk[:]) {
-      trusted = true
-    }
-  }
-  guard trusted else { raise UntrustedKey(sig.key_id) }
   guard payload_length >= 0L else { raise InvalidOptions("payload_length") }
   validate_sha256_hex(payload_sha256, "payload_sha256")
   guard sig.payload_length == payload_length else {
@@ -327,6 +318,35 @@ pub fn verify_digest(
   let msg = build_signing_message(payload_length, payload_sha256)
   guard pk.verify(msg[:], sig_bytes[:]) else {
     raise InvalidSignature("ed25519")
+  }
+}
+
+///|
+/// Verify a `PublisherSignature` against a non-empty trusted publisher key set
+/// and an expected `(payload_length, payload_sha256)` pair.
+pub fn verify_digest(
+  sig : PublisherSignature,
+  trusted_pubkeys : Array[Bytes],
+  payload_length : Int64,
+  payload_sha256 : String,
+) -> Unit raise CryptoError {
+  let (pk_bytes, sig_bytes) = validate_publisher_signature_fields(sig)
+  guard trusted_pubkeys.length() > 0 else {
+    raise InvalidOptions("trusted_pubkeys")
+  }
+  let mut matched : Bytes? = None
+  for tk in trusted_pubkeys {
+    validate_public_key(tk)
+    if @spec.eq(pk_bytes[:], tk[:]) {
+      matched = Some(tk)
+    }
+  }
+  match matched {
+    Some(trusted_pk) =>
+      verify_digest_with_validated_key(
+        sig, pk_bytes, sig_bytes, trusted_pk, payload_length, payload_sha256,
+      )
+    None => raise UntrustedKey(sig.key_id)
   }
 }
 

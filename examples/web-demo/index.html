@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MoonLibSync 0.6.1 — Pure-JS Streaming, Crypto &amp; Directory Bundle Studio</title>
-  <meta name="description" content="Pure MoonBit zero-backend browser studio with Web Worker execution for librsync binary deltas (0x72730147 / 0x72730137), rollback deltas, literal hexdump heatmaps, .mbundle.gz move detection, Ed25519 signing, and ChaCha20-Poly1305 AEAD encryption." />
+  <title>MoonLibSync 0.7.0 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio</title>
+  <meta name="description" content="Pure MoonBit zero-backend browser studio (37 exports) with Web Worker execution for librsync deltas, HTTP Range (zsync) incremental pull, delta chain composition, RFC 1952 Gzip &amp; RFC 1950 Zlib, .mbundle.gz move detection, X25519 MLSENC02 multi-recipient envelopes, and Ed25519 M-of-N quorum keyrings." />
   <meta name="theme-color" content="#4f46e5" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="MoonLibSync 0.6.1 — Pure-JS Streaming, Crypto &amp; Directory Bundle Studio" />
-  <meta property="og:description" content="Zero C FFI, zero backend server — test librsync binary deltas, Rollsum &amp; RK signatures, literal hexdump heatmaps, .mbundle.gz move detection, Ed25519 signatures, and ChaCha20-Poly1305 + Argon2id encryption directly in your browser." />
+  <meta property="og:title" content="MoonLibSync 0.7.0 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio" />
+  <meta property="og:description" content="Zero C FFI, zero backend server — test librsync binary deltas, HTTP Range (zsync) pull, delta squashing, Gzip &amp; Zlib, .mbundle.gz move detection, X25519 MLSENC02 envelopes, and Ed25519 M-of-N quorum verification directly in your browser." />
   <meta property="og:url" content="https://ykdshaxing.github.io/moonlibsync/" />
   <meta name="twitter:card" content="summary" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f46e5'/%3E%3Cstop offset='0.55' stop-color='%230ea5e9'/%3E%3Cstop offset='1' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M19.8 6.4a9.6 9.6 0 1 0 5.8 17.2A7.8 7.8 0 0 1 19.8 6.4Z' fill='%23fff'/%3E%3Cpath d='M16.5 13.2 21 10.5l4.5 2.7M21 10.5v7.5' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='21' cy='20.5' r='2' fill='%23a7f3d0'/%3E%3C/svg%3E" />
@@ -1153,6 +1153,125 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
+
+    /* v0.7.0 Range Pills, Stacked Bar & Multi-Party Crypto Grids */
+    .range-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.75rem;
+    }
+    .range-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      border: 1px solid rgba(79, 70, 229, 0.25);
+      color: var(--primary);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    .range-pill .rp-len {
+      color: var(--text-subtle);
+      font-weight: 600;
+    }
+    .bar-seg-reused {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #059669);
+      color: #ffffff;
+      font-size: 0.74rem;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      padding: 0 0.55rem;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .bar-seg-fetch {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #3b82f6);
+      color: #ffffff;
+      font-size: 0.74rem;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .bar-seg-gap {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #d97706);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .url-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-bottom: 0.75rem;
+    }
+    @media (max-width: 760px) {
+      .url-grid { grid-template-columns: 1fr; }
+    }
+    .url-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .url-field label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .party-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-bottom: 0.8rem;
+    }
+    @media (max-width: 760px) {
+      .party-grid { grid-template-columns: 1fr; }
+    }
+    .party-card {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.7rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.38rem;
+    }
+    .party-card.revoked {
+      border-color: rgba(239, 68, 68, 0.45);
+      background: var(--rose-soft);
+    }
+    .party-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .party-name {
+      font-size: 0.86rem;
+      font-weight: 750;
+    }
+    .party-meta {
+      font-family: var(--mono);
+      font-size: 0.73rem;
+      color: var(--text-subtle);
+      word-break: break-all;
+    }
+    .party-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.2rem;
+    }
   </style>
 </head>
 <body>
@@ -1169,16 +1288,17 @@
         <div>
           <div class="title-row">
             <h1>MoonLibSync</h1>
-            <span class="ver-pill">v0.6.1 Pure-JS Studio</span>
+            <span class="ver-pill">v0.7.0 Pure-JS Studio</span>
           </div>
-          <p class="subtitle" data-i18n="subtitle">纯 MoonBit 编译的浏览器零后端二进制差分、Web Worker 后台执行、块复用 Hexdump 热力图、单文件目录打包与 Ed25519 / AEAD 密码学工作台</p>
+          <p class="subtitle" data-i18n="subtitle">纯 MoonBit 编译的浏览器零后端二进制差分、HTTP Range 增量拉取、Delta 链压缩合并、Gzip/Zlib、单文件目录打包与 X25519 / Ed25519 多签密码学工作台</p>
           <div class="chip-row">
             <span class="chip">Zero C FFI</span>
-            <span class="chip">Web Worker</span>
-            <span class="chip">0x72730147 / 0x72730137</span>
-            <span class="chip">RFC 1952 Gzip</span>
-            <span class="chip">.mbundle &amp; Move Detect</span>
-            <span class="chip">Ed25519 &amp; ChaCha20-Poly1305</span>
+            <span class="chip">Web Worker · 37 Exports</span>
+            <span class="chip">HTTP Range (zsync)</span>
+            <span class="chip">Delta Compose</span>
+            <span class="chip">Gzip &amp; Zlib</span>
+            <span class="chip">X25519 MLSENC02</span>
+            <span class="chip">Ed25519 M-of-N Quorum</span>
           </div>
         </div>
       </div>
@@ -1448,6 +1568,108 @@
           </div>
           <div id="rdiffPatchOut" class="rdiff-out"></div>
         </div>
+
+        <!-- Card D: Static HTTP Range (zsync) Incremental Pull Simulator & Live CORS Fetch -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <span class="step-badge">ROLE D · HTTP RANGE (ZSYNC)</span>
+              <span data-i18n="rangeCardTitle">静态 CDN HTTP Range 增量拉取模拟器 &amp; CORS 实网拉取</span>
+            </h2>
+            <div class="controls-row">
+              <div class="mode-switch" role="group" aria-label="Range fetch mode">
+                <button id="rangeModeSim" class="mode-btn active" type="button" data-i18n="rangeModeSim">本地 CDN 模拟</button>
+                <button id="rangeModeLive" class="mode-btn" type="button" data-i18n="rangeModeLive">CORS 实网 URL</button>
+              </div>
+              <label class="field">
+                <span data-i18n="rangeProfileLabel">签名</span>
+                <select id="rangeProfileSelect">
+                  <option value="rk-blake2" selected>RK+BLAKE2b</option>
+                  <option value="rollsum-blake2">Rollsum+BLAKE2b</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="rangeMergeGapLabel">合并间隙</span>
+                <select id="rangeMergeGapSelect">
+                  <option value="0" data-i18n="rangeMergeGapZero">0 B (不合并)</option>
+                  <option value="512">512 B</option>
+                  <option value="4096" selected>4 KiB (Default)</option>
+                  <option value="16384">16 KiB</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div id="rangeSimPanel">
+            <div class="controls-row">
+              <button id="runRangeSimBtn" class="btn btn-primary" type="button" data-i18n="runRangeSimBtn">一键运行 128 KiB HTTP Range 增量拉取模拟 (v1 → v2)</button>
+            </div>
+            <p class="hint" style="margin:0.65rem 0 0;" data-i18n="rangeSimHint">无需服务端差分计算：仅凭静态托管的 v2.sig 与本地 v1 基准，规划最小 HTTP Range 请求区间、模拟 HTTP 206 Partial Content 拉取并逐字节验证还原结果。</p>
+          </div>
+
+          <div id="rangeLivePanel" class="bundle-panel" style="margin-top:0;" hidden>
+            <div class="url-grid">
+              <div class="url-field">
+                <label for="rangeTargetUrl" data-i18n="rangeTargetUrlLabel">远端目标文件 URL（支持 CORS 与 HTTP 206 Range）</label>
+                <input id="rangeTargetUrl" class="exclude-input" type="url" placeholder="https://example.com/releases/app-v2.bin" />
+              </div>
+              <div class="url-field">
+                <label for="rangeSigUrl" data-i18n="rangeSigUrlLabel">远端 .sig 签名 URL（留空则自动追加 .sig）</label>
+                <input id="rangeSigUrl" class="exclude-input" type="url" placeholder="https://example.com/releases/app-v2.bin.sig" />
+              </div>
+            </div>
+            <div class="drop-grid cols-1" style="margin-top:0;">
+              <label class="dropzone" id="rangeLiveBasisDrop">
+                <input type="file" id="rangeLiveBasisFile" />
+                <div class="dz-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+                </div>
+                <div class="dz-text">
+                  <div class="dz-label" data-i18n="rangeLiveBasisLabel">本地旧基准文件 (OLD Basis，可选)</div>
+                  <div class="dz-meta" id="rangeLiveBasisMeta" data-i18n="rangeLiveBasisHint">可选：拖入本地旧版文件以最大化本地块复用（不选则视为空基准）</div>
+                </div>
+              </label>
+            </div>
+            <div class="action-footer" style="margin-top:0.75rem;padding-top:0.75rem;">
+              <span class="hint" data-i18n="rangeLiveHint">要求远端静态主机返回 Access-Control-Allow-Origin 并允许 Range 请求头与 Content-Range 响应头。</span>
+              <button id="runRangeLiveBtn" class="btn btn-teal btn-sm" type="button" data-i18n="runRangeLiveBtn">通过 HTTP Range 实网拉取并还原</button>
+            </div>
+          </div>
+
+          <div id="rangePullOut" class="rdiff-out"></div>
+        </div>
+
+        <!-- Card E: Delta Chain Squashing (v1 -> v2 -> v3 => v1 -> v3) -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <span class="step-badge">ROLE E · DELTA COMPOSE</span>
+              <span data-i18n="composeCardTitle">多代 Delta 链零中间文件合并（v1 → v2 → v3 ⇒ v1 → v3）</span>
+            </h2>
+            <div class="controls-row">
+              <button id="runCompose2Btn" class="btn btn-primary btn-sm" type="button" data-i18n="runCompose2Btn">一键演示 2 跳合并 (v1→v2→v3)</button>
+              <button id="runCompose3Btn" class="btn btn-teal btn-sm" type="button" data-i18n="runCompose3Btn">一键演示 3 跳合并 (v1→v2→v3→v4)</button>
+            </div>
+          </div>
+          <p class="hint" style="margin:0 0 0.75rem;" data-i18n="composeDesc">无需还原中间版本 v2/v3，直接将串联的增量补丁代数合并为单跳直达补丁 d1→N，自动折叠重复覆写并合并相邻 COPY/Literal 指令。</p>
+          <div class="drop-grid cols-1" style="margin-top:0;">
+            <label class="dropzone" id="composeDrop">
+              <input type="file" id="composeFiles" multiple accept=".delta,application/octet-stream" />
+              <div class="dz-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+              </div>
+              <div class="dz-text">
+                <div class="dz-label" data-i18n="composeDropLabel">或选择/拖入 2 个及以上按版本顺序排列的 .delta 文件进行合并</div>
+                <div class="dz-meta" id="composeMeta" data-i18n="composeDropHint">将按文件名顺序合并为单条标准 0x72730236 Delta 并支持直接下载</div>
+              </div>
+            </label>
+          </div>
+          <div class="action-footer">
+            <span class="hint" data-i18n="composeFooterHint">合并产物完全符合标准 0x72730236 线缆格式，可直接配合 apply_patch 或原生 librsync rdiff 使用。</span>
+            <button id="runComposeCustomBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="runComposeCustomBtn">合并所选 .delta 链</button>
+          </div>
+          <div id="composeOut" class="rdiff-out"></div>
+        </div>
       </div>
     </section>
 
@@ -1455,11 +1677,13 @@
     <section id="tab-inspect" class="panel">
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title" data-i18n="inspectCardTitle">通用产物剖析器（.sig · .delta · .delta.gz · .mbundle · .menc · Schema 1/2/3/4 JSON）</h2>
+          <h2 class="card-title" data-i18n="inspectCardTitle">通用产物剖析器（.sig · .delta · .gz · .zlib · .mbundle · .menc · MLSENC02 · Schema 1/2/3/4 JSON）</h2>
           <div class="controls-row">
             <button id="inspectSampleDelta" class="btn btn-primary btn-sm" type="button" data-i18n="inspectSampleDelta">剖析示例 .delta（含热力图）</button>
             <button id="inspectSampleSig" class="btn btn-secondary btn-sm" type="button" data-i18n="inspectSampleSig">剖析示例 .sig (0x72730137)</button>
             <button id="inspectSampleSeal" class="btn btn-secondary btn-sm" type="button" data-i18n="inspectSampleSeal">剖析示例 .menc</button>
+            <button id="inspectSampleEnvelope" class="btn btn-secondary btn-sm" type="button" data-i18n="inspectSampleEnvelope">剖析示例 MLSENC02</button>
+            <button id="inspectSampleKeyring" class="btn btn-secondary btn-sm" type="button" data-i18n="inspectSampleKeyring">剖析示例 Keyring</button>
             <button id="inspectSamplePubSig" class="btn btn-secondary btn-sm" type="button" data-i18n="inspectSamplePubSig">剖析示例 .msig.json</button>
           </div>
         </div>
@@ -1472,7 +1696,7 @@
             </div>
             <div class="dz-text">
               <div class="dz-label" data-i18n="inspectDropLabel">拖入任意 MoonLibSync 二进制或 JSON 产物自动剖析</div>
-              <div class="dz-meta" id="inspectMeta" data-i18n="inspectDropHint">支持 .sig (0x72730147/0x72730137) / .delta / .delta.gz / .mbundle / .menc / .msig.json / Schema 1/2/3 JSON</div>
+              <div class="dz-meta" id="inspectMeta" data-i18n="inspectDropHint">支持 .sig / .delta / .gz / .zlib / .mbundle / .menc / MLSENC02 / Keyring / Signature Bundle / Dir Metadata / Schema 1/2/3/4 JSON</div>
             </div>
           </label>
         </div>
@@ -1577,11 +1801,17 @@
 
     <!-- Tab 5: Security & Crypto Lab -->
     <section id="tab-lab" class="panel">
-      <!-- Card 1: Gzip Security Defense Lab -->
+      <!-- Card 1: Gzip / Zlib Security Defense Lab -->
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title" data-i18n="labTitle">有界 RFC 1952 Gzip 安全防线实测（Zip-Bomb · 尾随数据 · 截断流）</h2>
-          <button id="runAllLab" class="btn btn-primary btn-sm" type="button" data-i18n="runAllLab">一键运行全部 3 项安全演练</button>
+          <h2 class="card-title" data-i18n="labTitle">有界 Gzip / Zlib 安全防线实测（Zip-Bomb · 尾随数据 · 截断流）</h2>
+          <div class="controls-row">
+            <div class="mode-switch" role="group" aria-label="Compression format">
+              <button id="labFmtGzip" class="mode-btn active" type="button">RFC 1952 Gzip</button>
+              <button id="labFmtZlib" class="mode-btn" type="button">RFC 1950 Zlib</button>
+            </div>
+            <button id="runAllLab" class="btn btn-primary btn-sm" type="button" data-i18n="runAllLab">一键运行全部 3 项安全演练</button>
+          </div>
         </div>
 
         <div class="lab-grid">
@@ -1594,21 +1824,21 @@
 
           <div class="lab-card">
             <h3 data-i18n="labTrailTitle">2. 尾随垃圾字节拒绝</h3>
-            <p data-i18n="labTrailDesc">在合法单流 Gzip 尾部追加 1 字节多余载荷（0x42），验证单流严格帧校验立刻返回 TrailingData。</p>
+            <p data-i18n="labTrailDesc">在合法单流压缩帧（Gzip CRC32/ISIZE 或 Zlib Adler-32）尾部追加 1 字节多余载荷（0x42），验证严格帧校验立刻返回 TrailingData。</p>
             <button id="runTrailBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="labTrailBtn">触发 TrailingData 测试</button>
             <div id="labTrailOut" class="lab-out">—</div>
           </div>
 
           <div class="lab-card">
             <h3 data-i18n="labTruncTitle">3. 截断流 / 尾部缺失拒绝</h3>
-            <p data-i18n="labTruncDesc">截去 RFC 1952 尾部 CRC32/ISIZE 校验的最后 1 字节，验证解码器严格报 TruncatedInput，绝不静默返回不完整数据。</p>
+            <p data-i18n="labTruncDesc">截去尾部校验和（CRC32/ISIZE 或 Adler-32）的最后 1 字节，验证解码器严格报 TruncatedInput，绝不静默返回不完整数据。</p>
             <button id="runTruncBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="labTruncBtn">触发 TruncatedInput 测试</button>
             <div id="labTruncOut" class="lab-out">—</div>
           </div>
         </div>
 
         <div class="card-header" style="margin-top:0.5rem;">
-          <h3 class="card-title" data-i18n="labCustomTitle">自定义文本有界 Gzip 往返实验室</h3>
+          <h3 class="card-title" data-i18n="labCustomTitle">自定义文本有界 Gzip / Zlib 往返实验室</h3>
           <div class="controls-row">
             <label class="field">
               <span data-i18n="labLevel">压缩级别</span>
@@ -1625,8 +1855,8 @@
             <button id="runCustomGzip" class="btn btn-teal btn-sm" type="button" data-i18n="labRunCustom">压缩并有界解压测试</button>
           </div>
         </div>
-        <textarea id="labInput" class="lab-textarea">MoonLibSync 0.6.0 bounded RFC 1952 Gzip framing — try lowering max_output below the text byte length to trigger LimitExceeded!
-MoonLibSync 0.6.0 bounded RFC 1952 Gzip framing — repeated text shrinks sharply with DEFLATE.</textarea>
+        <textarea id="labInput" class="lab-textarea">MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — try lowering max_output below the text byte length to trigger LimitExceeded!
+MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated text shrinks sharply with DEFLATE.</textarea>
         <div id="labCustomOut" class="lab-out" style="margin-top:0.65rem;">—</div>
       </div>
 
@@ -1654,7 +1884,7 @@ MoonLibSync 0.6.0 bounded RFC 1952 Gzip framing — repeated text shrinks sharpl
           </div>
         </div>
 
-        <textarea id="edPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.6.0","artifact":"app-release.mbundle.gz","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","notes":"Signed in browser with pure MoonBit Ed25519"}</textarea>
+        <textarea id="edPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.0","artifact":"app-release.mbundle.gz","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","notes":"Signed in browser with pure MoonBit Ed25519"}</textarea>
 
         <pre id="edSigPreview" class="code-preview" hidden></pre>
 
@@ -1699,11 +1929,11 @@ MoonLibSync 0.6.0 bounded RFC 1952 Gzip framing — repeated text shrinks sharpl
 
         <div class="exclude-row" style="margin-top:0;margin-bottom:0.75rem;">
           <label class="exclude-label" for="aeadSecretInput" data-i18n="aeadSecretLabel">口令 / 32B 十六进制密钥</label>
-          <input id="aeadSecretInput" class="secret-input" type="text" value="moonlibsync-060-browser-passphrase" />
+          <input id="aeadSecretInput" class="secret-input" type="text" value="moonlibsync-070-browser-passphrase" />
           <button id="aeadGenRawKeyBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="aeadGenRawKeyBtn">生成随机 32B 密钥</button>
         </div>
 
-        <textarea id="aeadPlainInput" class="lab-textarea">MoonLibSync 0.6.0 MLSENC01 authenticated stream container — ChaCha20-Poly1305 per-chunk AEAD with 56-byte header binding and Argon2id key derivation.</textarea>
+        <textarea id="aeadPlainInput" class="lab-textarea">MoonLibSync 0.7.0 MLSENC01 authenticated stream container — ChaCha20-Poly1305 per-chunk AEAD with 56-byte header binding and Argon2id key derivation.</textarea>
 
         <div class="controls-row" style="margin-top:0.8rem;">
           <button id="aeadSealBtn" class="btn btn-primary btn-sm" type="button" data-i18n="aeadSealBtn">加密封装为 .menc</button>
@@ -1713,10 +1943,125 @@ MoonLibSync 0.6.0 bounded RFC 1952 Gzip framing — repeated text shrinks sharpl
         </div>
         <div id="aeadOut" class="lab-out" style="margin-top:0.65rem;">—</div>
       </div>
+
+      <!-- Card 4: X25519 Multi-Recipient Envelope Lab (MLSENC02) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" data-i18n="envCardTitle">X25519 多接收方信封加密实验室（MLSENC02 · HKDF-SHA256 + ChaCha20-Poly1305）</h2>
+          <div class="controls-row">
+            <button id="envGenKeysBtn" class="btn btn-primary btn-sm" type="button" data-i18n="envGenKeysBtn">生成 Alice / Bob / Mallory 密钥对</button>
+            <button id="envSealBtn" class="btn btn-teal btn-sm" type="button" data-i18n="envSealBtn">封装给 Alice + Bob (MLSENC02)</button>
+            <button id="envDlBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="envDlBtn" disabled>下载 .menv</button>
+          </div>
+        </div>
+
+        <div id="envPartiesGrid" class="party-grid">
+          <div class="party-card">
+            <div class="party-head">
+              <span class="party-name">Alice</span>
+              <span class="badge badge-add" data-i18n="envRecipientBadge">授权接收方</span>
+            </div>
+            <div class="party-meta" id="envAliceMeta">key_id: —</div>
+          </div>
+          <div class="party-card">
+            <div class="party-head">
+              <span class="party-name">Bob</span>
+              <span class="badge badge-add" data-i18n="envRecipientBadge">授权接收方</span>
+            </div>
+            <div class="party-meta" id="envBobMeta">key_id: —</div>
+          </div>
+          <div class="party-card">
+            <div class="party-head">
+              <span class="party-name">Mallory</span>
+              <span class="badge badge-delete" data-i18n="envOutsiderBadge">未授权第三方</span>
+            </div>
+            <div class="party-meta" id="envMalloryMeta">key_id: —</div>
+          </div>
+        </div>
+
+        <textarea id="envPlainInput" class="lab-textarea">MoonLibSync 0.7.0 MLSENC02 multi-recipient X25519 envelope — one random CEK wrapped per recipient via X25519 + HKDF-SHA256 + ChaCha20-Poly1305. Alice and Bob decrypt independently; Mallory is rejected!</textarea>
+
+        <div class="controls-row" style="margin-top:0.8rem;">
+          <button id="envUnsealAliceBtn" class="btn btn-primary btn-sm" type="button" data-i18n="envUnsealAliceBtn">以 Alice 私钥解密 ✓</button>
+          <button id="envUnsealBobBtn" class="btn btn-teal btn-sm" type="button" data-i18n="envUnsealBobBtn">以 Bob 私钥解密 ✓</button>
+          <button id="envUnsealMalloryBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="envUnsealMalloryBtn">以 Mallory 私钥尝试解密 (拒绝)</button>
+          <button id="envTamperBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="envTamperBtn">模拟 1 字节密文篡改 (AuthenticationFailed)</button>
+        </div>
+        <div id="envOut" class="lab-out" style="margin-top:0.65rem;">—</div>
+        <pre id="envMetaPreview" class="code-preview" hidden></pre>
+      </div>
+
+      <!-- Card 5: Ed25519 Trust Keyring & 2-of-3 Threshold Quorum Lab -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" data-i18n="quorumCardTitle">Ed25519 信任密钥环 &amp; 2-of-3 门限多签实验室（Schema 4 Keyring + Quorum）</h2>
+          <div class="controls-row">
+            <label class="field">
+              <span data-i18n="quorumMinLabel">门限阈值</span>
+              <select id="quorumMinSelect">
+                <option value="1">1-of-3</option>
+                <option value="2" selected>2-of-3 (Default)</option>
+                <option value="3">3-of-3</option>
+              </select>
+            </label>
+            <button id="quorumGenBtn" class="btn btn-primary btn-sm" type="button" data-i18n="quorumGenBtn">生成 3 签名者密钥并实时验签</button>
+          </div>
+        </div>
+
+        <div id="quorumSignersGrid" class="party-grid">
+          <div class="party-card" id="quorumCard0">
+            <div class="party-head">
+              <span class="party-name">Signer 1 · Alice</span>
+              <span class="badge badge-info" id="quorumBadge0">—</span>
+            </div>
+            <div class="party-meta" id="quorumKeyMeta0">key_id: —</div>
+            <div class="party-controls">
+              <label class="check-pill"><input id="quorumSign0" type="checkbox" checked /><span data-i18n="quorumSignedChk">参与签名</span></label>
+              <label class="check-pill"><input id="quorumRevoke0" type="checkbox" /><span data-i18n="quorumRevokedChk">吊销密钥</span></label>
+            </div>
+          </div>
+          <div class="party-card" id="quorumCard1">
+            <div class="party-head">
+              <span class="party-name">Signer 2 · Bob</span>
+              <span class="badge badge-info" id="quorumBadge1">—</span>
+            </div>
+            <div class="party-meta" id="quorumKeyMeta1">key_id: —</div>
+            <div class="party-controls">
+              <label class="check-pill"><input id="quorumSign1" type="checkbox" checked /><span data-i18n="quorumSignedChk">参与签名</span></label>
+              <label class="check-pill"><input id="quorumRevoke1" type="checkbox" /><span data-i18n="quorumRevokedChk">吊销密钥</span></label>
+            </div>
+          </div>
+          <div class="party-card" id="quorumCard2">
+            <div class="party-head">
+              <span class="party-name">Signer 3 · Carol</span>
+              <span class="badge badge-info" id="quorumBadge2">—</span>
+            </div>
+            <div class="party-meta" id="quorumKeyMeta2">key_id: —</div>
+            <div class="party-controls">
+              <label class="check-pill"><input id="quorumSign2" type="checkbox" /><span data-i18n="quorumSignedChk">参与签名</span></label>
+              <label class="check-pill"><input id="quorumRevoke2" type="checkbox" /><span data-i18n="quorumRevokedChk">吊销密钥</span></label>
+            </div>
+          </div>
+        </div>
+
+        <textarea id="quorumPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.0","policy":"2-of-3-ed25519-quorum","artifact":"moonlibsync-0.7.0.mbundle.gz","notes":"Toggle revocation on Alice or Bob above to test live quorum failover!"}</textarea>
+
+        <div class="controls-row" style="margin-top:0.8rem;">
+          <button id="quorumVerifyBtn" class="btn btn-teal btn-sm" type="button" data-i18n="quorumVerifyBtn">重新执行门限多签校验</button>
+          <button id="quorumTamperBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="quorumTamperBtn">模拟 1 字节载荷篡改 (DigestMismatch)</button>
+          <button id="quorumDlKeyringBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="quorumDlKeyringBtn" disabled>下载 keyring.json</button>
+          <button id="quorumDlBundleBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="quorumDlBundleBtn" disabled>下载 bundle.msig.json</button>
+        </div>
+        <div id="quorumOut" class="lab-out" style="margin-top:0.65rem;">—</div>
+        <details id="quorumDetails" class="wire-box" hidden>
+          <summary data-i18n="quorumJsonToggle">展开 Schema 4 TrustKeyring &amp; SignatureBundle JSON</summary>
+          <pre id="quorumJsonPreview" class="code-preview"></pre>
+        </details>
+      </div>
     </section>
 
     <footer class="footer">
-      <span>MoonLibSync 0.6.1 · LGPL-2.1-or-later</span>
+      <span>MoonLibSync 0.7.0 · LGPL-2.1-or-later</span>
       <a href="https://github.com/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">GitHub Repository</a>
       <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">Mooncakes Docs</a>
     </footer>

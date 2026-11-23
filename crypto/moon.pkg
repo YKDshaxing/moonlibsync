@@ -3,6 +3,8 @@ import {
   "moonbitstack/mooncrypt/sign/ed25519",
   "moonbitstack/mooncrypt/aead/chachapoly",
   "moonbitstack/mooncrypt/kdf/argon2",
+  "moonbitstack/mooncrypt/kex/x25519",
+  "moonbitstack/mooncrypt/kdf/hkdf",
   "moonbitstack/mooncrypt/hash/sha2",
   "moonbitstack/mooncrypt/spec",
   "moonbitlang/core/buffer",

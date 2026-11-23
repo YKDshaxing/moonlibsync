@@ -1,16 +1,17 @@
 # `@ykdshaxing/moonlibsync`
 
-Pure MoonBit `librsync`-compatible binary delta (Rabin-Karp & Rollsum), reverse delta, bounded RFC 1952 Gzip, Schema 3 directory sync & `.mbundle` archives, Ed25519 publisher signing, and ChaCha20-Poly1305/Argon2id AEAD sealing SDK for Node.js and browsers — zero C FFI, zero npm runtime dependencies, full strict TypeScript types.
+Pure MoonBit `librsync`-compatible binary delta (Rabin-Karp & Rollsum), HTTP Range (`zsync`-style) fetch planning, algebraic delta composition, reverse delta, bounded RFC 1952 Gzip & RFC 1950 Zlib, Schema 3 directory sync & `.mbundle` archives, Ed25519 publisher signing & M-of-N trust keyring quorum verification, and ChaCha20-Poly1305/Argon2id/X25519 multi-recipient AEAD sealing SDK for Node.js and browsers — zero C FFI, zero npm runtime dependencies, full strict TypeScript types.
 
 ## Features
 
-- **Wire-compatible `librsync` delta sync** (`0x72730147` Rabin-Karp+BLAKE2b and `0x72730137` Rollsum+BLAKE2b signatures via `createSignature` / `createSignatureWithProfile`, `0x72730236` forward deltas, `createReverseDelta` rollback deltas, streaming sync diagnostics, and block-size benchmarking).
-- **Bounded RFC 1952 Gzip framing** with deterministic zip-bomb (`LimitExceeded`), trailing-byte (`TrailingData`), and truncated-frame (`TruncatedInput`) protection.
+- **Wire-compatible `librsync` delta sync** (`0x72730147` Rabin-Karp+BLAKE2b and `0x72730137` Rollsum+BLAKE2b signatures via `createSignature` / `createSignatureWithProfile`, `0x72730236` forward deltas, `createReverseDelta` rollback deltas, `composeDeltas` algebraic delta chaining, streaming sync diagnostics, and block-size benchmarking).
+- **Client-pull HTTP Range sync (`zsync`-style)** (`planRangeFetch`, `applyRangeFetch`) generating RFC 9110 `bytes=START-END` coalesced fetch plans and reconstructing target files from local basis + remote slices.
+- **Bounded RFC 1952 Gzip & RFC 1950 Zlib framing** (`compressGzip`, `decompressGzip`, `compressZlib`, `decompressZlib`) with deterministic zip-bomb (`LimitExceeded`), trailing-byte (`TrailingData`), and truncated-frame (`TruncatedInput`) protection.
 - **Verified patch & auto-decompression** (`applyPatchOrGzip`) supporting raw `.delta`, `.delta.gz`, and Schema 1/2 SHA-256 manifest verification.
 - **Schema 3 directory sync & `.mbundle` / `.mbundle.gz` archives** (`createDirSnapshot` with POSIX glob `excludes`, `planDirSnapshots` with `detectMoves`, `packDirBundleArchive`, `unpackDirBundleArchive`, `verifyDirSnapshots`).
-- **Ed25519 publisher signing & trust verification** (`ed25519KeypairFromSeed`, `ed25519Sign`, `ed25519Verify`) producing and verifying canonical Schema 4 `moonlibsync-signature` documents.
-- **Chunked AEAD authenticated encryption (`MLSENC01`)** (`seal`, `unseal`) with ChaCha20-Poly1305 and raw 32-byte keys or Argon2id passphrases, automatic CSPRNG salt/nonce generation, header AAD binding, and fail-closed tamper rejection.
-- **Universal artifact & delta inspection** (`inspectArtifact`, `inspectDeltaDetailed` with literal previews) for `.sig` (`0x72730147` & `0x72730137`), `.delta`, `.gz`, `.mbundle`, `.menc` (`seal-archive`), Schema 1/2/3 manifests, and Schema 4 `publisher-signature` JSON.
+- **Ed25519 publisher signing, trust keyrings & M-of-N quorum verification** (`ed25519KeypairFromSeed`, `ed25519Sign`, `ed25519Verify`, `createTrustKeyring`, `verifyQuorum`) producing and verifying canonical Schema 4 `moonlibsync-signature`, `moonlibsync-keyring`, and `moonlibsync-signature-bundle` documents with revocation enforcement.
+- **Chunked AEAD authenticated encryption (`MLSENC01` & `MLSENC02`)** (`seal`, `unseal`, `x25519KeypairFromSecret`, `sealEnvelope`, `unsealEnvelope`) with ChaCha20-Poly1305, raw 32-byte keys, Argon2id passphrases, or multi-recipient X25519 envelopes (1..=64 recipients), automatic CSPRNG nonce/key generation, header AAD binding, and fail-closed tamper rejection.
+- **Universal artifact & delta inspection** (`inspectArtifact`, `inspectDeltaDetailed` with literal previews) for `.sig` (`0x72730147` & `0x72730137`), `.delta`, `.gz`, `.zlib`, `.mbundle`, `.menc` (`MLSENC01`), `.menv` (`MLSENC02`), Schema 1/2/3 manifests, and Schema 4 signatures, keyrings, and signature bundles.
 
 ## Quick Start (Node.js)
 
@@ -169,6 +170,77 @@ try {
 }
 ```
 
+## HTTP Range Fetch (`zsync`-Style), Delta Composition & Bounded Zlib (`0.7.0`)
+
+```js
+import { loadMoonLibSync } from '@ykdshaxing/moonlibsync';
+
+const sync = await loadMoonLibSync();
+
+// 1. Client-pull HTTP Range fetch plan + reconstruction from remote slices
+const targetSig = sync.createSignature(targetBytes, { blockLen: 512, strongSumLen: 16 });
+const plan = sync.planRangeFetch(targetSig, targetBytes.length, localBasis, {
+  mergeGapBytes: 4096,
+  maxRanges: 64,
+});
+// Fetch each plan.ranges[i].http_range (e.g. "bytes=4096-8191") from CDN/S3:
+const slices = plan.ranges.map((r) => targetBytes.subarray(r.start, r.start + r.length));
+const restored = sync.applyRangeFetch(targetSig, targetBytes.length, localBasis, slices, {
+  mergeGapBytes: 4096,
+  maxRanges: 64,
+});
+console.log('Reused bytes:', restored.reusedBytes, 'SHA-256:', restored.restoredSha256);
+
+// 2. Algebraic delta composition (v0 -> v1 -> v2 ==> single direct v0 -> v2 delta)
+const composed = sync.composeDeltas([deltaV0ToV1, deltaV1ToV2]);
+const directV2 = sync.applyPatch(v0Bytes, composed.composed);
+console.log('Composed bytes:', composed.composedBytes, 'direct output:', directV2.length);
+
+// 3. Bounded RFC 1950 Zlib compression + zip-bomb-safe decompression
+const zData = sync.compressZlib(composed.composed, { level: 6 });
+const zRes = sync.decompressZlib(zData, { maxOutput: 1048576 });
+if (zRes.ok) {
+  console.log('Zlib restored bytes:', zRes.outputBytes, 'sha256:', zRes.outputSha256);
+} else {
+  console.log('Zlib rejected:', zRes.error); // e.g. "LimitExceeded", "TrailingData"
+}
+```
+
+## Multi-Recipient X25519 Envelope Encryption (`MLSENC02`) & M-of-N Quorum Verification (`0.7.0`)
+
+```js
+import { loadMoonLibSync } from '@ykdshaxing/moonlibsync';
+
+const sync = await loadMoonLibSync();
+const payload = new TextEncoder().encode('signed & multi-recipient encrypted release');
+
+// 1. Multi-recipient X25519 envelope (auto-generates CSPRNG ephemeral key, CEK & 4-byte nonce prefix)
+const alice = sync.x25519KeypairFromSecret(); // omits secretHex -> 32 CSPRNG bytes
+const bob = sync.x25519KeypairFromSecret();
+
+const sealedEnv = sync.sealEnvelope(payload, [alice.publicKeyHex, bob.publicKeyHex], {
+  chunkSize: 65536,
+});
+const openedByBob = sync.unsealEnvelope(sealedEnv.ciphertext, bob.secretKeyHex);
+console.log('Envelope recipients:', openedByBob.recipientCount, 'sha256:', openedByBob.plaintextSha256);
+
+// 2. Ed25519 TrustKeyring with revocation + M-of-N quorum verification
+const seedA = crypto.getRandomValues(new Uint8Array(32));
+const seedB = crypto.getRandomValues(new Uint8Array(32));
+const seedC = crypto.getRandomValues(new Uint8Array(32));
+const [kpA, kpB, kpC] = [seedA, seedB, seedC].map((s) => sync.ed25519KeypairFromSeed(s));
+
+const keyring = sync.createTrustKeyring([kpA.publicKeyHex, kpB.publicKeyHex, kpC.publicKeyHex], {
+  revokedKeyIds: [kpC.keyId],
+  minQuorum: 2,
+});
+const sigA = sync.ed25519Sign(seedA, payload);
+const sigB = sync.ed25519Sign(seedB, payload);
+
+const quorum = sync.verifyQuorum([sigA.signatureJson, sigB.signatureJson], keyring.keyringJson, payload);
+console.log('Verified signers:', quorum.verifiedKeyIds, 'required:', quorum.requiredQuorum);
+```
+
 ## Browser Usage
 
 `index.js` uses zero Node.js static imports and works natively in modern browsers as an ES module:
@@ -192,10 +264,15 @@ Strict TypeScript declarations (`index.d.ts`, zero `any`) are bundled with the p
 import {
   loadMoonLibSync,
   type ArtifactInspection,
+  type ComposedDeltaResult,
   type DirSyncPlan,
   type PackedBundleArchive,
+  type QuorumVerifyResult,
+  type RangeFetchPlan,
+  type SealEnvelopeResult,
   type SealResult,
   type SyncResult,
+  type ZlibDecompressResult,
 } from '@ykdshaxing/moonlibsync';
 
 const sync = await loadMoonLibSync();
@@ -213,6 +290,11 @@ const bundle: PackedBundleArchive = sync.packDirBundleArchive(basisFiles, target
   gzip: true,
 });
 const sealed: SealResult = sync.seal(bundle.archive, { key });
+const rangePlan: RangeFetchPlan = sync.planRangeFetch(sigBytes, newBytes.length, oldBytes);
+const composed: ComposedDeltaResult = sync.composeDeltas([deltaBytes]);
+const zResult: ZlibDecompressResult = sync.decompressZlib(sync.compressZlib(deltaBytes));
+const envelope: SealEnvelopeResult = sync.sealEnvelope(bundle.archive, [recipientPubHex]);
+const quorum: QuorumVerifyResult = sync.verifyQuorum([sigA.signatureJson, sigB.signatureJson], keyring.keyringJson, bundle.archive);
 ```
 
 ## Building & Testing in This Repository

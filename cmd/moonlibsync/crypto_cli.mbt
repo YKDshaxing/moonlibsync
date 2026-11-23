@@ -72,9 +72,63 @@ async fn read_hex_key_file(path : String, field : String) -> Bytes {
 }
 
 ///|
+fn is_strict_64_lower_hex(text : String) -> Bool {
+  if text.length() != 64 {
+    return false
+  }
+  for c in text {
+    let code = c.to_int()
+    let is_digit = code >= 0x30 && code <= 0x39
+    let is_lower_hex = code >= 0x61 && code <= 0x66
+    if !is_digit && !is_lower_hex {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn json_string_array(items : Array[String]) -> String {
+  let out = StringBuilder()
+  out.write_char('[')
+  for i in 0..<items.length() {
+    if i > 0 {
+      out.write_char(',')
+    }
+    out.write_char('"')
+    out.write_string(items[i])
+    out.write_char('"')
+  }
+  out.write_char(']')
+  out.to_string()
+}
+
+///|
 async fn read_public_key_file(path : String) -> Bytes {
   let key = read_hex_key_file(path, "public_key")
   @crypto.validate_public_key(key)
+  key
+}
+
+///|
+async fn read_ed25519_public_key_or_hex(spec : String) -> Bytes {
+  if is_strict_64_lower_hex(spec) {
+    let key = @crypto.decode_key_hex(spec, 32, "public_key")
+    @crypto.validate_public_key(key)
+    key
+  } else {
+    read_public_key_file(spec)
+  }
+}
+
+///|
+async fn read_x25519_public_key_or_hex(spec : String) -> Bytes {
+  let key = if is_strict_64_lower_hex(spec) {
+    @crypto.decode_key_hex(spec, 32, "recipient_public_key")
+  } else {
+    read_hex_key_file(spec, "recipient_public_key")
+  }
+  let _ = @crypto.x25519_key_id(key)
   key
 }
 
@@ -103,6 +157,13 @@ async fn hash_file_for_crypto(
 }
 
 ///|
+priv enum AttachedVerifier {
+  NoAuth
+  SingleSig(@crypto.PublisherSignature, Array[Bytes])
+  QuorumBundle(@crypto.SignatureBundle, @crypto.TrustKeyring)
+}
+
+///|
 async fn load_attached_sig_and_keys(
   plan : Plan,
 ) -> (@crypto.PublisherSignature, Array[Bytes])? {
@@ -112,10 +173,49 @@ async fn load_attached_sig_and_keys(
       let sig_raw = bounded_read(sig_path, 8192L)
       let sig = @crypto.parse_publisher_signature(sig_raw)
       let pubkeys : Array[Bytes] = Array(capacity=plan.verify_keys.length())
-      for kpath in plan.verify_keys {
-        pubkeys.push(read_public_key_file(kpath))
+      for kspec in plan.verify_keys {
+        pubkeys.push(read_ed25519_public_key_or_hex(kspec))
       }
       Some((sig, pubkeys))
+    }
+  }
+}
+
+///|
+async fn load_attached_verifier(plan : Plan) -> AttachedVerifier {
+  match (plan.verify_sig, plan.verify_bundle, plan.keyring_file) {
+    (Some(_), None, None) =>
+      match load_attached_sig_and_keys(plan) {
+        Some((sig, pubkeys)) => SingleSig(sig, pubkeys)
+        None => NoAuth
+      }
+    (None, Some(bundle_path), Some(kr_path)) => {
+      let bundle_raw = bounded_read(bundle_path, 131072L)
+      let bundle = @crypto.parse_signature_bundle(bundle_raw)
+      let kr_raw = bounded_read(kr_path, 65536L)
+      let kr = @crypto.parse_trust_keyring(kr_raw)
+      QuorumBundle(bundle, kr)
+    }
+    _ => NoAuth
+  }
+}
+
+///|
+fn verify_digest_with_verifier(
+  verifier : AttachedVerifier,
+  digest : @lib.FileDigest,
+) -> Unit raise @crypto.CryptoError {
+  match verifier {
+    NoAuth => ()
+    SingleSig(sig, pubkeys) =>
+      @crypto.verify_digest(sig, pubkeys, digest.byte_length, digest.sha256)
+    QuorumBundle(bundle, keyring) => {
+      let _ = @crypto.verify_quorum_digest(
+        bundle,
+        keyring,
+        digest.byte_length,
+        digest.sha256,
+      )
     }
   }
 }
@@ -134,11 +234,12 @@ async fn verify_attached_signature_file(
   path : String,
   max_bytes : Int64,
 ) -> @lib.FileDigest? {
-  match load_attached_sig_and_keys(plan) {
-    None => None
-    Some((sig, pubkeys)) => {
+  let verifier = load_attached_verifier(plan)
+  match verifier {
+    NoAuth => None
+    _ => {
       let digest = hash_file_for_crypto(path, max_bytes)
-      @crypto.verify_digest(sig, pubkeys, digest.byte_length, digest.sha256)
+      verify_digest_with_verifier(verifier, digest)
       Some(digest)
     }
   }
@@ -317,6 +418,45 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
     let output = prepare_output(output_path)
     let seal_limits = seal_limits_for_plan(plan)
     if plan.operation == "seal" {
+      if plan.recipients.length() > 0 {
+        let recipient_pubs : Array[Bytes] = Array(
+          capacity=plan.recipients.length(),
+        )
+        for spec in plan.recipients {
+          recipient_pubs.push(read_x25519_public_key_or_hex(spec))
+        }
+        let ephemeral_secret = match @env.rand(32) {
+          Some(b) if b.length() == 32 => b
+          _ =>
+            raise FileFailure(
+              "CSPRNG randomness unavailable for ephemeral X25519 secret",
+            )
+        }
+        let content_key = match @env.rand(32) {
+          Some(b) if b.length() == 32 => b
+          _ => raise FileFailure("CSPRNG randomness unavailable for CEK")
+        }
+        let nonce_prefix = match @env.rand(4) {
+          Some(b) if b.length() == 4 => b
+          _ =>
+            raise FileFailure(
+              "CSPRNG randomness unavailable for envelope nonce",
+            )
+        }
+        let plain = bounded_read(in_path, seal_limits.max_input_bytes)
+        let sealed_bytes = @crypto.seal_envelope(
+          plain,
+          recipient_pubs,
+          ephemeral_secret,
+          content_key,
+          nonce_prefix,
+          plan.seal_options,
+          seal_limits,
+        )
+        publish_output(output, sealed_bytes)
+        emit_instant_progress(plan, plain.length().to_int64())
+        return
+      }
       let salt = match @env.rand(16) {
         Some(b) if b.length() == 16 => b
         _ => raise FileFailure("CSPRNG randomness unavailable for salt")
@@ -359,7 +499,10 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
               plan.seal_options,
               seal_limits,
             )
-          _ => raise Usage("seal requires --key-file or --passphrase-file")
+          _ =>
+            raise Usage(
+              "seal requires --key-file, --passphrase-file, or --recipient",
+            )
         }
         let progress = make_progress(plan, in_size)
         publish_stream(output, tmp_file => {
@@ -392,12 +535,26 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
               plan.seal_options,
               seal_limits,
             )
-          _ => raise Usage("seal requires --key-file or --passphrase-file")
+          _ =>
+            raise Usage(
+              "seal requires --key-file, --passphrase-file, or --recipient",
+            )
         }
         publish_output(output, sealed_bytes)
         emit_instant_progress(plan, plain.length().to_int64())
       }
     } else {
+      match plan.recipient_key {
+        Some(rk_path) => {
+          let secret_key = read_hex_key_file(rk_path, "x25519_secret")
+          let cipher = bounded_read(in_path, seal_limits.max_input_bytes)
+          let plain = @crypto.unseal_envelope(cipher, secret_key, seal_limits)
+          publish_output(output, plain)
+          emit_instant_progress(plan, cipher.length().to_int64())
+          return
+        }
+        None => ()
+      }
       let raw_key : Bytes? = match plan.key_file {
         Some(kf) => Some(read_hex_key_file(kf, "key"))
         None => None
@@ -418,7 +575,10 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
           (Some(k), _) => @crypto.SealDecoder::new_with_key(k, seal_limits)
           (_, Some(pw)) =>
             @crypto.SealDecoder::new_with_passphrase(pw, seal_limits)
-          _ => raise Usage("unseal requires --key-file or --passphrase-file")
+          _ =>
+            raise Usage(
+              "unseal requires --key-file, --passphrase-file, or --recipient-key",
+            )
         }
         let progress = make_progress(plan, in_size)
         publish_stream(output, tmp_file => {
@@ -435,7 +595,10 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
           (Some(k), _) => @crypto.unseal_with_key(cipher, k, seal_limits)
           (_, Some(pw)) =>
             @crypto.unseal_with_passphrase(cipher, pw, seal_limits)
-          _ => raise Usage("unseal requires --key-file or --passphrase-file")
+          _ =>
+            raise Usage(
+              "unseal requires --key-file, --passphrase-file, or --recipient-key",
+            )
         }
         publish_output(output, plain)
         emit_instant_progress(plan, cipher.length().to_int64())
@@ -444,4 +607,199 @@ async fn execute_seal_op(plan : Plan, output_path : String) -> Unit {
   } catch {
     error => raise wrap_stream_error(plan, output_path, error)
   }
+}
+
+///|
+async fn execute_x25519_keygen(
+  plan : Plan,
+  secret_out : String,
+  writer~ : async (Bytes) -> Unit = stdout_bytes,
+) -> Unit {
+  try {
+    let secret_final = prepare_output(secret_out)
+    let pub_final_opt : String? = match plan.pub_out {
+      Some(pub_path) => {
+        let pf = prepare_output(pub_path)
+        let same_path = if @path.sep != '/' {
+          dir_ascii_lower(secret_final) == dir_ascii_lower(pf)
+        } else {
+          secret_final == pf
+        }
+        guard !same_path else {
+          raise FileFailure(
+            "x25519-keygen requires distinct output paths: " + secret_out,
+          )
+        }
+        Some(pf)
+      }
+      None => None
+    }
+    let secret = match @env.rand(32) {
+      Some(bytes) if bytes.length() == 32 => bytes
+      _ => raise FileFailure("CSPRNG randomness unavailable for x25519-keygen")
+    }
+    let kp = @crypto.x25519_keypair_from_secret(secret)
+    let key_id = @crypto.x25519_key_id(kp.public_key)
+    let pub_hex = @crypto.encode_key_hex(kp.public_key)
+    let sec_data = @utf8.encode(@crypto.encode_key_hex(kp.secret_key) + "\n")
+    match pub_final_opt {
+      Some(pub_final) => {
+        let pub_data = @utf8.encode(pub_hex + "\n")
+        let sec_tmp = unique_temp_path(secret_final)
+        let pub_tmp = unique_temp_path(pub_final)
+        write_temp_file_synced(sec_tmp, sec_data)
+        let mut sec_committed = false
+        errdefer {
+          if !sec_committed {
+            let _ = @fs.remove(sec_tmp, allow_missing=true) catch { _ => () }
+          } else {
+            let _ = @fs.remove(secret_final, allow_missing=true) catch {
+              _ => ()
+            }
+          }
+          let _ = @fs.remove(pub_tmp, allow_missing=true) catch { _ => () }
+        }
+        write_temp_file_synced(pub_tmp, pub_data)
+        @fs.rename(sec_tmp, secret_final, replace=false)
+        sec_committed = true
+        @fs.rename(pub_tmp, pub_final, replace=false)
+      }
+      None => publish_output(secret_final, sec_data)
+    }
+    let text = if plan.json {
+      "{\"schema_version\":1,\"command\":\"x25519-keygen\",\"key_id\":\"\{key_id}\",\"public_key_hex\":\"\{pub_hex}\"}\n"
+    } else {
+      "x25519-keygen\nkey_id: \{key_id}\npublic_key_hex: \{pub_hex}\n"
+    }
+    write_inspection(text, writer~)
+  } catch {
+    error => raise wrap_stream_error(plan, secret_out, error)
+  }
+}
+
+///|
+async fn execute_keyring_init(
+  plan : Plan,
+  output_path : String,
+  writer~ : async (Bytes) -> Unit = stdout_bytes,
+) -> Unit {
+  try {
+    let output = prepare_output(output_path)
+    let trusted_keys : Array[Bytes] = Array(capacity=plan.trust_keys.length())
+    for spec in plan.trust_keys {
+      trusted_keys.push(read_ed25519_public_key_or_hex(spec))
+    }
+    let kr = @crypto.create_trust_keyring(
+      trusted_keys,
+      plan.revoked_key_ids,
+      plan.quorum,
+    )
+    let encoded = @crypto.encode_trust_keyring(kr)
+    publish_output(output, encoded)
+    if plan.json {
+      let trusted_ids : Array[String] = Array(capacity=kr.trusted_keys.length())
+      for pk in kr.trusted_keys {
+        trusted_ids.push(@crypto.key_id_from_public_key(pk))
+      }
+      let text = "{\"schema_version\":1,\"command\":\"keyring-init\",\"min_quorum\":\{kr.min_quorum},\"trusted_count\":\{kr.trusted_keys.length()},\"revoked_count\":\{kr.revoked_key_ids.length()},\"trusted_key_ids\":\{json_string_array(trusted_ids)},\"revoked_key_ids\":\{json_string_array(kr.revoked_key_ids)}}\n"
+      write_inspection(text, writer~)
+    }
+  } catch {
+    error => raise wrap_stream_error(plan, output_path, error)
+  }
+}
+
+///|
+async fn execute_sign_combine(
+  plan : Plan,
+  output_path : String,
+  writer~ : async (Bytes) -> Unit = stdout_bytes,
+) -> Unit {
+  try {
+    let output = prepare_output(output_path)
+    let sigs : Array[@crypto.PublisherSignature] = Array(
+      capacity=plan.inputs.length(),
+    )
+    for sig_path in plan.inputs {
+      let raw = bounded_read(sig_path, 8192L)
+      sigs.push(@crypto.parse_publisher_signature(raw))
+    }
+    let bundle = @crypto.create_signature_bundle(sigs)
+    let encoded = @crypto.encode_signature_bundle(bundle)
+    publish_output(output, encoded)
+    if plan.json {
+      let key_ids : Array[String] = Array(capacity=bundle.signatures.length())
+      for s in bundle.signatures {
+        key_ids.push(s.key_id)
+      }
+      let text = "{\"schema_version\":1,\"command\":\"sign-combine\",\"signature_count\":\{bundle.signatures.length()},\"payload_length\":\"\{bundle.payload_length}\",\"payload_sha256\":\"\{bundle.payload_sha256}\",\"key_ids\":\{json_string_array(key_ids)}}\n"
+      write_inspection(text, writer~)
+    }
+  } catch {
+    error => raise wrap_stream_error(plan, output_path, error)
+  }
+}
+
+///|
+fn format_verify_quorum_result(
+  report : @crypto.QuorumVerifyReport,
+  digest : @lib.FileDigest,
+  json : Bool,
+) -> String {
+  if json {
+    "{\"schema_version\":1,\"command\":\"verify-quorum\",\"verified\":true,\"required_quorum\":\{report.required_quorum},\"verified_count\":\{report.verified_key_ids.length()},\"verified_key_ids\":\{json_string_array(report.verified_key_ids)},\"rejected_key_ids\":\{json_string_array(report.rejected_key_ids)},\"revoked_hits\":\{json_string_array(report.revoked_hits)},\"payload_length\":\"\{digest.byte_length}\",\"payload_sha256\":\"\{digest.sha256}\"}\n"
+  } else {
+    let ver_str = report.verified_key_ids.join(", ")
+    let rej_str = report.rejected_key_ids.join(", ")
+    let rev_str = report.revoked_hits.join(", ")
+    "verify-quorum\nverified: true\nrequired_quorum: \{report.required_quorum}\nverified_count: \{report.verified_key_ids.length()}\nverified_key_ids: \{ver_str}\nrejected_key_ids: \{rej_str}\nrevoked_hits: \{rev_str}\npayload_length: \{digest.byte_length} bytes\npayload_sha256: \{digest.sha256}\n"
+  }
+}
+
+///|
+async fn execute_verify_quorum(
+  plan : Plan,
+  json : Bool,
+  writer~ : async (Bytes) -> Unit = stdout_bytes,
+) -> Unit {
+  let limits = plan.limits
+  let progress = make_progress(plan, -1L)
+  let text = try {
+    limits.validate()
+    let kr_path = match plan.keyring_file {
+      Some(p) => p
+      None => raise Usage("verify-quorum requires --keyring KEYRING.json")
+    }
+    let bundle_raw = bounded_read(plan.inputs[1], 131072L)
+    let bundle = @crypto.parse_signature_bundle(bundle_raw)
+    let kr_raw = bounded_read(kr_path, 65536L)
+    let kr = @crypto.parse_trust_keyring(kr_raw)
+    let digest = hash_file_for_crypto(
+      plan.inputs[0],
+      limits.max_new_bytes,
+      progress~,
+    )
+    let report = @crypto.verify_quorum_digest(
+      bundle,
+      kr,
+      digest.byte_length,
+      digest.sha256,
+    )
+    format_verify_quorum_result(report, digest, json)
+  } catch {
+    error => {
+      let detail = inspect_error_tag(error)
+      raise FileFailure(
+        "verify-quorum inputs '\{plan.inputs.join("', '")}': " + detail,
+      )
+    }
+  }
+  write_inspection(text, writer~) catch {
+    error =>
+      raise FileFailure(
+        "stdout verify-quorum inputs '\{plan.inputs.join("', '")}': " +
+        cli_error_text(error),
+      )
+  }
+  finish_progress(progress)
 }

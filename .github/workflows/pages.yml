@@ -64,7 +64,7 @@ jobs:
         run: |
           node --check _site/demo.js
           node --check _site/worker.js
-          node --input-type=module -e "import { loadMoonLibSync } from './js/index.js'; const c = await loadMoonLibSync({ modulePath: './_site/web-demo.js' }); const n = Object.keys(c.raw).filter((k) => typeof c.raw[k] === 'function').length; if (n !== 27) throw new Error('Expected 27 exports, got ' + n); const enc = new TextEncoder(); const a = enc.encode('moonlibsync-pages-release-smoke-old'.repeat(64)); const b = enc.encode('moonlibsync-pages-release-smoke-new'.repeat(64)); const r = c.runStreamingSync(a, b); if (!r.ok || !r.verified) throw new Error('Release bundle smoke test failed'); console.log('PAGES_RELEASE_SMOKE_OK exports=' + n);"
+          node --input-type=module -e "import { loadMoonLibSync } from './js/index.js'; const c = await loadMoonLibSync({ modulePath: './_site/web-demo.js' }); const n = Object.keys(c.raw).filter((k) => typeof c.raw[k] === 'function').length; if (n !== 37) throw new Error('Expected 37 exports, got ' + n); const enc = new TextEncoder(); const a = enc.encode('moonlibsync-pages-release-smoke-old'.repeat(64)); const b = enc.encode('moonlibsync-pages-release-smoke-new'.repeat(64)); const r = c.runStreamingSync(a, b); if (!r.ok || !r.verified) throw new Error('Release bundle smoke test failed'); console.log('PAGES_RELEASE_SMOKE_OK exports=' + n);"
           MOONLIBSYNC_BUILD_DIR=_build node js/test-sdk.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
