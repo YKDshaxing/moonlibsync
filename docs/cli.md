@@ -1,10 +1,10 @@
-# MoonLibSync 0.7.0 Native 单文件 CLI 手册
+# MoonLibSync 0.7.1 / 0.7.0 Native 单文件 CLI 手册
 
-0.7.0 在 100% 保持 0.1.0–0.6.1 全部 **28 条子命令**、参数语法、Schema 1–4 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件/网络/校验/核心/加密错误）及无覆盖原子发布兼容的基础上，新增 **7 条子命令（总计 35 条）** 与多项传输/并发/目录/红队安全强化：
+0.7.0–0.7.1 在 100% 保持 0.1.0–0.6.1 全部 **28 条子命令**、参数语法、Schema 1–4 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件/网络/校验/核心/加密错误）及无覆盖原子发布兼容的基础上，新增 **7 条子命令（总计 35 条）** 与多项传输/并发/目录/红队安全强化：
 
 1. **静态 HTTP `Range` (`zsync`) 增量规划与拉取（`cmd/moonlibsync/range_cli.mbt`）**：
    - `moonlibsync range-plan TARGET_SIG TARGET_LEN BASIS [-o PLAN.json] [--merge-gap BYTES] [--max-ranges N] [--json] [--progress] [LIMITS]`：零网络规划最小 RFC 9110 `bytes=` 区间清单（Schema 3 `moonlibsync-range-plan`；默认 `merge-gap 4096`、`max-ranges 256`）。
-   - `moonlibsync fetch-sync URL --basis OLD (--sig FILE | --sig-url URL) -o OUT [--target-length N] [--merge-gap BYTES] [--max-ranges N] [--verify-sig SIG_FILE --verify-key PUB_KEY... | --verify-bundle BUNDLE.json --keyring KEYRING.json] [--json] [--progress] [LIMITS]`：通过 `moonbitlang/core/async/http` 执行 `HEAD` 长度探测与有界 `206 Partial Content` 分片下载（先按 `min(max_new_bytes, max_output_bytes)` 限流、`60 s` 单次请求超时、强制 `identity` `Content-Encoding` 与严格规范 `Content-Range` 校验；本地完整还原并完成可选单签/多签认证后再原子 `sync` + `rename(replace=false)` 提交）。
+   - `moonlibsync fetch-sync URL --basis OLD (--sig FILE | --sig-url URL) -o OUT [--target-length N] [--merge-gap BYTES] [--max-ranges N] [--verify-sig SIG_FILE --verify-key PUB_KEY... | --verify-bundle BUNDLE.json --keyring KEYRING.json] [--json] [--progress] [LIMITS]`：通过 `moonbitlang/core/async/http` 执行 `HEAD` 长度探测与有界 `206 Partial Content` 分片下载（先按 `min(max_new_bytes, max_output_bytes)` 限流、`60 s` 单次请求超时、有界安全 `3xx` 重定向至多 5 跳且禁止 `https:// -> http://` 降级与非 HTTP scheme、强制 `identity` `Content-Encoding` 与严格规范 `Content-Range` 校验；`0.7.1` 起重建完成后无论是否指定 `--verify-sig` / `--verify-bundle` 均强制重算并核对远端 `.sig` 块级摘要，再执行可选密码学验签与原子 `sync` + `rename(replace=false)` 提交）。
 
 2. **多代 `librsync 0x72730236` Delta 链无中间合并（`compose-delta`）**：
    - `moonlibsync compose-delta DELTA1 DELTA2 [DELTA3...] -o OUT.delta [--json] [--progress] [LIMITS]`：无需旧/中/新三份数据实体，代数压缩串联补丁为直达单跳标准 `0x72730236` delta。

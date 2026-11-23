@@ -1,6 +1,6 @@
-# MoonLibSync 0.7.0 当前契约
+# MoonLibSync 0.7.1 / 0.7.0 当前契约
 
-`0.7.0` 在 100% 保持 `0.1.0`–`0.6.1` 全部既有公开 API、标准 `0x72730147` RK+BLAKE2b / `0x72730236` delta 协议、Schema 1/2 清单、`Limits::default()` 与 `MatchWork` v2 计量向前兼容的基础上，经增量扩展至当前稳定集合（以根目录、[`compress/`](../compress/pkg.generated.mbti) 与 [`crypto/`](../crypto/pkg.generated.mbti) 的 `.mbti` 为准）：
+`0.7.0`–`0.7.1` 在 100% 保持 `0.1.0`–`0.6.1` 全部既有公开 API、标准 `0x72730147` RK+BLAKE2b / `0x72730236` delta 协议、Schema 1/2 清单、`Limits::default()` 与 `MatchWork` v2 计量向前兼容的基础上，经增量扩展至当前稳定集合（以根目录、[`compress/`](../compress/pkg.generated.mbti) 与 [`crypto/`](../crypto/pkg.generated.mbti) 的 `.mbti` 为准）：
 
 - **双 BLAKE2 Profile 与反向回滚（`0.6.0+`）**：新增 `SignatureProfile::{RkBlake2, RollsumBlake2}`、`signature_with_profile`、`SignatureHasher::new_with_profile`、`create_reverse_delta` / `create_reverse_delta_auto`；`inspect_signature` / `prepare_signature` / `delta` / `DeltaScanner` 自动兼容两种 Profile。
 - **HTTP `Range` (`zsync`) 与 Delta 链合并（`0.7.0`）**：新增 `RangeFetchOptions`、`ByteRange`、`RangePlanOp`、`RangeFetchPlan`、`plan_range_fetch`、`apply_range_fetch` 与 `encode_range_plan_json`（Schema 3 `moonlibsync-range-plan`），以及零 IO 纯核心 `compose_deltas` / `compose_delta_chain`（输出标准 `0x72730236` delta，无需中间文件字节）。
@@ -11,7 +11,7 @@
   - `MLSENC01` 分块 AEAD（ChaCha20-Poly1305 + 可选 Argon2id，56 字节完整文件头绑定 AAD）；
   - `MLSENC02` 多接收方 X25519 + HKDF-SHA256 信封（1–64 接收方，拒绝低阶点/非规范 `u >= p`/全零 CEK）；
   - `TrustKeyring` + `SignatureBundle` `M-of-N` 阈值仲裁验签（Schema 4 `moonlibsync-keyring` / `moonlibsync-signature-bundle`，吊销列表先验生效）。
-- **Native CLI / JS SDK / Web Studio**：CLI 扩展至 **35 条子命令**（含 `--jobs N`、`--meta-out`/`--meta`、`fetch-sync`、`--verify-bundle` 等）；`examples/web-demo` 与仓库内 `@ykdshaxing/moonlibsync@0.7.0` SDK 暴露 37 项 ESM 导出与 33 个零 `any` 强类型方法（不宣称已发布至 npm registry）。
+- **Native CLI / JS SDK / Web Studio**：CLI 扩展至 **35 条子命令**（含 `--jobs N`、`--meta-out`/`--meta`、`fetch-sync`、`--verify-bundle` 等，`0.7.1` 新增 `fetch-sync` 强制 `.sig` 块级重算核验与安全 `3xx` 重定向）；`examples/web-demo` 与仓库内 `@ykdshaxing/moonlibsync@0.7.1` SDK 暴露 37 项 ESM 导出与 33 个零 `any` 强类型方法（不宣称已发布至 npm registry）。
 
 以下保留 `0.4.0`–`0.1.0` 历史契约快照。
 

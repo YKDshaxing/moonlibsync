@@ -88,6 +88,175 @@ fn check_identity_content_encoding(
 let fetch_sync_http_timeout_ms : Int32 = 60000
 
 ///|
+let fetch_sync_max_redirects : Int32 = 5
+
+///|
+fn is_http_redirect(code : Int32) -> Bool {
+  code == 301 || code == 302 || code == 303 || code == 307 || code == 308
+}
+
+///|
+fn strip_url_fragment(url : String) -> String {
+  let sb = StringBuilder()
+  for c in url {
+    if c == '#' {
+      break
+    }
+    sb.write_char(c)
+  }
+  sb.to_string()
+}
+
+///|
+fn normalize_http_scheme_prefix(url : String) -> (String, Bool)? {
+  let lower = dir_ascii_lower(url)
+  if lower.has_prefix("https://") {
+    let chars = url.to_array()
+    let sb = StringBuilder()
+    sb.write_string("https://")
+    for i in 8..<chars.length() {
+      sb.write_char(chars[i])
+    }
+    Some((sb.to_string(), true))
+  } else if lower.has_prefix("http://") {
+    let chars = url.to_array()
+    let sb = StringBuilder()
+    sb.write_string("http://")
+    for i in 7..<chars.length() {
+      sb.write_char(chars[i])
+    }
+    Some((sb.to_string(), false))
+  } else {
+    None
+  }
+}
+
+///|
+fn validate_redirect_http_url(url : String) -> String raise CliError {
+  let (normalized_scheme, is_https) = match normalize_http_scheme_prefix(url) {
+    Some(pair) => pair
+    None =>
+      raise FileFailure(
+        "fetch-sync redirect to unsupported URL scheme rejected: " + url,
+      )
+  }
+  let scheme_len = if is_https { 8 } else { 7 }
+  for c in normalized_scheme {
+    let code = c.to_int()
+    guard code >= 0x21 && code <= 0x7e else {
+      raise FileFailure(
+        "fetch-sync redirect URL contains invalid characters (rejected): " +
+        normalized_scheme,
+      )
+    }
+  }
+  let chars = normalized_scheme.to_array()
+  let mut host_end = scheme_len
+  while host_end < chars.length() &&
+        chars[host_end] != '/' &&
+        chars[host_end] != '?' &&
+        chars[host_end] != '#' {
+    guard chars[host_end] != '@' else {
+      raise FileFailure(
+        "fetch-sync redirect URL userinfo rejected: " + normalized_scheme,
+      )
+    }
+    host_end = host_end + 1
+  }
+  guard host_end > scheme_len else {
+    raise FileFailure(
+      "fetch-sync redirect URL missing host (rejected): " + normalized_scheme,
+    )
+  }
+  if host_end < chars.length() && chars[host_end] == '?' {
+    let sb = StringBuilder()
+    for i in 0..<host_end {
+      sb.write_char(chars[i])
+    }
+    sb.write_char('/')
+    for i in host_end..<chars.length() {
+      sb.write_char(chars[i])
+    }
+    sb.to_string()
+  } else {
+    normalized_scheme
+  }
+}
+
+///|
+fn url_origin(url : String) -> String raise CliError {
+  let (normalized_url, is_https) = match normalize_http_scheme_prefix(url) {
+    Some(pair) => pair
+    None => raise FileFailure("invalid HTTP URL: " + url)
+  }
+  let scheme_len = if is_https { 8 } else { 7 }
+  let chars = normalized_url.to_array()
+  let mut host_end = scheme_len
+  while host_end < chars.length() &&
+        chars[host_end] != '/' &&
+        chars[host_end] != '?' &&
+        chars[host_end] != '#' {
+    host_end = host_end + 1
+  }
+  let sb = StringBuilder()
+  for i in 0..<host_end {
+    sb.write_char(chars[i])
+  }
+  sb.to_string()
+}
+
+///|
+fn resolve_redirect_url(
+  current_url : String,
+  location : String,
+) -> String raise CliError {
+  let trimmed = trim_http_ows(location)
+  guard trimmed.length() > 0 && trimmed.length() <= 4096 else {
+    raise FileFailure(
+      "fetch-sync redirect empty or oversized Location rejected",
+    )
+  }
+  for c in trimmed {
+    let code = c.to_int()
+    guard code >= 0x21 && code <= 0x7e else {
+      raise FileFailure(
+        "fetch-sync redirect Location contains invalid characters (rejected)",
+      )
+    }
+  }
+  let loc_no_frag = strip_url_fragment(trimmed)
+  guard loc_no_frag.length() > 0 else {
+    raise FileFailure(
+      "fetch-sync redirect empty Location after fragment rejected",
+    )
+  }
+  let current_is_https = dir_ascii_lower(current_url).has_prefix("https://")
+  match normalize_http_scheme_prefix(loc_no_frag) {
+    Some((normalized, target_is_https)) => {
+      if !target_is_https && current_is_https {
+        raise FileFailure(
+          "fetch-sync HTTPS->HTTP downgrade redirect rejected: " + normalized,
+        )
+      }
+      return validate_redirect_http_url(normalized)
+    }
+    None => ()
+  }
+  if loc_no_frag.has_prefix("//") {
+    let scheme = if current_is_https { "https:" } else { "http:" }
+    return validate_redirect_http_url(scheme + loc_no_frag)
+  }
+  if loc_no_frag.has_prefix("/") {
+    let resolved = url_origin(current_url) + loc_no_frag
+    return validate_redirect_http_url(resolved)
+  }
+  raise FileFailure(
+    "fetch-sync redirect to unsupported or relative URL rejected: " +
+    loc_no_frag,
+  )
+}
+
+///|
 fn validate_content_range(
   header_val : String,
   start : Int64,
@@ -174,21 +343,37 @@ async fn http_get_bounded(
   max_206_bytes : Int64,
   context : String,
 ) -> (@http.ResponseHeader, Bytes) {
-  @async.with_timeout(fetch_sync_http_timeout_ms, async fn() {
-    let (resp, conn) = client.get_stream(url, extra_headers~)
-    defer conn.close()
-    if resp.code == 200 {
-      check_identity_content_encoding(resp, context)
-      let body = http_read_bounded(conn, resp, max_200_bytes, context)
-      (resp, body)
-    } else if resp.code == 206 {
-      check_identity_content_encoding(resp, context)
-      let body = http_read_bounded(conn, resp, max_206_bytes, context)
-      (resp, body)
-    } else {
-      (resp, b"")
+  let mut cur_url = url
+  for _hop in 0..<=fetch_sync_max_redirects {
+    let outcome = @async.with_timeout(fetch_sync_http_timeout_ms, async fn() {
+      let (resp, conn) = client.get_stream(cur_url, extra_headers~)
+      defer conn.close()
+      if is_http_redirect(resp.code) {
+        match resp.headers.get(@http.CaseInsensitiveString("Location")) {
+          Some(loc) => (Some(resolve_redirect_url(cur_url, loc)), resp, b"")
+          None =>
+            raise FileFailure(
+              context + " HTTP \{resp.code} redirect missing Location header",
+            )
+        }
+      } else if resp.code == 200 {
+        check_identity_content_encoding(resp, context)
+        let body = http_read_bounded(conn, resp, max_200_bytes, context)
+        (None, resp, body)
+      } else if resp.code == 206 {
+        check_identity_content_encoding(resp, context)
+        let body = http_read_bounded(conn, resp, max_206_bytes, context)
+        (None, resp, body)
+      } else {
+        (None, resp, b"")
+      }
+    })
+    match outcome.0 {
+      Some(next_url) => cur_url = next_url
+      None => return (outcome.1, outcome.2)
     }
-  })
+  }
+  raise FileFailure(context + " exceeded maximum HTTP redirects (5)")
 }
 
 ///|
@@ -197,59 +382,78 @@ async fn http_head_target_length(
   url : String,
   explicit_len : Int64?,
   max_target_bytes : Int64,
-) -> Int64 {
-  @async.with_timeout(fetch_sync_http_timeout_ms, async fn() {
-    let conn = client.request_stream(@http.RequestMethod::Head, url)
-    defer conn.close()
-    let resp = conn.end_request()
-    if resp.code == 200 {
-      match resp.headers.get(@http.CaseInsensitiveString("Content-Length")) {
-        Some(cl_str) => {
-          let cl = parse_http_nonneg_decimal(cl_str, "HEAD Content-Length")
-          guard cl <= max_target_bytes else {
+) -> (Int64, String) {
+  let mut cur_url = url
+  for _hop in 0..<=fetch_sync_max_redirects {
+    let outcome = @async.with_timeout(fetch_sync_http_timeout_ms, async fn() {
+      let conn = client.request_stream(@http.RequestMethod::Head, cur_url)
+      defer conn.close()
+      let resp = conn.end_request()
+      if is_http_redirect(resp.code) {
+        match resp.headers.get(@http.CaseInsensitiveString("Location")) {
+          Some(loc) => (Some(resolve_redirect_url(cur_url, loc)), 0L)
+          None =>
             raise FileFailure(
-              "ReadLimitExceeded: target content-length=\{cl} limit=\{max_target_bytes}",
+              "fetch-sync HEAD HTTP \{resp.code} redirect missing Location header",
             )
-          }
-          match explicit_len {
-            Some(exp) =>
-              if cl != exp {
-                raise FileFailure(
-                  "fetch-sync target-length mismatch: expected=\{exp} server=\{cl}",
-                )
-              }
-            None => ()
-          }
-          cl
         }
-        None =>
-          match explicit_len {
-            Some(exp) => {
-              guard exp <= max_target_bytes else {
-                raise FileFailure(
-                  "ReadLimitExceeded: target-length=\{exp} limit=\{max_target_bytes}",
-                )
-              }
-              exp
-            }
-            None =>
+      } else if resp.code == 200 {
+        check_identity_content_encoding(resp, "fetch-sync HEAD")
+        match resp.headers.get(@http.CaseInsensitiveString("Content-Length")) {
+          Some(cl_str) => {
+            let cl = parse_http_nonneg_decimal(cl_str, "HEAD Content-Length")
+            guard cl <= max_target_bytes else {
               raise FileFailure(
-                "fetch-sync HEAD response missing Content-Length header",
+                "ReadLimitExceeded: target content-length=\{cl} limit=\{max_target_bytes}",
               )
+            }
+            match explicit_len {
+              Some(exp) =>
+                if cl != exp {
+                  raise FileFailure(
+                    "fetch-sync target-length mismatch: expected=\{exp} server=\{cl}",
+                  )
+                }
+              None => ()
+            }
+            (None, cl)
           }
-      }
-    } else if (resp.code == 405 || resp.code == 501) &&
-      explicit_len is Some(exp) {
-      guard exp <= max_target_bytes else {
+          None =>
+            match explicit_len {
+              Some(exp) => {
+                guard exp <= max_target_bytes else {
+                  raise FileFailure(
+                    "ReadLimitExceeded: target-length=\{exp} limit=\{max_target_bytes}",
+                  )
+                }
+                (None, exp)
+              }
+              None =>
+                raise FileFailure(
+                  "fetch-sync HEAD response missing Content-Length header",
+                )
+            }
+        }
+      } else if (resp.code == 405 || resp.code == 501) &&
+        explicit_len is Some(exp) {
+        guard exp <= max_target_bytes else {
+          raise FileFailure(
+            "ReadLimitExceeded: target-length=\{exp} limit=\{max_target_bytes}",
+          )
+        }
+        (None, exp)
+      } else {
         raise FileFailure(
-          "ReadLimitExceeded: target-length=\{exp} limit=\{max_target_bytes}",
+          "fetch-sync HEAD failed with HTTP status \{resp.code}",
         )
       }
-      exp
-    } else {
-      raise FileFailure("fetch-sync HEAD failed with HTTP status \{resp.code}")
+    })
+    match outcome.0 {
+      Some(next_url) => cur_url = next_url
+      None => return (outcome.1, cur_url)
     }
-  })
+  }
+  raise FileFailure("fetch-sync HEAD exceeded maximum HTTP redirects (5)")
 }
 
 ///|
@@ -354,7 +558,7 @@ async fn execute_fetch_sync(
       limits.max_output_bytes
     }
     http_requests = http_requests + 1L
-    let target_length = http_head_target_length(
+    let (target_length, resolved_url) = http_head_target_length(
       client,
       url,
       plan.target_length,
@@ -387,7 +591,7 @@ async fn execute_fetch_sync(
           http_requests = http_requests + 1L
           let (resp, body) = http_get_bounded(
             client,
-            url,
+            resolved_url,
             Map([(@http.CaseInsensitiveString("Range"), range_spec)]),
             target_length,
             r.length,
@@ -461,11 +665,30 @@ async fn execute_fetch_sync(
       raise FileFailure("fetch-sync reconstructed length mismatch")
     }
 
-    // Step 6: Hash and cryptographically verify BEFORE publishing output.
+    // Step 6: Hash and cryptographically verify (plus mandatory .sig check) BEFORE publishing output.
     let hasher = @lib.Sha256Hasher::new(limits.max_output_bytes)
     hasher.update(reconstructed[:])
     let digest = hasher.finish()
     verify_digest_with_verifier(verifier, digest)
+    let sig_summary = @lib.inspect_signature(target_sig, limits)
+    let sig_verify_limits : @lib.Limits = {
+      ..limits,
+      max_old_bytes: target_length,
+    }
+    let recomputed_sig = @lib.signature_with_profile(
+      reconstructed,
+      {
+        block_len: sig_summary.block_len,
+        strong_sum_len: sig_summary.strong_sum_len,
+      },
+      range_plan.profile,
+      sig_verify_limits,
+    )
+    guard recomputed_sig == target_sig else {
+      raise FileFailure(
+        "fetch-sync reconstructed bytes do not match remote .sig checksums",
+      )
+    }
 
     // Step 7: Atomic no-overwrite publication + optional JSON summary.
     publish_output(output, reconstructed)

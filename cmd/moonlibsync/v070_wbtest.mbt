@@ -983,7 +983,7 @@ async test "cli v070 completions emit all 35 commands and v070 flags for bash zs
       out.write_string(@utf8.decode(b))
     })
     let text = out.to_string()
-    assert_true(text.contains("0.7.0"))
+    assert_true(text.contains("0.7.1"))
     for cmd in all_35 {
       assert_true(text.contains(cmd))
     }
@@ -1091,4 +1091,54 @@ async test "cli v070 red-team hardening: http parsing excluded-only meta and man
       assert_true(!entry_exists(bad_out))
     }
   })
+}
+
+///|
+test "cli v071 resolve_redirect_url validates schemes downgrades and relative paths" {
+  assert_eq(
+    resolve_redirect_url("http://127.0.0.1:8080/a/b.bin", "/v2/c.bin"),
+    "http://127.0.0.1:8080/v2/c.bin",
+  )
+  assert_eq(
+    resolve_redirect_url("https://cdn.example.com/a", "//edge.example.com/b"),
+    "https://edge.example.com/b",
+  )
+  assert_eq(
+    resolve_redirect_url("http://a.test/x", "https://b.test/y"),
+    "https://b.test/y",
+  )
+  assert_eq(
+    resolve_redirect_url("http://a.test/x", "HTTPS://CDN.TEST/v2.bin"),
+    "https://CDN.TEST/v2.bin",
+  )
+  assert_eq(
+    resolve_redirect_url("http://127.0.0.1:8080/a/b.bin", "/v2/c.bin#frag"),
+    "http://127.0.0.1:8080/v2/c.bin",
+  )
+  assert_eq(
+    resolve_redirect_url("http://a.test/x", "https://b.test?token=1"),
+    "https://b.test/?token=1",
+  )
+  for
+    pair in [
+      ("https://secure.test/a", "http://plain.test/a"),
+      ("https://secure.test/a", "HTTP://plain.test/a"),
+      ("HTTPS://secure.test/a", "http://plain.test/a"),
+      ("http://a.test/x", "https://user:pass@b.test/y"),
+      ("http://a.test/x", "#only-frag"),
+      ("http://a.test/x", "file:///etc/passwd"),
+      ("http://a.test/x", "ftp://a.test/x"),
+      ("http://a.test/x", "https:///empty-host"),
+      ("http://a.test/x", "https://bad.test/has space"),
+      ("http://a.test/x", "relative-no-slash"),
+    ] {
+    let rejected = try {
+      ignore(resolve_redirect_url(pair.0, pair.1))
+      false
+    } catch {
+      FileFailure(_) => true
+      _ => false
+    }
+    assert_true(rejected)
+  }
 }

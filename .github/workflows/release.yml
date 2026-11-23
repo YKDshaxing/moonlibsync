@@ -81,6 +81,33 @@ jobs:
           chmod +x moonlibsync-linux-x86_64
           sha256sum moonlibsync-linux-x86_64 moonlibsync-windows-x86_64.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      - name: Generate Release notes from CHANGELOG
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          tag = os.environ['TAG'].strip()
+          ver = tag[1:] if tag.startswith('v') else tag
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+          pattern = re.compile(rf'^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)', re.M | re.S)
+          m = pattern.search(changelog)
+          sums = Path('dist/SHA256SUMS.txt').read_text(encoding='utf-8').strip()
+          parts = []
+          if m:
+              parts.append(m.group(1).strip())
+          else:
+              parts.append(f'Release `{tag}` of MoonLibSync.')
+          parts.append(
+              '### Native CLI Assets & SHA-256 Checksums\n\n'
+              '```text\n' + sums + '\n```\n\n'
+              '- Linux x86_64: `chmod +x moonlibsync-linux-x86_64 && ./moonlibsync-linux-x86_64 --version`\n'
+              '- Windows x86_64: `.\\moonlibsync-windows-x86_64.exe --version`\n'
+              f'- Docs: https://mooncakes.io/docs/YKDshaxing/moonlibsync@{ver} · Web Studio: https://ykdshaxing.github.io/moonlibsync/'
+          )
+          Path('RELEASE_NOTES.md').write_text('\n\n'.join(parts) + '\n', encoding='utf-8')
+          PY
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,8 +115,9 @@ jobs:
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "MoonLibSync ${TAG}" --notes-file RELEASE_NOTES.md
           else
             gh release create "$TAG" dist/* \
               --title "MoonLibSync ${TAG}" \
-              --generate-notes
+              --notes-file RELEASE_NOTES.md
           fi

@@ -18,7 +18,7 @@ os.chdir(ROOT)
 OUTPUT = ROOT / os.environ.get('MOONLIBSYNC_BUILD_DIR', '_build') / 'cli'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 report = dict(format=1, status='running', platform=platform.platform(), cases=[],
-              native_helper_tests=dict(expected=57, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, v040_added=8, v050_added=4, v060_added=10, v070_added=11, passed=0, status='not_executed'),
+              native_helper_tests=dict(expected=58, baseline=6, inspection_added=6, manifest_added=3, auto_added=2, transfer_added=2, v032_added=5, v040_added=8, v050_added=4, v060_added=10, v070_added=12, passed=0, status='not_executed'),
               baseline_core_library_tests=179, core_library_tests=224, compress_subpackage_tests=3, transfer_core_library_tests_added=15, v032_core_library_tests_added=10, v040_core_library_tests_added=10, v050_core_library_tests_added=4, baseline_python_interop_tool_tests=6,
               cleanup='not_completed', unsupported=[])
 log = (OUTPUT/'commands.log').open('w', encoding='utf-8')
@@ -150,7 +150,7 @@ try:
     (OUTPUT/'native-helper-tests.log').write_bytes(unit.stdout+unit.stderr)
     unit_totals = re.search(rb'Total tests: (\d+), passed: (\d+), failed: (\d+)\.',unit.stdout+unit.stderr)
     report['native_helper_tests'].update(status='failed',passed=int(unit_totals[2]) if unit_totals else None,exit_code=unit.returncode)
-    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(57,57,0)
+    assert unit.returncode==0 and unit_totals and tuple(map(int,unit_totals.groups()))==(58,58,0)
     report['native_helper_tests']['status']='passed'
     exe = ROOT/build/'native/debug/build/cmd/moonlibsync/moonlibsync.exe'
     assert exe.is_file()
@@ -463,7 +463,7 @@ try:
     shutil.rmtree(root)
     report['cleanup']='owned run directory removed; foreign temporary preserved until run cleanup'
     report['status']='passed'
-    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 57 Native helper tests (46 previous + 11 v070); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
+    print(f'CLI smoke passed: {len(report["cases"])} integration cases; 58 Native helper tests (46 previous + 12 v070); {len(report["unsupported"])} unsupported optional link feature groups.',flush=True)
     print('CLI reuse:',report['reuse'],flush=True)
     code=0
 except BaseException as error:

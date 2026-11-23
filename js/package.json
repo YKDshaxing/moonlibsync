@@ -1,6 +1,6 @@
 {
   "name": "@ykdshaxing/moonlibsync",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "license": "LGPL-2.1-or-later",
   "description": "Pure MoonBit librsync-compatible binary delta (Rabin-Karp & Rollsum), HTTP Range (zsync) fetch planning, delta composition, reverse delta, bounded Gzip & Zlib, Schema 3 directory sync & .mbundle archives, Ed25519 publisher signing & M-of-N trust keyring quorum verification, and ChaCha20-Poly1305/Argon2id/X25519 multi-recipient AEAD sealing SDK for Node.js and browsers (zero C FFI, zero npm runtime dependencies).",

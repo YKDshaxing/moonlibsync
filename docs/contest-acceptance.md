@@ -1,6 +1,8 @@
-# MoonLibSync 0.7.0 演进与验收矩阵
+# MoonLibSync 0.7.1 / 0.7.0 演进与验收矩阵
 
-状态：**`published-and-consumer-verified`**。`0.7.0`（正式发布源 `publication_source_sha`：`79b96b783f47dcbcb31920a18521441df0258945`，分支 `main`、标签 `v0.7.0`）已完成四层红队对抗加固、同 SHA 全平台 CI、Mooncakes 上线、双平台独立新缓存消费、GitHub Release 二进制分发及 GitHub Pages Web Studio 部署。完整发布指纹与归档校验见 [0.7.0 发布验收记录](release-0.7.0.md)（本段为发布后文档整理提交，不改动 `79b96b7` 原包字节）。
+> **0.7.1 增量加固说明**：`0.7.1` 在保持 `0.7.0` 全部公开 API（`.mbti` 零变更）基础上，修复了 `README*.md` CLI 示例、`examples/web-demo/demo.js` 提示命令与 `CHANGELOG.md` 描述偏差，为 Native CLI `fetch-sync` 补齐了**无条件远端 `.sig` 块级重算核验**与**至多 5 跳安全 HTTP `3xx` 重定向跟踪**（阻止 `https:// -> http://` 降级、非 HTTP scheme 及权威区 `@` 注入），并配置 `.github/workflows/release.yml` 自动提取 `CHANGELOG.md` + `SHA256SUMS.txt` 发布说明；CLI 实测扩展至 **58** 项 Native 单元测试 + **788** Windows/NTFS & **812** Linux/ext4（`0 unsupported`）集成用例。下方表格完整保留已完成发布的 `0.7.0`（`79b96b7`）实测档案。
+
+状态：**`0.7.0` `published-and-consumer-verified` / `0.7.1` 发布准备中**。`0.7.0`（正式发布源 `publication_source_sha`：`79b96b783f47dcbcb31920a18521441df0258945`，分支 `main`、标签 `v0.7.0`）已完成四层红队对抗加固、同 SHA 全平台 CI、Mooncakes 上线、双平台独立新缓存消费、GitHub Release 二进制分发及 GitHub Pages Web Studio 部署。完整发布指纹与归档校验见 [0.7.0 发布验收记录](release-0.7.0.md)。
 
 | 验收维度 | `0.7.0` 实测状态与核验内容 | 实际证据与边界说明 |
 | --- | --- | --- |

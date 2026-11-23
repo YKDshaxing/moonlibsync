@@ -170,7 +170,7 @@ try {
 }
 ```
 
-## HTTP Range Fetch (`zsync`-Style), Delta Composition & Bounded Zlib (`0.7.0`)
+## HTTP Range Fetch (`zsync`-Style), Delta Composition & Bounded Zlib (`0.7.0+`)
 
 ```js
 import { loadMoonLibSync } from '@ykdshaxing/moonlibsync';
@@ -206,7 +206,7 @@ if (zRes.ok) {
 }
 ```
 
-## Multi-Recipient X25519 Envelope Encryption (`MLSENC02`) & M-of-N Quorum Verification (`0.7.0`)
+## Multi-Recipient X25519 Envelope Encryption (`MLSENC02`) & M-of-N Quorum Verification (`0.7.0+`)
 
 ```js
 import { loadMoonLibSync } from '@ykdshaxing/moonlibsync';

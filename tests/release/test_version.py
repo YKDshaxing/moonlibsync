@@ -23,7 +23,18 @@ class VersionWiring(unittest.TestCase):
             self.assertNotIn('@0.1.0',(p/'moon.mod').read_text(encoding='utf8'))
     def test_historical_output_directory_is_rejected_before_writing(self):
         root=Path(__file__).resolve().parents[2]
-        for relative in ['_build/release-0.1.0','_build/release-0.1.0/nested','_build/release-0.2.0','_build/release-0.2.0/nested','_build/release-0.3.0','_build/release-0.3.0/nested','_build/release-0.3.1','_build/release-0.3.1/nested','_build/release-0.3.2','_build/release-0.3.2/nested']:
+        for relative in [
+            '_build/release-0.1.0','_build/release-0.1.0/nested',
+            '_build/release-0.2.0','_build/release-0.2.0/nested',
+            '_build/release-0.3.0','_build/release-0.3.0/nested',
+            '_build/release-0.3.1','_build/release-0.3.1/nested',
+            '_build/release-0.3.2','_build/release-0.3.2/nested',
+            '_build/release-0.4.0','_build/release-0.4.0/nested',
+            '_build/release-0.5.0','_build/release-0.5.0/nested',
+            '_build/release-0.6.0','_build/release-0.6.0/nested',
+            '_build/release-0.6.1','_build/release-0.6.1/nested',
+            '_build/release-0.7.0','_build/release-0.7.0/nested',
+        ]:
             env=dict(os.environ,MOONLIBSYNC_RELEASE_DIR=relative)
             result=subprocess.run([sys.executable,'-c',"import sys;sys.path.insert(0,'scripts');import release_check"],cwd=root,env=env,capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)

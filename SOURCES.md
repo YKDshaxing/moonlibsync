@@ -1,5 +1,9 @@
 # 来源与固定版本
 
+## 0.7.1 增量说明
+
+- `cmd/moonlibsync/range_cli.mbt` 新增有界安全 HTTP `3xx` 重定向跟踪（最多 5 跳，禁止 `https:// -> http://` 降级与非 HTTP scheme）与落盘前强制 `.sig` 块级摘要重算校验；`cmd/moonlibsync/v070_wbtest.mbt`、`scripts/cli_v070_cases.py` 与 `examples/web-demo/demo.js` CLI 示例同步为本项目原创 LGPL-2.1-or-later 代码，无新增依赖或实验特性。
+
 ## 0.7.0 增量说明
 
 - 纯零 IO 根库新增文件 `range_sync.mbt` / `compose_delta.mbt` / `dir_metadata.mbt`（及各自 `_test.mbt`）均为本项目原创 LGPL-2.1-or-later 代码，仅复用既有核心包实现，保持零新增依赖与零 `allow-experimental-packages`。

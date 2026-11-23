@@ -132,7 +132,28 @@ def exercise(root, case, report, _links):
             pass
 
         def do_HEAD(self):
-            if self.path in ('/new.bin', '/new-full200.bin', '/bad-range.bin', '/missing-cr.bin', '/gzip-ce.bin', '/tampered.bin', '/status500.bin'):
+            if self.path == '/redir.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', '/new.bin')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+            elif self.path == '/redir-loop.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', '/redir-loop.bin')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+            elif self.path == '/redir-bad-scheme.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', 'file:///etc/passwd')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+            elif self.path in ('/new.bin', '/new-full200.bin', '/bad-range.bin', '/missing-cr.bin', '/gzip-ce.bin', '/tampered.bin', '/status500.bin'):
                 record_stat(self.path, 0)
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(new_data)))
@@ -152,6 +173,39 @@ def exercise(root, case, report, _links):
                 self.end_headers()
 
         def do_GET(self):
+            if self.path == '/redir-sig.sig':
+                record_stat(self.path, 0)
+                port_cur = server.server_address[1]
+                self.send_response(307)
+                self.send_header('Location', f'http://127.0.0.1:{port_cur}/new.sig')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                return
+            if self.path == '/redir.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', '/new.bin')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                return
+            if self.path == '/redir-loop.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', '/redir-loop.bin')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                return
+            if self.path == '/redir-bad-scheme.bin':
+                record_stat(self.path, 0)
+                self.send_response(302)
+                self.send_header('Location', 'file:///etc/passwd')
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                return
             if self.path == '/new.sig':
                 record_stat(self.path, len(sig_bytes))
                 self.send_response(200)
@@ -433,6 +487,46 @@ def exercise(root, case, report, _links):
         )
         assert stats['requests_by_path'].get('/new.bin', 0) == reqs_before_cap + 1  # only HEAD, zero Range GETs
 
+        # 0.7.1 hardening: mandatory .sig verification without --verify-sig, plus bounded safe 3xx redirects
+        run(
+            'fetch-sync/reject-tampered-without-verify-sig',
+            ['fetch-sync', f'{base_url}/tampered.bin', '--basis', old_file, '--sig', new_sig, '-o', root / 'v071-tamper-nosig.bin'],
+            1,
+            watch=[old_file, new_sig],
+            output=root / 'v071-tamper-nosig.bin',
+            contains='do not match remote .sig',
+        )
+        assert not (root / 'v071-tamper-nosig.bin').exists()
+
+        redir_out = root / 'v071-redir-ok.bin'
+        run(
+            'fetch-sync/redirect-302-and-307-ok',
+            ['fetch-sync', f'{base_url}/redir.bin', '--basis', old_file, '--sig-url', f'{base_url}/redir-sig.sig', '-o', redir_out],
+            watch=[old_file],
+            output=redir_out,
+        )
+        assert redir_out.read_bytes() == new_data
+
+        run(
+            'fetch-sync/reject-redirect-loop',
+            ['fetch-sync', f'{base_url}/redir-loop.bin', '--basis', old_file, '--sig', new_sig, '-o', root / 'v071-redir-loop.bin'],
+            1,
+            watch=[old_file, new_sig],
+            output=root / 'v071-redir-loop.bin',
+            contains='maximum HTTP redirects',
+        )
+        assert not (root / 'v071-redir-loop.bin').exists()
+
+        run(
+            'fetch-sync/reject-redirect-bad-scheme',
+            ['fetch-sync', f'{base_url}/redir-bad-scheme.bin', '--basis', old_file, '--sig', new_sig, '-o', root / 'v071-redir-bad.bin'],
+            1,
+            watch=[old_file, new_sig],
+            output=root / 'v071-redir-bad.bin',
+            contains='rejected',
+        )
+        assert not (root / 'v071-redir-bad.bin').exists()
+
         # CWD 64-hex shadowing attack: planted attacker key file named <pub1_hex> must NEVER override inline pub1_hex
         shadow_ed_file = root / pub1_hex
         shadow_ed_file.write_text(pub3.read_text(encoding='utf-8'), encoding='utf-8')
@@ -688,7 +782,7 @@ def exercise(root, case, report, _links):
     for shell in ('bash', 'zsh', 'powershell'):
         cp = inspect_run(f'completions/{shell}', ['completions', shell])
         text = cp.stdout.decode('utf-8')
-        assert '0.7.0' in text
+        assert '0.7.1' in text
         for cmd_name in new_cmds:
             assert cmd_name in text, (shell, cmd_name)
         for flag in new_flags:

@@ -80,7 +80,7 @@ priv struct Plan {
 
 ///|
 let help_text : String =
-  #|MoonLibSync 0.7.0; streaming pipelines, HTTP Range sync, delta composition, directory sync bundles/archives/metadata, deterministic parallelism, Ed25519 quorum signing, X25519 multi-recipient AEAD encryption, gzip/zlib/deflate framing, manifests and transfer workflows
+  #|MoonLibSync 0.7.1; streaming pipelines, HTTP Range sync, delta composition, directory sync bundles/archives/metadata, deterministic parallelism, Ed25519 quorum signing, X25519 multi-recipient AEAD encryption, gzip/zlib/deflate framing, manifests and transfer workflows
   #|Usage:
   #|  moonlibsync signature OLD SIG [--profile rk-blake2|rollsum-blake2] [--streaming] [--block-size N|auto] [--sum-size N] [--progress] [LIMITS]
   #|  moonlibsync delta SIG NEW DELTA [--streaming] [--progress] [LIMITS]

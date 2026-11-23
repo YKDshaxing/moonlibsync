@@ -1,3 +1,16 @@
+# MoonLibSync 0.7.1 / 0.7.0：设计与使用
+
+`0.7.0`–`0.7.1` 在 100% 保持 `0.1.0`–`0.6.1` 全部公开 API、CLI 命令与退出码、Schema 1/2/3 格式及根包与 `crypto/` 零 `allow-experimental-packages` / 零新增第三方依赖的前提下，围绕“零服务端静态增量拉取、零中间文件 Delta 合并、多接收方加密/阈值多签与并发工程化”交付 5 组差异化能力与防错加固：
+- **静态 HTTP `Range` (`zsync`) 增量规划与拉取（[range_sync.mbt](../range_sync.mbt)、[cmd/moonlibsync/range_cli.mbt](../cmd/moonlibsync/range_cli.mbt)）**：纯核心提供零 IO `RangeFetchOptions`、`ByteRange`、`plan_range_fetch`、`apply_range_fetch` 与 `encode_range_plan_json`（Schema 3 `moonlibsync-range-plan`）；Native CLI `range-plan` / `fetch-sync` 在 `0.7.1` 中为每次远端拉取强制重算 `.sig` 块级摘要校验（即使不传 `--verify-sig` / `--verify-bundle` 也不允许静默写出脏文件），并支持有界安全 HTTP `3xx` 重定向（最多 5 跳，禁止 `https:// -> http://` 降级与非 HTTP scheme）。
+- **标准 `librsync 0x72730236` 多代 Delta 链零中间合并（[compose_delta.mbt](../compose_delta.mbt)）**：提供 `compose_deltas` / `compose_delta_chain` 与 CLI `compose-delta`，直接将 `v1 -> v2 + v2 -> v3` 代数合成单跳直达补丁，无需中间数据载荷。
+- **X25519 多接收方信封（`MLSENC02`）与 Ed25519 Keyring `M-of-N` 阈值仲裁（[crypto/x25519_envelope.mbt](../crypto/x25519_envelope.mbt)、[crypto/keyring.mbt](../crypto/keyring.mbt)）**：复用锁定 `mooncrypt@0.4.5` 的 `kex/x25519` 与 `kdf/hkdf`，提供 1–64 接收方 `MLSENC02` 规范公钥校验（`u < p`）信封与支持吊销列表（`<= 64` 受信任密钥 / `<= 256` 吊销 ID）的 `TrustKeyring` + `SignatureBundle` 多签仲裁，并新增 CLI `x25519-keygen`、`keyring-init`、`sign-combine`、`verify-quorum` 与 `dir-apply`/`fetch-sync --verify-bundle`。
+- **有界 Zlib / Raw DEFLATE、确定性 `--jobs N` 并发与 `DirMetadata`（[compress/zlib.mbt](../compress/zlib.mbt)、[dir_metadata.mbt](../dir_metadata.mbt)）**：新增 RFC 1950 Zlib 与 RFC 1951 Raw DEFLATE 编码/有界解压（CLI `--format gzip|zlib|deflate`），`dir-*` 支持 1..=64 `@async.all` 确定性并发（`--jobs N`）与 `--meta-out`/`--meta`（空目录及非 Windows `0o700` 可执行位重建，伴随清单交叉校验且位于签名载荷摘要之外）。
+- **Web Studio 0.7.1（37 导出 Web Worker 工作台）与 JS/TS SDK（[js/README.md](../js/README.md)）**：扩展至 37 项 ESM 导出与 33 个零 `any` 强类型方法，补齐 HTTP `Range` 模拟器 / CORS 实网 `206` 拉取（全 `.sig` 重算验证）、Delta 链合并、Zlib 实验室、X25519 多接收方与 `2-of-3` Keyring 吊销实验，并覆盖三端 CLI 参数与示例统一修正（CLI 总计 **35 条子命令**）。
+
+下文保留 `0.6.0`–`0.1.0` 历史设计归属。
+
+---
+
 # MoonLibSync 0.6.0：设计与使用
 
 0.6.0 在 100% 保持 `0.1.0`–`0.5.0` 公开 API、CLI 命令与退出码、Schema 1/2/3 格式及根库零 `allow-experimental-packages` / 零新增第三方依赖的前提下，补齐 7 项生产级安全、算法与体验能力：

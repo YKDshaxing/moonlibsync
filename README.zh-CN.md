@@ -13,7 +13,7 @@
   <a href="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml"><img src="https://github.com/YKDshaxing/moonlibsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://ykdshaxing.github.io/moonlibsync/"><img src="https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-0f766e" alt="在线 Web Demo"></a>
   <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync"><img src="https://img.shields.io/badge/mooncakes-YKDshaxing%2Fmoonlibsync-7c3aed" alt="Mooncakes"></a>
-  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.7.0-0ea5e9" alt="Version 0.7.0"></a>
+  <a href="https://github.com/YKDshaxing/moonlibsync/releases"><img src="https://img.shields.io/badge/version-0.7.1-0ea5e9" alt="Version 0.7.1"></a>
   <img src="https://img.shields.io/badge/targets-Native%20%7C%20JS%20%7C%20Wasm--GC-10b981" alt="Targets">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-orange" alt="License"></a>
 </p>
@@ -40,7 +40,7 @@
 | **格式外完整性清单** | `create/parse/encode_basis_info`、`create/parse/encode_update_manifest`、`verified_patch` | 严格有界 JSON（schema 1），使用 SHA-256 绑定 `OLD` / `SIG` / `DELTA` / `RESULT`，校验通过后才返回或提交输出 |
 | **更新负载规划** | `plan_update`、`create/parse/encode_transfer_manifest`、`apply_update` | schema 2 自动在 `Delta` 与 `Full` 间择优（仅在实际 delta 严格更小且满足 `min_savings_bytes` 时选 `Delta`） |
 | **Native 单文件 CLI** | `cmd/moonlibsync`（35 条子命令） | 全链路 `--streaming` 64 KiB 管线、`fetch-sync`/`range-plan`（HTTP `Range`）、`compose-delta`、`--jobs N`、`--meta-out`/`--meta`、`--format gzip|zlib|deflate`、`x25519-keygen`、`keyring-init`/`sign-combine`/`verify-quorum`、`seal --recipient`、`--verify-bundle`、`completions` 与原子提交 |
-| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync@0.7.0`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module（37 项核心导出 / 33 项类型方法，零 `any` `.d.ts`）；5 标签页 Web Worker 静态工作台（HTTP `Range` 增量拉取、Delta 链合成压扁、Literal Hex 透视热力图、`.mbundle.gz` 打包解包、Gzip/Zlib + Ed25519 多签 + X25519/AEAD 实验室） |
+| **零依赖 JS/TS SDK 与 Web 工作台** | `js/`（`@ykdshaxing/moonlibsync@0.7.1`）与 `examples/web-demo/` | 零运行依赖 Node.js + 浏览器通用 ES Module（37 项核心导出 / 33 项类型方法，零 `any` `.d.ts`）；5 标签页 Web Worker 静态工作台（HTTP `Range` 增量拉取、Delta 链合成压扁、Literal Hex 透视热力图、`.mbundle.gz` 打包解包、Gzip/Zlib + Ed25519 多签 + X25519/AEAD 实验室） |
 
 ## 快速开始
 
@@ -51,7 +51,7 @@
 ```moonbit
 // moon.mod
 import {
-  "YKDshaxing/moonlibsync@0.7.0",
+  "YKDshaxing/moonlibsync@0.7.1",
 }
 ```
 
@@ -148,14 +148,14 @@ moonlibsync dir-apply ./v1 ./unsealed.mbundle.gz ./v2-restored --archive --gzip 
 moonlibsync dir-verify ./v2-restored v2.snapshot.json --json --exclude-from .moonlibsyncignore
 moonlibsync completions powershell > moonlibsync-completions.ps1
 
-# 7. 静态 HTTP Range (`zsync`) 增量拉取、Delta 链合成、X25519 多接收方信封与 M-of-N 多签（0.7.0）
-moonlibsync range-plan release-v2.sig 134217728 release-v1.bin --merge-gap 4096 --json
+# 7. 静态 HTTP Range (`zsync`) 增量拉取、Delta 链合成、X25519 多接收方信封与 M-of-N 多签（0.7.x）
+moonlibsync range-plan release-v2.sig 1048576 release-v1.bin --merge-gap 4096 --json
 moonlibsync fetch-sync https://cdn.example.com/release-v2.bin --basis release-v1.bin --sig-url https://cdn.example.com/release-v2.sig --verify-bundle release-v2.sigbundle.json --keyring org.keyring.json -o release-v2.bin --json
 moonlibsync compose-delta v1-to-v2.delta v2-to-v3.delta -o v1-to-v3.delta --json
 moonlibsync x25519-keygen -o alice.x25519.sec --pub-out alice.x25519.pub
 moonlibsync x25519-keygen -o bob.x25519.sec --pub-out bob.x25519.pub
-moonlibsync seal payload.tar --recipient alice.x25519.pub --recipient bob.x25519.pub -o payload.menv
-moonlibsync unseal payload.menv --recipient-key bob.x25519.sec -o payload.restored.tar
+moonlibsync seal payload.tar payload.menv --recipient alice.x25519.pub --recipient bob.x25519.pub
+moonlibsync unseal payload.menv payload.restored.tar --recipient-key bob.x25519.sec
 moonlibsync keyring-init --trust pub1.pub --trust pub2.pub --trust pub3.pub --quorum 2 -o org.keyring.json
 moonlibsync sign-combine sig1.json sig2.json -o bundle.sig.json
 moonlibsync verify-quorum artifact.bin bundle.sig.json --keyring org.keyring.json --json
@@ -194,7 +194,7 @@ $env:PATH = "$env:MOON_HOME\bin;$env:PATH"
 python scripts/check.py            # 格式、依赖、252 项库 + 13 项 compress + 20 项 crypto 测试 × 三目标、6 示例、web-demo ESM、JS/TS SDK、接口守卫
 python scripts/verify_fixtures.py  # 参考夹具与 opcode 向量完整性校验
 python scripts/failure_gates.py    # 隔离损坏与断言失败传播门禁
-./scripts/cli-smoke.ps1            # 57 项 Native 辅助测试 + 784 项 Windows CLI 集成用例（Linux/ext4 为 808 项）
+./scripts/cli-smoke.ps1            # 58 项 Native 辅助测试 + 788 项 Windows CLI 集成用例（Linux/ext4 为 812 项）
 node examples/streaming/run-node.mjs --rebuild
 node examples/web-demo/test-node.mjs --rebuild
 node js/test-sdk.mjs
@@ -236,20 +236,20 @@ python3 scripts/file_exchange.py
 
 ## 文档导航
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.7.0` / `0.6.1` / `0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
-- [js/README.md](js/README.md) — 仓库内零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync@0.7.0`）
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.7.1` / `0.7.0` / `0.6.1` / `0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
+- [js/README.md](js/README.md) — 仓库内零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync@0.7.1`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明
 - [docs/cli.md](docs/cli.md) — Native CLI 手册（35 子命令、`--streaming`、`fetch-sync`、`compose-delta`、`--jobs`、`x25519`/`quorum`、`--max-*`）、JSON Schema 与原子提交说明
 - [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 目录快照、`DirMetadata`（`--meta-out`/`--meta`）、`--jobs`、`MLSBDL01`、POSIX 路径安全规则与 `DirLimits`
-- [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约（`0.7.0` 及历史冻结快照）
+- [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约（`0.7.1` 及历史冻结快照）
 - [docs/matching.md](docs/matching.md) — 开放定址弱校验索引、Pending Literal Run 与 `MatchWork` v2 计量
 - [docs/resources.md](docs/resources.md) — `Limits`、`SealLimits`、`TrustKeyring`、HTTP `Range` 边界与内存模型
 - [docs/auto-block.md](docs/auto-block.md) — 自动块长 `policy v1` 规则与数据量对照
 - [docs/updates.md](docs/updates.md) — Delta/Full 规划与 schema 2 协议规范
 - [docs/manifests.md](docs/manifests.md) — schema 1 完整性清单规范
 - [docs/benchmarks.md](docs/benchmarks.md) 与 [docs/benchmarks-prepared.md](docs/benchmarks-prepared.md) — `0.1.0`（Commit 15/20）历史进程级与索引复用基准实测
-- [docs/release-0.7.0.md](docs/release-0.7.0.md) 与 [docs/contest-acceptance.md](docs/contest-acceptance.md) — `0.7.0` Mooncakes 发布实证、双平台公开消费记录与全量验收矩阵（历史记录：[0.3.0](docs/release-0.3.0.md) / [0.2.0](docs/release-0.2.0.md) / [0.1.0](docs/release.md)）
+- [docs/release-0.7.0.md](docs/release-0.7.0.md) 与 [docs/contest-acceptance.md](docs/contest-acceptance.md) — `0.7.x` 验收矩阵与 `0.7.0` Mooncakes 发布实证（历史记录：[0.3.0](docs/release-0.3.0.md) / [0.2.0](docs/release-0.2.0.md) / [0.1.0](docs/release.md)）
 
 ## 许可证
 

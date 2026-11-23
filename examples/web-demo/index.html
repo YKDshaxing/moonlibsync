@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MoonLibSync 0.7.0 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio</title>
+  <title>MoonLibSync 0.7.1 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio</title>
   <meta name="description" content="Pure MoonBit zero-backend browser studio (37 exports) with Web Worker execution for librsync deltas, HTTP Range (zsync) incremental pull, delta chain composition, RFC 1952 Gzip &amp; RFC 1950 Zlib, .mbundle.gz move detection, X25519 MLSENC02 multi-recipient envelopes, and Ed25519 M-of-N quorum keyrings." />
   <meta name="theme-color" content="#4f46e5" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="MoonLibSync 0.7.0 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio" />
+  <meta property="og:title" content="MoonLibSync 0.7.1 — Pure-JS Streaming, Range Pull, Crypto &amp; Directory Studio" />
   <meta property="og:description" content="Zero C FFI, zero backend server — test librsync binary deltas, HTTP Range (zsync) pull, delta squashing, Gzip &amp; Zlib, .mbundle.gz move detection, X25519 MLSENC02 envelopes, and Ed25519 M-of-N quorum verification directly in your browser." />
   <meta property="og:url" content="https://ykdshaxing.github.io/moonlibsync/" />
   <meta name="twitter:card" content="summary" />
@@ -1288,7 +1288,7 @@
         <div>
           <div class="title-row">
             <h1>MoonLibSync</h1>
-            <span class="ver-pill">v0.7.0 Pure-JS Studio</span>
+            <span class="ver-pill">v0.7.1 Pure-JS Studio</span>
           </div>
           <p class="subtitle" data-i18n="subtitle">纯 MoonBit 编译的浏览器零后端二进制差分、HTTP Range 增量拉取、Delta 链压缩合并、Gzip/Zlib、单文件目录打包与 X25519 / Ed25519 多签密码学工作台</p>
           <div class="chip-row">
@@ -1855,8 +1855,8 @@
             <button id="runCustomGzip" class="btn btn-teal btn-sm" type="button" data-i18n="labRunCustom">压缩并有界解压测试</button>
           </div>
         </div>
-        <textarea id="labInput" class="lab-textarea">MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — try lowering max_output below the text byte length to trigger LimitExceeded!
-MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated text shrinks sharply with DEFLATE.</textarea>
+        <textarea id="labInput" class="lab-textarea">MoonLibSync 0.7.1 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — try lowering max_output below the text byte length to trigger LimitExceeded!
+MoonLibSync 0.7.1 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated text shrinks sharply with DEFLATE.</textarea>
         <div id="labCustomOut" class="lab-out" style="margin-top:0.65rem;">—</div>
       </div>
 
@@ -1884,7 +1884,7 @@ MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated
           </div>
         </div>
 
-        <textarea id="edPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.0","artifact":"app-release.mbundle.gz","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","notes":"Signed in browser with pure MoonBit Ed25519"}</textarea>
+        <textarea id="edPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.1","artifact":"app-release.mbundle.gz","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","notes":"Signed in browser with pure MoonBit Ed25519"}</textarea>
 
         <pre id="edSigPreview" class="code-preview" hidden></pre>
 
@@ -1929,11 +1929,11 @@ MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated
 
         <div class="exclude-row" style="margin-top:0;margin-bottom:0.75rem;">
           <label class="exclude-label" for="aeadSecretInput" data-i18n="aeadSecretLabel">口令 / 32B 十六进制密钥</label>
-          <input id="aeadSecretInput" class="secret-input" type="text" value="moonlibsync-070-browser-passphrase" />
+          <input id="aeadSecretInput" class="secret-input" type="text" value="moonlibsync-071-browser-passphrase" />
           <button id="aeadGenRawKeyBtn" class="btn btn-secondary btn-sm" type="button" data-i18n="aeadGenRawKeyBtn">生成随机 32B 密钥</button>
         </div>
 
-        <textarea id="aeadPlainInput" class="lab-textarea">MoonLibSync 0.7.0 MLSENC01 authenticated stream container — ChaCha20-Poly1305 per-chunk AEAD with 56-byte header binding and Argon2id key derivation.</textarea>
+        <textarea id="aeadPlainInput" class="lab-textarea">MoonLibSync 0.7.1 MLSENC01 authenticated stream container — ChaCha20-Poly1305 per-chunk AEAD with 56-byte header binding and Argon2id key derivation.</textarea>
 
         <div class="controls-row" style="margin-top:0.8rem;">
           <button id="aeadSealBtn" class="btn btn-primary btn-sm" type="button" data-i18n="aeadSealBtn">加密封装为 .menc</button>
@@ -1979,7 +1979,7 @@ MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated
           </div>
         </div>
 
-        <textarea id="envPlainInput" class="lab-textarea">MoonLibSync 0.7.0 MLSENC02 multi-recipient X25519 envelope — one random CEK wrapped per recipient via X25519 + HKDF-SHA256 + ChaCha20-Poly1305. Alice and Bob decrypt independently; Mallory is rejected!</textarea>
+        <textarea id="envPlainInput" class="lab-textarea">MoonLibSync 0.7.1 MLSENC02 multi-recipient X25519 envelope — one random CEK wrapped per recipient via X25519 + HKDF-SHA256 + ChaCha20-Poly1305. Alice and Bob decrypt independently; Mallory is rejected!</textarea>
 
         <div class="controls-row" style="margin-top:0.8rem;">
           <button id="envUnsealAliceBtn" class="btn btn-primary btn-sm" type="button" data-i18n="envUnsealAliceBtn">以 Alice 私钥解密 ✓</button>
@@ -2044,7 +2044,7 @@ MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated
           </div>
         </div>
 
-        <textarea id="quorumPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.0","policy":"2-of-3-ed25519-quorum","artifact":"moonlibsync-0.7.0.mbundle.gz","notes":"Toggle revocation on Alice or Bob above to test live quorum failover!"}</textarea>
+        <textarea id="quorumPayloadInput" class="lab-textarea">{"release":"moonlibsync-0.7.1","policy":"2-of-3-ed25519-quorum","artifact":"moonlibsync-0.7.1.mbundle.gz","notes":"Toggle revocation on Alice or Bob above to test live quorum failover!"}</textarea>
 
         <div class="controls-row" style="margin-top:0.8rem;">
           <button id="quorumVerifyBtn" class="btn btn-teal btn-sm" type="button" data-i18n="quorumVerifyBtn">重新执行门限多签校验</button>
@@ -2061,7 +2061,7 @@ MoonLibSync 0.7.0 bounded RFC 1952 Gzip &amp; RFC 1950 Zlib framing — repeated
     </section>
 
     <footer class="footer">
-      <span>MoonLibSync 0.7.0 · LGPL-2.1-or-later</span>
+      <span>MoonLibSync 0.7.1 · LGPL-2.1-or-later</span>
       <a href="https://github.com/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">GitHub Repository</a>
       <a href="https://mooncakes.io/docs/YKDshaxing/moonlibsync" target="_blank" rel="noreferrer">Mooncakes Docs</a>
     </footer>

@@ -112,7 +112,7 @@ const I18N = {
     expectedCol: '预期基线 (Expected)',
     actualCol: '实测目录 (Actual)',
     issueKindCol: '漂移类型',
-    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.7.0 · 零后端 · 零 C FFI · 37 项核心导出）',
+    engineReady: 'MoonBit 纯 JS 引擎已就绪（v0.7.1 · 零后端 · 零 C FFI · 37 项核心导出）',
     workerBadgeActive: 'Web Worker 后台线程',
     workerBadgeFallback: '主线程回退模式',
     engineMissing: '未找到已编译模块 web-demo.js。请先在仓库根目录运行 moon build examples/web-demo --target js 并通过本地 HTTP 服务访问。',
@@ -336,7 +336,7 @@ const I18N = {
     expectedCol: 'Expected Baseline',
     actualCol: 'Actual Observed',
     issueKindCol: 'Drift Kind',
-    engineReady: 'MoonBit pure-JS engine ready (v0.7.0 · zero backend · zero C FFI · 37 core exports)',
+    engineReady: 'MoonBit pure-JS engine ready (v0.7.1 · zero backend · zero C FFI · 37 core exports)',
     workerBadgeActive: 'Web Worker Thread',
     workerBadgeFallback: 'Main-Thread Fallback',
     engineMissing: 'Compiled web-demo.js not found. Run "moon build examples/web-demo --target js" and serve the repo root over HTTP.',
@@ -2237,7 +2237,7 @@ function renderComposeResult(state) {
   const directBarPct = inTotal > 0 ? Math.min(100, Math.max(3, (outBytes / inTotal) * 100)).toFixed(1) : '100';
   const gzBarPct = inTotal > 0 ? Math.min(100, Math.max(2, (gzSize / inTotal) * 100)).toFixed(1) : '100';
   const hopChainDesc = hopLabels.map((lbl, i) => `${lbl} (${fmtBytes(hopSizes[i])})`).join(' + ');
-  const cliInputs = hopLabels.map((lbl) => `${lbl}.delta`).join(' ');
+  const cliInputs = hopLabels.map((lbl) => `"${String(lbl).replace(/["`$\\]/g, '_')}.delta"`).join(' ');
   const cliCmd = `moonlibsync compose-delta ${cliInputs} -o squashed.delta`;
 
   const badgeHtml = isDemo
@@ -2630,7 +2630,7 @@ inspectSampleSealBtn.addEventListener('click', async () => {
   try {
     const mod = await loadEngine();
     const enc = new TextEncoder();
-    const plain = enc.encode('MoonLibSync 0.7.0 sample MLSENC01 authenticated stream container');
+    const plain = enc.encode('MoonLibSync 0.7.1 sample MLSENC01 authenticated stream container');
     const salt = new Uint8Array(16);
     crypto.getRandomValues(salt);
     const nonce = new Uint8Array(12);
@@ -2666,7 +2666,7 @@ inspectSampleEnvelopeBtn.addEventListener('click', async () => {
     ]);
     const sealed = JSON.parse(
       await mod.seal_envelope_json(
-        enc.encode('MoonLibSync 0.7.0 sample MLSENC02 multi-recipient envelope'),
+        enc.encode('MoonLibSync 0.7.1 sample MLSENC02 multi-recipient envelope'),
         JSON.stringify([alice.public_key_hex, bob.public_key_hex]),
         randHex(32),
         randHex(32),
@@ -2721,7 +2721,7 @@ inspectSamplePubSigBtn.addEventListener('click', async () => {
     const mod = await loadEngine();
     const seed = new Uint8Array(32);
     crypto.getRandomValues(seed);
-    const payload = new TextEncoder().encode('MoonLibSync 0.7.0 sample release payload');
+    const payload = new TextEncoder().encode('MoonLibSync 0.7.1 sample release payload');
     const signed = JSON.parse(await mod.ed25519_sign_bytes_json(seed, payload));
     if (!signed.ok) {
       inspectResultsEl.innerHTML = `<div class="card err-card"><strong>Sign Error:</strong> <code>${escapeHtml(signed.error || 'SignFailed')}</code></div>`;
@@ -2842,9 +2842,11 @@ function renderDirPlan(state) {
   const moveFlag = detectMoves ? ' --detect-moves' : '';
   const dirCli = [
     `moonlibsync dir-snapshot ./basis basis.snap.json${exFlags}`,
+    `moonlibsync dir-snapshot ./target target.snap.json${exFlags}`,
     `moonlibsync dir-plan basis.snap.json target.snap.json${moveFlag}`,
+    `moonlibsync dir-signatures ./basis basis.snap.json ./basis-sigs --streaming`,
     `moonlibsync dir-pack basis.snap.json ./basis-sigs ./target ./bundle.mbundle.gz --archive --gzip${moveFlag}${exFlags}`,
-    `moonlibsync dir-apply ./basis ./bundle.mbundle.gz ./restored --streaming`,
+    `moonlibsync dir-apply ./basis ./bundle.mbundle.gz ./restored --archive --gzip --streaming`,
   ].join('\n');
 
   dirResultsEl.innerHTML = `
@@ -2976,7 +2978,7 @@ function renderDirVerify(state) {
   const exFlags = excludeCliArgs(patterns || []);
   const verifyCli = [
     `moonlibsync dir-snapshot ./expected expected.snap.json${exFlags}`,
-    `moonlibsync dir-verify expected.snap.json ./actual --report verify-report.json${exFlags}`,
+    `moonlibsync dir-verify ./actual expected.snap.json --json${exFlags} > verify-report.json`,
   ].join('\n');
 
   dirResultsEl.innerHTML = `
@@ -3256,7 +3258,7 @@ function makeSampleRawFiles() {
     Array.from({ length: 60 }, (_, i) => `- v0.5.${i}: deterministic streaming check #${i}\n`).join('');
   const basisFiles = [
     make('.git/HEAD', 'ref: refs/heads/main\n'),
-    make('README.md', '# MoonLibSync 0.7.0\n'),
+    make('README.md', '# MoonLibSync 0.7.1\n'),
     make('assets/logo.svg', '<svg viewBox="0 0 28 28">v1</svg>'),
     make('assets/manual-v1.txt', movedManual),
     make('cache/session.tmp', 'temporary scratch data'),
@@ -3266,12 +3268,17 @@ function makeSampleRawFiles() {
   ];
   const targetFiles = [
     make('.git/HEAD', 'ref: refs/heads/release-0.7\n'),
-    make('README.md', '# MoonLibSync 0.7.0\n'),
+    make('README.md', '# MoonLibSync 0.7.1\n'),
     make('assets/logo.svg', '<svg viewBox="0 0 28 28">v2-updated-vector</svg>'),
     make('cache/session.tmp', 'temporary scratch data v2'),
-    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220) + '// v0.7.0 range-sync + compose + crypto\n'),
+    make('src/engine.mbt', 'pub fn delta() { ... }\n'.repeat(220) + '// v0.7.1 range-sync + compose + crypto\n'),
     make('docs/manual.txt', movedManual),
-    make('docs/changelog.md', changelogBase + '- v0.7.0: HTTP Range pull, delta composition, Zlib, X25519 MLSENC02, and M-of-N quorum!\n'),
+    make(
+      'docs/changelog.md',
+      changelogBase +
+        '- v0.7.0: HTTP Range pull, delta composition, Zlib, X25519 MLSENC02, and M-of-N quorum!\n' +
+        '- v0.7.1: fetch-sync mandatory .sig checksum verification and bounded safe 3xx redirects.\n',
+    ),
     make('compress/gzip.mbt', 'pub fn compress_gzip() {}\n'.repeat(30)),
   ];
   return { basisFiles, targetFiles };

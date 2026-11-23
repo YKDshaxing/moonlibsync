@@ -1,11 +1,11 @@
-# MoonLibSync 0.7.0：增量扩展、密码学与 HTTP Range 资源契约
+# MoonLibSync 0.7.1 / 0.7.0：增量扩展、密码学与 HTTP Range 资源契约
 
-0.7.0 保持 `0.1.0`–`0.4.0` 全部 `Limits::default()` 与 `DirLimits::default()` 默认预算、`0..2147483647` 检验范围及 `MatchWork` v2 计量语义不变，针对 0.5.0–0.7.0 新特性确立以下显式资源上限：
+0.7.0–0.7.1 保持 `0.1.0`–`0.4.0` 全部 `Limits::default()` 与 `DirLimits::default()` 默认预算、`0..2147483647` 检验范围及 `MatchWork` v2 计量语义不变，针对 0.5.0–0.7.1 新特性确立以下显式资源上限：
 
 1. **HTTP `Range` 拉取与区间规划（`RangeFetchOptions`，[range_sync.mbt](../range_sync.mbt)）**：
    - 默认值：`merge_gap_bytes: 4096L`（4 KiB）、`max_ranges: 256L`。
    - `apply_range_fetch` 强制核对 `plan.ops.length() <= limits.max_instructions`、`plan.ranges.length() <= min(65536, limits.max_instructions)`、`1 <= plan.block_len <= limits.max_block_bytes`、区间严格递增互不相交及总目标长度受 `limits.max_new_bytes` / `limits.max_output_bytes` 约束。
-   - Native CLI `fetch-sync` 在安排区间 GET 前按 `min(limits.max_new_bytes, limits.max_output_bytes)` 封顶远程长度，单次 HTTP `HEAD`/`GET` 均施加 `60 s`（`60000 ms`）I/O 超时，并要求完整目标长度通过签名或阈值仲裁校验后才原子重命名提交。
+   - Native CLI `fetch-sync` 在安排区间 GET 前按 `min(limits.max_new_bytes, limits.max_output_bytes)` 封顶远程长度，单次 HTTP `HEAD`/`GET` 均施加 `60 s`（`60000 ms`）I/O 超时、至多 `5` 跳安全 `3xx` 重定向，并在还原后强制重算 `.sig` 摘要（连同可选签名/仲裁验签）通过后才原子重命名提交。
 2. **多代 Delta 合并（`compose_deltas` / `compose_delta_chain`，[compose_delta.mbt](../compose_delta.mbt)）**：
    - 按 `Limits` 限定每步输入/指令/输出长度；只读合并时仅保留指令索引并二分查找，不需要还原中间版本的整文件载荷缓冲。
 3. **密码学 `SealLimits` 与 Keyring 上限（`crypto/`）**：

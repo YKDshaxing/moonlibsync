@@ -4,6 +4,18 @@ All notable changes to **MoonLibSync** (`YKDshaxing/moonlibsync`) are documented
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-11-23
+
+### Security & Hardening
+- **`fetch-sync` Mandatory Remote `.sig` Block Verification & Bounded Safe `3xx` Redirects (`cmd/moonlibsync/range_cli.mbt`)**:
+  - `execute_fetch_sync` now always recomputes `@lib.signature_with_profile` over reconstructed bytes and requires exact equality against `target_sig` before publishing — preventing corrupted/raced range responses from writing silently even when `--verify-sig` / `--verify-bundle` is omitted.
+  - Added bounded HTTP `3xx` (`301`/`302`/`303`/`307`/`308`) redirect following (at most `5` hops) across both `HEAD` and `GET`, enforcing strict canonical `http(s)://` URLs with non-empty host and explicitly rejecting `https:// -> http://` downgrades and non-HTTP schemes (`file://`, `ftp://`, etc.).
+- **CLI Examples, Release Notes Automation & Documentation Fixes**:
+  - Fixed `README.md` / `README.zh-CN.md` Section 7 CLI quick-start commands (`seal`/`unseal` positional `IN OUT` arguments instead of `-o`, and default-budget `range-plan` 1 MiB target example).
+  - Fixed Web Studio (`examples/web-demo/demo.js`) copied CLI hints for `dir-apply` (`--archive --gzip`) and `dir-verify` (`./actual expected.snap.json --json > verify-report.json`).
+  - Added `0.7.1 / 0.7.0` sections to `docs/design.md`, clarified `0.6.1` / `0.6.0` status in `CHANGELOG.md`, and updated `.github/workflows/release.yml` to generate GitHub Release notes directly from `CHANGELOG.md` + `SHA256SUMS.txt`.
+- **Verification**: **252** core + **13** compress + **20** crypto tests × 3 targets, **58** Native CLI unit tests, **788** Windows/NTFS CLI integration cases (**812** on Linux/ext4 with `0 unsupported`), `WEB_DEMO_OK exports=37`, and `JS_SDK_OK`.
+
 ## [0.7.0] - 2026-11-23
 
 ### Added
@@ -39,7 +51,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Adapted [compress/gzip.mbt](compress/gzip.mbt) to the breaking `@moonbitlang/core/compress/gzip.Decoder` API change (`@gzip.Decoder()` is now single-member by default and never consumes past the member trailer, replacing removed `multistream=false` and `unused_input()` while preserving strict `TrailingData` and zip-bomb `LimitExceeded` enforcement).
   - Adapted Native CLI filesystem calls in [cmd/moonlibsync/dir_bundle.mbt](cmd/moonlibsync/dir_bundle.mbt), [cmd/moonlibsync/files.mbt](cmd/moonlibsync/files.mbt), [cmd/moonlibsync/streaming.mbt](cmd/moonlibsync/streaming.mbt), and [cmd/moonlibsync/files_wbtest.mbt](cmd/moonlibsync/files_wbtest.mbt) to `0.10.22` `moonbitlang/core/async/fs` (`allow_existing=`, `@fs.remove`, and positioned `file.at(pos).read_into(...)`).
   - Cleared all `0.10.22` compiler warnings across all 4 targets (`native`, `wasm-gc`, `wasm`, `js`): migrated `@buffer.Buffer(size_hint=...)` to `capacity=`, replaced `BigInt::from_string` in `crypto/ed25519.mbt` with native `BigInt` hex literals (`0x...N`), and removed unused `"moonbitlang/core/async"` imports from `probes/*/moon.pkg`.
-- **Compatibility**: Zero public API (`.mbti`) changes; protected `_build/release-0.6.0` as read-only evidence in `scripts/release_check.py`. Version `0.6.0` on Mooncakes is yanked in favor of `0.6.1`.
+- **Compatibility**: Zero public API (`.mbti`) changes; protected `_build/release-0.6.0` as read-only evidence in `scripts/release_check.py`. Version `0.6.1` supersedes `0.6.0` on Mooncakes (fixing `0.10.22` online documentation generation).
 
 ## [0.6.0] - 2026-11-22
 

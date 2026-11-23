@@ -2,7 +2,7 @@
 
 ///|
 let bash_completions : String =
-  #|# Bash completion for moonlibsync 0.7.0
+  #|# Bash completion for moonlibsync 0.7.1
   #|_moonlibsync_completions() {
   #|  local cur prev cmd
   #|  COMPREPLY=()
@@ -82,7 +82,7 @@ let bash_completions : String =
 ///|
 let zsh_completions : String =
   #|#compdef moonlibsync
-  #|# Zsh completion for moonlibsync 0.7.0
+  #|# Zsh completion for moonlibsync 0.7.1
   #|_moonlibsync() {
   #|  local -a commands
   #|  commands=(
@@ -212,7 +212,7 @@ let zsh_completions : String =
 
 ///|
 let powershell_completions : String =
-  #|# PowerShell completion for moonlibsync 0.7.0
+  #|# PowerShell completion for moonlibsync 0.7.1
   #|Register-ArgumentCompleter -Native -CommandName moonlibsync -ScriptBlock {
   #|  param($wordToComplete, $commandAst, $cursorPosition)
   #|  $commands = @(
