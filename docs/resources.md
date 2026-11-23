@@ -1,3 +1,26 @@
+# MoonLibSync 0.7.0：增量扩展、密码学与 HTTP Range 资源契约
+
+0.7.0 保持 `0.1.0`–`0.4.0` 全部 `Limits::default()` 与 `DirLimits::default()` 默认预算、`0..2147483647` 检验范围及 `MatchWork` v2 计量语义不变，针对 0.5.0–0.7.0 新特性确立以下显式资源上限：
+
+1. **HTTP `Range` 拉取与区间规划（`RangeFetchOptions`，[range_sync.mbt](../range_sync.mbt)）**：
+   - 默认值：`merge_gap_bytes: 4096L`（4 KiB）、`max_ranges: 256L`。
+   - `apply_range_fetch` 强制核对 `plan.ops.length() <= limits.max_instructions`、`plan.ranges.length() <= min(65536, limits.max_instructions)`、`1 <= plan.block_len <= limits.max_block_bytes`、区间严格递增互不相交及总目标长度受 `limits.max_new_bytes` / `limits.max_output_bytes` 约束。
+   - Native CLI `fetch-sync` 在安排区间 GET 前按 `min(limits.max_new_bytes, limits.max_output_bytes)` 封顶远程长度，单次 HTTP `HEAD`/`GET` 均施加 `60 s`（`60000 ms`）I/O 超时，并要求完整目标长度通过签名或阈值仲裁校验后才原子重命名提交。
+2. **多代 Delta 合并（`compose_deltas` / `compose_delta_chain`，[compose_delta.mbt](../compose_delta.mbt)）**：
+   - 按 `Limits` 限定每步输入/指令/输出长度；只读合并时仅保留指令索引并二分查找，不需要还原中间版本的整文件载荷缓冲。
+3. **密码学 `SealLimits` 与 Keyring 上限（`crypto/`）**：
+   - `SealLimits::default()`（[crypto/aead.mbt](../crypto/aead.mbt)）：`max_input_bytes = 64 MiB`（`67108864`）、`max_output_bytes = 80 MiB`（`83886080`）、`max_chunk_size = 1 MiB`（`1048576`；合法分块 `1024..=1048576`）、`max_argon2_memory_kib = 65536`（上限 `262144`）、`max_argon2_passes = 8`（上限 `16`）、`max_argon2_lanes = 4`。
+   - `MLSENC02` 多接收方信封至多 **64** 个接收方槽位；`TrustKeyring` 与 `SignatureBundle`（[crypto/keyring.mbt](../crypto/keyring.mbt)）固定 JSON 上限（`64 KiB` / `128 KiB`）、至多 **64** 个受信任公钥、至多 **256** 个吊销 key ID 与至多 **64** 条签名记录。
+4. **有界 Zlib / Raw DEFLATE（[compress/zlib.mbt](../compress/zlib.mbt)）**：
+   - 继承单成员有界输出契约，任何超出 `max_output` 立即停机报 `LimitExceeded`，存在尾随字节报 `TrailingData`。
+5. **CLI 并行与浏览器安全cap**：
+   - 目录并行 `--jobs N` 限制于 `1..=64`（使用 `@async.all` 分批但始终按字典序汇总结算结果）；Web Studio Live CORS HTTP `Range` 施加 `64 MiB`（`67108864` B）目标字节安全上限。
+   - 上述上限均为**逻辑边界与资源预算契约，不构成操作系统级进程峰值 RSS 或 OOM 恢复保证**。
+
+以下保留 `0.4.0`–`0.1.0` 历史资源与内存模型文档。
+
+---
+
 # MoonLibSync 0.4.0：流式大文件、Sans-IO 解码、目录预算与资源契约
 
 0.4.0 在完全保持 0.3.2 全部 `Limits` 默认值（`OLD/NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB、`records/instructions` `1,000,000`、`block` `1 MiB`、`match_work` `256M`）、`0..2147483647` 合法校验范围及 `MatchWork` v2 计量不变的前提下，完成以下 0.4.0 扩展：

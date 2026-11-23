@@ -231,25 +231,25 @@ python3 scripts/file_exchange.py
 
 - **标准协议支持**：完整支持现代 `librsync` 双 BLAKE2 Profile —— `RS_RK_BLAKE2_SIG_MAGIC`（`0x72730147`，默认 `2048/32`）与 `RS_BLAKE2_SIG_MAGIC`（`0x72730137` Rollsum + BLAKE2b）—— 以及标准 delta 全宽度指令（`0x72730236`，严格 `END` 校验且拒绝尾随数据）；遗留 MD4 Profile（`0x72730136`/`0x72730146`）返回 `UnsupportedSignatureProfile`。
 - **全量缓冲与分块流式内存模型**：一次性入口工作在有界内存 `Bytes` 缓冲上（默认 `Limits` 上限：`OLD`/`NEW` 64 MiB、`SIG` 16 MiB、`DELTA` 80 MiB），而流式 `SignatureHasher` / `DeltaScanner` / `PatchApplier` / `PatchDecoder` / `BundleArchiveDecoder` / `GzipEncoder` / `GzipDecoder` / `SealEncoder` / `SealDecoder` 在分块处理期间维持有界内部暂存缓冲。预算为逻辑上限，不承诺进程级峰值 RSS 或 OOM 恢复，详见 [docs/resources.md](docs/resources.md)。
-- **完整性、发布者认证与机密性**：标准 `delta` / `patch` 不认证旧文件身份；`verified_patch` / `apply_update` / `dir-apply` 校验 SHA-256 完整性，且 `YKDshaxing/moonlibsync/crypto` 提供可选 Ed25519 发布者数字签名（`sign`/`verify`/`--verify-sig`）与 `MLSENC01` 流式 ChaCha20-Poly1305/Argon2id 加密（`seal`/`unseal`）。详见 [SECURITY.md](SECURITY.md)。
-- **文件系统边界**：CLI 无覆盖提交已验证 Windows/NTFS 与 Linux/ext4。WSL DrvFS（`/mnt/*`）不支持无覆盖 `renameat2` 时会明确失败并清理临时文件，不降级覆盖（WSL 下运行正向 CLI 烟雾测试请设置 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`）。
+- **完整性、发布者认证与机密性**：标准 `delta` / `patch` 不认证旧文件身份；`verified_patch` / `apply_update` / `dir-apply` 校验 SHA-256 完整性，`YKDshaxing/moonlibsync/crypto` 提供可选 Ed25519 单签（`sign`/`verify`/`--verify-sig`）、`M-of-N` 吊销 Keyring 阈值多签（`verify-quorum`/`--verify-bundle --keyring`）、`MLSENC01` ChaCha20-Poly1305/Argon2id 流式加密（`seal`/`unseal`）及 `MLSENC02` X25519 多接收方信封（`--recipient`/`--recipient-key`）。可选 `--meta` 目录元数据侧车经清单交叉核验，但不纳入 `--verify-sig` / `--verify-bundle` 载荷摘要。详见 [SECURITY.md](SECURITY.md)。
+- **文件系统与分发边界**：CLI 无覆盖提交已验证 Windows/NTFS 与 Linux/ext4（WSL DrvFS 不支持无覆盖 `renameat2` 时明确失败不覆盖；WSL 下运行 CLI 烟雾测试请设 `MOONLIBSYNC_CLI_TMP_PARENT=/tmp`）。HTTP `Range` (`fetch-sync`) 已在本地回环 HTTP 服务与浏览器模拟器实测；`js/` 为仓库随附零依赖 SDK，尚未独立发布至 npm。
 
 ## 文档导航
 
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录（`0.7.0` / `0.6.1` / `0.6.0` / `0.5.0` / `0.4.0` / `0.3.2` / `0.3.1` / `0.3.0` / `0.2.0` / `0.1.0`）
-- [js/README.md](js/README.md) — 零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync`）
+- [js/README.md](js/README.md) — 仓库内零运行时依赖 Node.js & 浏览器 JS/TS SDK（`@ykdshaxing/moonlibsync@0.7.0`）
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告流程
 - [docs/design.md](docs/design.md) — 架构与公开 API 设计说明
-- [docs/cli.md](docs/cli.md) — Native CLI 手册（`--streaming`、`dir-snapshot`/`dir-plan`、`--max-*`）、JSON Schema 与原子提交说明
-- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 目录快照规范、POSIX 路径安全规则与 `DirLimits`
-- [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约
+- [docs/cli.md](docs/cli.md) — Native CLI 手册（35 子命令、`--streaming`、`fetch-sync`、`compose-delta`、`--jobs`、`x25519`/`quorum`、`--max-*`）、JSON Schema 与原子提交说明
+- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 目录快照、`DirMetadata`（`--meta-out`/`--meta`）、`--jobs`、`MLSBDL01`、POSIX 路径安全规则与 `DirLimits`
+- [docs/compatibility.md](docs/compatibility.md) — 协议兼容性与各版本契约（`0.7.0` 及历史冻结快照）
 - [docs/matching.md](docs/matching.md) — 开放定址弱校验索引、Pending Literal Run 与 `MatchWork` v2 计量
-- [docs/resources.md](docs/resources.md) — `Limits`、`MatchWork` v2 与全量/流式内存模型
+- [docs/resources.md](docs/resources.md) — `Limits`、`SealLimits`、`TrustKeyring`、HTTP `Range` 边界与内存模型
 - [docs/auto-block.md](docs/auto-block.md) — 自动块长 `policy v1` 规则与数据量对照
 - [docs/updates.md](docs/updates.md) — Delta/Full 规划与 schema 2 协议规范
 - [docs/manifests.md](docs/manifests.md) — schema 1 完整性清单规范
-- [docs/benchmarks.md](docs/benchmarks.md) 与 [docs/benchmarks-prepared.md](docs/benchmarks-prepared.md) — 有限进程级基准与索引复用实测
-- [docs/release-0.3.0.md](docs/release-0.3.0.md) / [docs/release-0.2.0.md](docs/release-0.2.0.md) / [docs/release.md](docs/release.md) — 历史 Mooncakes 发布与双平台消费实证
+- [docs/benchmarks.md](docs/benchmarks.md) 与 [docs/benchmarks-prepared.md](docs/benchmarks-prepared.md) — `0.1.0`（Commit 15/20）历史进程级与索引复用基准实测
+- [docs/release-0.7.0.md](docs/release-0.7.0.md) 与 [docs/contest-acceptance.md](docs/contest-acceptance.md) — `0.7.0` Mooncakes 发布实证、双平台公开消费记录与全量验收矩阵（历史记录：[0.3.0](docs/release-0.3.0.md) / [0.2.0](docs/release-0.2.0.md) / [0.1.0](docs/release.md)）
 
 ## 许可证
 

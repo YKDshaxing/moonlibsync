@@ -231,25 +231,25 @@ python3 scripts/file_exchange.py
 
 - **Wire profiles**: Supports both modern BLAKE2 `librsync` profiles — `RS_RK_BLAKE2_SIG_MAGIC` (`0x72730147`, default `2048/32`) and `RS_BLAKE2_SIG_MAGIC` (`0x72730137` Rollsum + BLAKE2b) — plus full standard delta opcodes (`0x72730236`, 1/2/4/8-byte parameters, strict `END` with no trailing data). Legacy MD4 profiles (`0x72730136`, `0x72730146`) return `UnsupportedSignatureProfile`.
 - **Full-buffer & streaming memory models**: One-shot operations work on bounded in-memory `Bytes` buffers (`Limits::default()` caps `OLD`/`NEW` at 64 MiB, `SIG` at 16 MiB, `DELTA` at 80 MiB), while streaming `SignatureHasher`, `DeltaScanner`, `PatchApplier`/`PatchDecoder`, `BundleArchiveDecoder`, `GzipEncoder`/`GzipDecoder`, and `SealEncoder`/`SealDecoder` keep internal buffers bounded across chunks. Limits are logical bounds, not process-wide RSS guarantees.
-- **Integrity, publisher authentication & confidentiality**: Standard `delta`/`patch` do not verify basis identity; `verified_patch` / `apply_update` / `dir-apply` verify SHA-256 digests, and `YKDshaxing/moonlibsync/crypto` adds optional Ed25519 publisher signing (`sign`/`verify`/`--verify-sig`) and `MLSENC01` ChaCha20-Poly1305/Argon2id streaming encryption (`seal`/`unseal`). See [SECURITY.md](SECURITY.md).
-- **Filesystems**: CLI atomic no-overwrite publication is validated on Windows/NTFS and Linux/ext4. WSL DrvFS (`/mnt/*`) lacks atomic no-replace rename and fails explicitly without falling back to overwrite (set `MOONLIBSYNC_CLI_TMP_PARENT=/tmp` for positive Linux CLI smoke runs under WSL).
+- **Integrity, publisher authentication & confidentiality**: Standard `delta`/`patch` do not verify basis identity; `verified_patch` / `apply_update` / `dir-apply` verify SHA-256 digests, and `YKDshaxing/moonlibsync/crypto` adds optional Ed25519 signing (`sign`/`verify`/`--verify-sig`), `M-of-N` quorum keyrings with revocation (`verify-quorum`/`--verify-bundle --keyring`), `MLSENC01` ChaCha20-Poly1305/Argon2id encryption (`seal`/`unseal`), and `MLSENC02` X25519 multi-recipient envelopes (`--recipient`/`--recipient-key`). Optional `--meta` directory metadata sidecars are cross-validated against the bundle manifest but reside outside `--verify-sig`/`--verify-bundle` payload digests. See [SECURITY.md](SECURITY.md).
+- **Filesystems & distribution boundaries**: CLI atomic no-overwrite publication is validated on Windows/NTFS and Linux/ext4 (WSL DrvFS fails explicitly without fallback overwrite; set `MOONLIBSYNC_CLI_TMP_PARENT=/tmp` under WSL). HTTP `Range` (`fetch-sync`) is validated against loopback HTTP servers and the browser simulator (`js/` SDK is provided in-repo without npm registry publication).
 
 ## Documentation Index
 
 - [CHANGELOG.md](CHANGELOG.md) — Version history (`0.7.0`, `0.6.1`, `0.6.0`, `0.5.0`, `0.4.0`, `0.3.2`, `0.3.1`, `0.3.0`, `0.2.0`, `0.1.0`)
-- [js/README.md](js/README.md) — Zero-dependency Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync`)
+- [js/README.md](js/README.md) — Zero-dependency in-repo Node.js & Browser JS/TS SDK (`@ykdshaxing/moonlibsync@0.7.0`)
 - [SECURITY.md](SECURITY.md) — Security boundaries and vulnerability reporting
 - [docs/design.md](docs/design.md) — Architecture and API design
-- [docs/cli.md](docs/cli.md) — Native CLI reference (`--streaming`, `dir-snapshot`/`dir-plan`, `--max-*`), JSON schemas, and filesystem guarantees
-- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 directory snapshots, POSIX path safety rules, and `DirLimits`
-- [docs/compatibility.md](docs/compatibility.md) — Protocol compatibility and version contracts
+- [docs/cli.md](docs/cli.md) — Native CLI reference (35 subcommands, `--streaming`, `fetch-sync`, `compose-delta`, `--jobs`, `x25519`/`quorum`, `--max-*`), JSON schemas, and filesystem guarantees
+- [docs/dir-sync.md](docs/dir-sync.md) — Schema 3 directory snapshots, `DirMetadata` (`--meta-out`/`--meta`), `--jobs`, `MLSBDL01`, POSIX path safety rules, and `DirLimits`
+- [docs/compatibility.md](docs/compatibility.md) — Protocol compatibility (`0.7.0` and historical contracts)
 - [docs/matching.md](docs/matching.md) — Open-addressed weak-hash index, Pending Literal Run, and `MatchWork` v2 metering
-- [docs/resources.md](docs/resources.md) — `Limits`, `MatchWork` v2, and streaming/full-buffer memory contracts
+- [docs/resources.md](docs/resources.md) — `Limits`, `SealLimits`, `TrustKeyring`, HTTP `Range` bounds, and memory contracts
 - [docs/auto-block.md](docs/auto-block.md) — Auto block sizing (`policy v1`) rules and volume comparisons
 - [docs/updates.md](docs/updates.md) — Delta vs. Full update planning and schema 2 specification
 - [docs/manifests.md](docs/manifests.md) — Schema 1 integrity manifest specification
-- [docs/benchmarks.md](docs/benchmarks.md) & [docs/benchmarks-prepared.md](docs/benchmarks-prepared.md) — Measured process-level & prepared-index benchmarks
-- [docs/release-0.3.0.md](docs/release-0.3.0.md) / [docs/release-0.2.0.md](docs/release-0.2.0.md) / [docs/release.md](docs/release.md) — Historical Mooncakes release verification evidence
+- [docs/benchmarks.md](docs/benchmarks.md) & [docs/benchmarks-prepared.md](docs/benchmarks-prepared.md) — Historical `0.1.0` (Commit 15/20) Linux process-level & prepared-index benchmarks
+- [docs/release-0.7.0.md](docs/release-0.7.0.md) & [docs/contest-acceptance.md](docs/contest-acceptance.md) — `0.7.0` Mooncakes release evidence, dual-OS registry verification, and acceptance matrix ([0.3.0](docs/release-0.3.0.md) / [0.2.0](docs/release-0.2.0.md) / [0.1.0](docs/release.md))
 
 ## License
 

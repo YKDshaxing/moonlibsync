@@ -1,3 +1,28 @@
+# MoonLibSync 0.7.0 演进与验收矩阵
+
+状态：**`published-and-consumer-verified`**。`0.7.0`（正式发布源 `publication_source_sha`：`79b96b783f47dcbcb31920a18521441df0258945`，分支 `main`、标签 `v0.7.0`）已完成四层红队对抗加固、同 SHA 全平台 CI、Mooncakes 上线、双平台独立新缓存消费、GitHub Release 二进制分发及 GitHub Pages Web Studio 部署。完整发布指纹与归档校验见 [0.7.0 发布验收记录](release-0.7.0.md)（本段为发布后文档整理提交，不改动 `79b96b7` 原包字节）。
+
+| 验收维度 | `0.7.0` 实测状态与核验内容 | 实际证据与边界说明 |
+| --- | --- | --- |
+| **1. MoonBit 架构与零实验包** | 纯 MoonBit（62 个生产 `.mbt` / 22,784 行，17 个包），锁定 `moonc v0.10.22+124d61d05` 与 `mooncrypt@0.4.5` 等 4 项依赖；根包与 `crypto/` 零 `allow-experimental-packages` | `toolchain.lock.json`、`dependencies.lock.json`、`scripts/verify_dependencies.py`；三目标（`native`/`js`/`wasm-gc`）零告警 `--deny-warn` |
+| **2. GitHub 公开与版本流** | 公开仓库 `YKDshaxing/moonlibsync`；同 SHA `79b96b7` 标签 `v0.7.0` 与 [GitHub Release v0.7.0](https://github.com/YKDshaxing/moonlibsync/releases/tag/v0.7.0) 已正式发布 | Release 附带 CI 自动构建的 `moonlibsync-linux-x86_64`（`4,789,608` B）、`moonlibsync-windows-x86_64.exe`（`3,148,800` B）、`SHA256SUMS.txt`（`188` B） |
+| **3. 核心差异化功能闭环** | 在双向兼容 `librsync v2.3.4`（`0x72730147`/`0x72730137`/`0x72730236`）与流式目录归档（`MLSBDL01`）基础上，交付 HTTP `Range` (`zsync`) 规划与拉取、零中间文件 `compose_deltas`、Zlib/Raw DEFLATE 有界流、`MLSENC02` X25519 多接收方信封、Ed25519 `M-of-N` 吊销 Keyring、`--jobs` 并发目录引擎与 `DirMetadata` | 公开声明受 `scripts/interface_guard.py` 与 `pkg.generated.mbti` 基线守护；历史 `0.1.0` 进程基准（`docs/benchmarks.md`）独立归属 `Commit 15`，不冒充 `0.7.0` 重测数据 |
+| **4. 复现文档与红队安全边界** | 同步更新中英 `README`、`CHANGELOG.md`、`SECURITY.md`、`SOURCES.md`、`THIRD_PARTY_NOTICES.md`、`docs/cli.md`、`docs/resources.md`、`docs/dir-sync.md` | 显式声明 `--meta` 独立于 `--verify-sig`/`--verify-bundle` 摘要、`Limits` 为逻辑预算而非 RSS 硬保证、`js/` SDK 当前未发 npm |
+| **5. 同 SHA 多平台 CI 与失败门禁** | `79b96b7` 上 `Core examples CLI and interoperability`（`main` [45119294836](https://github.com/YKDshaxing/moonlibsync/actions/runs/45119294836) / `v0.7.0` [45119304641](https://github.com/YKDshaxing/moonlibsync/actions/runs/45119304641)）、`Release Native CLI`（[45119304653](https://github.com/YKDshaxing/moonlibsync/actions/runs/45119304653)）、`Deploy Web Demo to GitHub Pages`（[45119294853](https://github.com/YKDshaxing/moonlibsync/actions/runs/45119294853)）全部 `success` | `scripts/failure_gates.py` 5 组正反失败门禁、`scripts/check_prepared_interface.py`（12 项编译期检查）、`scripts/native_probe.py` 全通过 |
+| **6. 可运行示例、SDK 与 Web Studio** | 6 个 MoonBit 示例 × 三目标（`basic`/`prepared`/`verified`/`auto`/`transfer`/`streaming`）；Web Studio `0.7.0` 37 项 JS ESM 导出与 `@ykdshaxing/moonlibsync@0.7.0` SDK（33 个强类型方法、0 `any`） | `WEB_DEMO_OK exports=37 verified=true`、`PAGES_RELEASE_SMOKE_OK exports=37`、`JS_SDK_OK`；实机浏览器 5-Tab 交互与中英切换实测 `0` console/page errors；线上 [GitHub Pages](https://ykdshaxing.github.io/moonlibsync/) HTTP `200` |
+| **7. 全目标、CLI 与 `rdiff` 测试矩阵** | 根核心库 **252/252 × 3 目标** + `compress` **13/13 × 3 目标** + `crypto` **20/20 × 3 目标**；Native CLI **57** 项单元测试 + **784** Windows/NTFS & **808** Linux/ext4（`0 unsupported`）集成用例 | 外部真实 `librsync v2.3.4` 互操作 **274 对 / 496 参数 / 3,968 恢复**（Linux CI `reference` 实跑）；16 夹具/29 opcode 向量；HTTP `Range` 在回环服务与模拟器实测 |
+| **8. Mooncakes 发布与双平台消费** | [Mooncakes `YKDshaxing/moonlibsync@0.7.0`](https://mooncakes.io/docs/YKDshaxing/moonlibsync@0.7.0) 已上传（`862,006` B、`344` 成员、SHA-256 `755bffbc...`），在线文档 `build_status: "success"` | Windows/NTFS 与 WSL2 Linux/ext4 独立新缓存 `release_check.py --registry` 均返回 `published-and-consumer-verified`，下载字节与审计完全一致 |
+| **9. 开源许可证与第三方合规** | **LGPL-2.1-or-later**，随包保留完整 `COPYING.LESSER` / `COPYING` / `LICENSE`、`licenses/MoonBit-core-{LICENSE,NOTICE}`、`SOURCES.md` 与 `THIRD_PARTY_NOTICES.md` | `_build/release-0.7.0/windows/audit.json` 确认 `dirty: false`、`git_blob_byte_identity_verified: true`，无未经授权的源码改标 |
+
+### `0.5.0`–`0.6.1` 历史演进里程碑
+- **`0.6.1`**：将 `toolchain.lock.json` 升级至官方 `0.10.22+124d61d05`，适配 `core/compress/gzip` 单流语义与 `async/fs` 变更，清除四目标警告，修复 Mooncakes 在线文档构建。
+- **`0.6.0`**：新增零 IO 密码学子包 `YKDshaxing/moonlibsync/crypto`（Ed25519 发布者签名 + `MLSENC01` ChaCha20-Poly1305/Argon2id AEAD）、双 Profile（`Rollsum` `0x72730137` + `RabinKarp` `0x72730147`）、`--detect-moves`、`reverse-delta`、`inspect-bundle`、`--exclude-from` 与 Shell 自动补全（CLI 增至 28 条）。
+- **`0.5.0`**：新增确定性 `MLSBDL01` `.mbundle`/`.mbundle.gz` 归档容器、`dir-verify`、`--exclude` 前置目录剪枝、`--progress` stderr 进度条与零依赖 JS/TS SDK / 5-Tab Web Studio。
+
+以下完整保留 `0.4.0`–`0.1.0` 历史验收快照，各自仅归属对应历史提交。
+
+---
+
 # MoonLibSync 0.4.0 演进与验收矩阵
 
 - **0.4.0（本地全门禁通过）**：在保持 0.3.x 全部互操作与安全不变量的基础上，新增 Sans-IO `PatchDecoder` + `Sha256Hasher`、纯核心零 IO Schema 3 目录快照规划 `dir_sync.mbt`（三目标根库 **218/218** 通过）、Native CLI `--streaming`（已通过 **128 MiB** 大文件 `signature --block-size auto -> delta -> patch -> patch-verified` SHA-256 逐字节恢复实测）与 `dir-snapshot` / `dir-plan`（**30/30** Native CLI 单元测试与 **442** 集成用例通过），以及零后端浏览器 JS/ESM Demo `examples/web-demo`（`test-node.mjs` 通过）。详见 [CHANGELOG.md](../CHANGELOG.md)。

@@ -6,11 +6,11 @@ Commit21补充：固定mooncrypt0.4.5的hash/sha2现直接用于SHA-256（显式
 
 | 作品 | 版本 | 原始声明 | 用途 |
 | --- | --- | --- | --- |
-| moonbitstack/mooncrypt | 0.4.5 | Copyright 2026 Leo Cheng；Apache-2.0 | `hash/blake2` 和其 `spec` 依赖，纯 MoonBit 摘要探针 |
+| moonbitstack/mooncrypt | 0.4.5 | Copyright 2026 Leo Cheng；Apache-2.0 | `hash/blake2`、`hash/sha2`、`sign/ed25519`、`aead/chachapoly`、`kdf/argon2`、`kex/x25519`、`kdf/hkdf` 与 `spec` 纯 MoonBit 密码原语 |
 | moonbitstack/moonbase | 0.4.2 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包；不代表全包测试通过 |
 | moonbitstack/moondate | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
 | moonbitstack/moonrand | 0.1.0 | Copyright 2026 Leo Cheng；Apache-2.0 | 模块依赖闭包 |
-| moonbitlang/core | 0.10.22+124d61d05 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库与 Native 系统接口 |
+| moonbitlang/core | 0.10.22+124d61d05 | International Digital Economy Academy 等贡献者；Apache-2.0，详见原始 NOTICE | 工具链配套标准库（含 `json`、`encoding/utf8`、`compress/{gzip,zlib,flate}`）与 Native `async/{fs,http,stdio}` |
 | librsync | v2.3.4 / e364852674780e43d578e4239128ff7014190ed3 | 保留上游 COPYING 中 LGPL v2.1 文本 | 读取 librsync.h、readsums.c 核对签名布局与 magic；无 C 代码移植或链接 |
 
 完整 Apache-2.0 文本见 `licenses/Apache-2.0.txt`，core 的原始声明见 `licenses/MoonBit-core-LICENSE` 与 `licenses/MoonBit-core-NOTICE`。本仓库没有分发 mooncrypt 实现副本或工具链二进制，也没有修改依赖源码的版权头。所有固定包的许可证和压缩包校验值还记录在 `dependencies.lock.json` 中。
@@ -46,3 +46,9 @@ Commit15新增原创有限基准工具和固定输入计划，采用项目LGPL-2
 ## 0.2.0阶段A来源与分发
 
 阶段A检查/Prepared索引封装/完整性清单/受校验补丁及其原创适配、测试、消费者与发布版本布线均为本项目LGPL-2.1-or-later胶合和验证代码，没有新增算法移植。SHA-256显式调用固定mooncrypt0.4.5/hash/sha2的Sha256，JSON/UTF8使用固定MoonBit core；原Rabin–Karp/librsync、BLAKE2及core版权声明保持。mooncrypt0.4.5、moonbase0.4.2、moondate0.1.0、moonrand0.1.0均为Apache-2.0，实际归档哈希/闭包见dependencies.lock.json，依赖源码各自保留LICENSE，模块包不捆绑缓存或参考工具。完整Apache文本、core LICENSE/NOTICE及GPL/LGPL文本随包保留；逐成员来源与许可范围由本版实际包审计记录。未把第三方实现或许可改标为本项目原创。
+
+## 0.3.0–0.7.0 增量来源与许可说明
+
+- **`0.3.0`–`0.5.0`（流式引擎、目录同步、有界 Gzip 与 Web/JS SDK）**：`SignatureHasher`、`DeltaScanner`、`PatchDecoder`、`Sha256Hasher`、`dir_sync.mbt`、`bundle_archive.mbt`、`cmd/moonlibsync/` 与 `examples/web-demo/` / `js/` 均为本项目原创 LGPL-2.1-or-later 代码；`YKDshaxing/moonlibsync/compress`（`compress/gzip.mbt`）显式调用已锁定 `moonbitlang/core` 的 `compress/gzip`（原 Apache-2.0 与 `licenses/MoonBit-core-NOTICE` 保留），根包保持零 `allow-experimental-packages` 且无 npm 运行依赖。
+- **`0.6.0`–`0.6.1`（Rollsum、Ed25519、AEAD 与 `0.10.22` 工具链对齐）**：`rollsum.mbt` 依据固定 `librsync e364852674780e43d578e4239128ff7014190ed3` 的 `src/rollsum.{h,c}` 实现标量 Rollsum 并保留 Martin Pool / Donovan Baarda 的 LGPL-2.1-or-later 原声明；`crypto/`（Ed25519 发布者签名、`MLSENC01` AEAD）仅显式调用已锁定 `mooncrypt@0.4.5` 的 `sign/ed25519`、`aead/chachapoly`、`kdf/argon2`、`hash/sha2` 与 `spec`（Apache-2.0），`toolchain.lock.json` 升级至官方 `0.10.22+124d61d05` 并核对 `MoonBit-core-{LICENSE,NOTICE}` 一致。
+- **`0.7.0`（HTTP `Range`、Delta 合并、X25519 信封、Keyring 仲裁、`Zlib/Deflate`、`--jobs`/`DirMetadata`）**：`range_sync.mbt`、`compose_delta.mbt`、`dir_metadata.mbt`、`crypto/{x25519_envelope,keyring}.mbt`、`compress/zlib.mbt`、`cmd/moonlibsync/range_cli.mbt` 与 `examples/web-demo/` / `js/` 均为本项目原创 LGPL-2.1-or-later 代码；仅显式调用已锁定 `mooncrypt@0.4.5`（`kex/x25519`、`kdf/hkdf`）及已锁定 `0.10.22+124d61d05` `core`（`compress/zlib`、`compress/flate`、`async/http` 与 `@async.all`），无任何新增第三方依赖、C FFI 或实验特性开关（详细清单与版本链接见 [SOURCES.md](SOURCES.md)）。

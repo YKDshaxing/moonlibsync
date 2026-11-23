@@ -1,3 +1,22 @@
+# MoonLibSync 0.7.0 当前契约
+
+`0.7.0` 在 100% 保持 `0.1.0`–`0.6.1` 全部既有公开 API、标准 `0x72730147` RK+BLAKE2b / `0x72730236` delta 协议、Schema 1/2 清单、`Limits::default()` 与 `MatchWork` v2 计量向前兼容的基础上，经增量扩展至当前稳定集合（以根目录、[`compress/`](../compress/pkg.generated.mbti) 与 [`crypto/`](../crypto/pkg.generated.mbti) 的 `.mbti` 为准）：
+
+- **双 BLAKE2 Profile 与反向回滚（`0.6.0+`）**：新增 `SignatureProfile::{RkBlake2, RollsumBlake2}`、`signature_with_profile`、`SignatureHasher::new_with_profile`、`create_reverse_delta` / `create_reverse_delta_auto`；`inspect_signature` / `prepare_signature` / `delta` / `DeltaScanner` 自动兼容两种 Profile。
+- **HTTP `Range` (`zsync`) 与 Delta 链合并（`0.7.0`）**：新增 `RangeFetchOptions`、`ByteRange`、`RangePlanOp`、`RangeFetchPlan`、`plan_range_fetch`、`apply_range_fetch` 与 `encode_range_plan_json`（Schema 3 `moonlibsync-range-plan`），以及零 IO 纯核心 `compose_deltas` / `compose_delta_chain`（输出标准 `0x72730236` delta，无需中间文件字节）。
+- **Schema 3 目录同步、单文件归档与目录元数据（`0.5.0`–`0.7.0`）**：新增 `DirPlanOptions { detect_moves }`、`CopyFromBasis` / `UpdateDeltaFrom`、确定性二进制归档容器 `MLSBDL01`（`encode/parse_bundle_archive`、`BundleArchiveDecoder`）、`verify_dir_snapshot`（`DirVerifyReport`）、`match_dir_exclude` / `parse_dir_exclude_file`，以及 `DirMetadata` / `plan_dir_metadata`（Schema 3 `moonlibsync-dir-metadata`、`empty_dirs` 与 `executable_paths`）。
+- **有界压缩子包 `YKDshaxing/moonlibsync/compress`（`0.4.0`–`0.7.0`）**：跨三目标零 IO 封装单成员 RFC 1952 `gzip`（`0.4.0`）与 RFC 1950 `zlib` / RFC 1951 Raw `deflate`（`0.7.0`），统一防御解压炸弹（`LimitExceeded`）与尾随数据（`TrailingData`）。
+- **零 IO 密码学子包 `YKDshaxing/moonlibsync/crypto`（`0.6.0`–`0.7.0`）**：
+  - Ed25519 发布者数字签名（Schema 4 `moonlibsync-signature`、域分离 `"moonlibsync-ed25519-v1\x00"`、严格 RFC 8032 点校验与小阶点拒绝）；
+  - `MLSENC01` 分块 AEAD（ChaCha20-Poly1305 + 可选 Argon2id，56 字节完整文件头绑定 AAD）；
+  - `MLSENC02` 多接收方 X25519 + HKDF-SHA256 信封（1–64 接收方，拒绝低阶点/非规范 `u >= p`/全零 CEK）；
+  - `TrustKeyring` + `SignatureBundle` `M-of-N` 阈值仲裁验签（Schema 4 `moonlibsync-keyring` / `moonlibsync-signature-bundle`，吊销列表先验生效）。
+- **Native CLI / JS SDK / Web Studio**：CLI 扩展至 **35 条子命令**（含 `--jobs N`、`--meta-out`/`--meta`、`fetch-sync`、`--verify-bundle` 等）；`examples/web-demo` 与仓库内 `@ykdshaxing/moonlibsync@0.7.0` SDK 暴露 37 项 ESM 导出与 33 个零 `any` 强类型方法（不宣称已发布至 npm registry）。
+
+以下保留 `0.4.0`–`0.1.0` 历史契约快照。
+
+---
+
 # MoonLibSync 0.4.0 当前契约
 
 0.4.0 保持 0.3.x 全部公开函数/类型签名、CLI 既有 12 条子命令、schema 1/2 清单、标准 `0x72730147` / `0x72730236` 线缆协议、`Limits::default()` 与 `MatchWork` v2 计量 100% 向前兼容，并纯增量引入：

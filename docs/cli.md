@@ -1,3 +1,41 @@
+# MoonLibSync 0.7.0 Native 单文件 CLI 手册
+
+0.7.0 在 100% 保持 0.1.0–0.6.1 全部 **28 条子命令**、参数语法、Schema 1–4 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件/网络/校验/核心/加密错误）及无覆盖原子发布兼容的基础上，新增 **7 条子命令（总计 35 条）** 与多项传输/并发/目录/红队安全强化：
+
+1. **静态 HTTP `Range` (`zsync`) 增量规划与拉取（`cmd/moonlibsync/range_cli.mbt`）**：
+   - `moonlibsync range-plan TARGET_SIG TARGET_LEN BASIS [-o PLAN.json] [--merge-gap BYTES] [--max-ranges N] [--json] [--progress] [LIMITS]`：零网络规划最小 RFC 9110 `bytes=` 区间清单（Schema 3 `moonlibsync-range-plan`；默认 `merge-gap 4096`、`max-ranges 256`）。
+   - `moonlibsync fetch-sync URL --basis OLD (--sig FILE | --sig-url URL) -o OUT [--target-length N] [--merge-gap BYTES] [--max-ranges N] [--verify-sig SIG_FILE --verify-key PUB_KEY... | --verify-bundle BUNDLE.json --keyring KEYRING.json] [--json] [--progress] [LIMITS]`：通过 `moonbitlang/core/async/http` 执行 `HEAD` 长度探测与有界 `206 Partial Content` 分片下载（先按 `min(max_new_bytes, max_output_bytes)` 限流、`60 s` 单次请求超时、强制 `identity` `Content-Encoding` 与严格规范 `Content-Range` 校验；本地完整还原并完成可选单签/多签认证后再原子 `sync` + `rename(replace=false)` 提交）。
+
+2. **多代 `librsync 0x72730236` Delta 链无中间合并（`compose-delta`）**：
+   - `moonlibsync compose-delta DELTA1 DELTA2 [DELTA3...] -o OUT.delta [--json] [--progress] [LIMITS]`：无需旧/中/新三份数据实体，代数压缩串联补丁为直达单跳标准 `0x72730236` delta。
+
+3. **X25519 多接收方信封（`MLSENC02`）与 Ed25519 Keyring `M-of-N` 阈值仲裁多签（`cmd/moonlibsync/crypto_cli.mbt`）**：
+   - `moonlibsync x25519-keygen -o SECRET_OUT [--pub-out PUB_OUT] [--json]`：生成 32 字节 X25519 密钥对（64 位小写 hex + `\n`，无覆盖原子输出）。
+   - `moonlibsync seal` 新增 Repeatable `--recipient PUB_HEX_OR_FILE`（切换至 `MLSENC02` 多接收方 X25519 + HKDF-SHA256 信封，不支持 `--streaming`），`unseal` 新增 `--recipient-key SECRET_FILE`。
+   - `moonlibsync keyring-init --trust PUB_HEX_OR_FILE [--trust ...] [--revoke KEY_ID...] --quorum M -o KEYRING.json [--json]`：构造并原子保存 Schema 4 `TrustKeyring`（最多 64 个公钥、256 个吊销 ID）。
+   - `moonlibsync sign-combine SIG1.json [SIG2.json...] -o BUNDLE.json [--json]`：将多份 Schema 4 `PublisherSignature` 合成单一 `SignatureBundle`。
+   - `moonlibsync verify-quorum PAYLOAD BUNDLE.json --keyring KEYRING.json [--json] [--streaming] [--progress] [LIMITS]`：按 `TrustKeyring` 核验 `M-of-N` 阈值与吊销状态；`dir-apply --archive` 与 `fetch-sync` 同步支持 `--verify-bundle BUNDLE.json --keyring KEYRING.json`。
+
+4. **有界 Zlib / Raw DEFLATE、`--jobs N` 并发目录、与 `--meta-out`/`--meta` 边界**：
+   - `compress` 与 `decompress` 新增 `--format gzip|zlib|deflate`（默认 `gzip`）。
+   - `dir-snapshot`、`dir-verify`、`dir-signatures` 与 `dir-pack` 新增 `--jobs N`（`1..=64`，默认 `1`，基于 `@async.all` 保持输出顺序 100% 确定性）。
+   - `dir-snapshot` 新增 `--meta-out META.json`，`dir-apply` 新增 `--meta META.json`：记录与重建空目录（不含仅含 `--exclude` 排除文件的非空目录），非 Windows 主机在重检常规文件后以 `0o700` 恢复 `+x` 权限并做清单交叉路径冲突校验；**安全提示**：`--meta` 伴随文件位于 `.mbundle` `--verify-sig` / `--verify-bundle` 摘要之外。
+   - CLI 输入与红队加固：64-hex 字面量 Ed25519/X25519 公私钥优先于当前目录同名文件；空主机 `http(s)://` URL 返回退出码 `2`；`zsh` 自动补全以 `if (( $+functions[compdef] )); then ...` 防护。
+
+```text
+moonlibsync range-plan TARGET_SIG TARGET_LEN BASIS [-o PLAN.json] [--merge-gap BYTES] [--max-ranges N] [--json] [--progress] [LIMITS]
+moonlibsync fetch-sync URL --basis OLD (--sig FILE | --sig-url URL) -o OUT [--target-length N] [--merge-gap BYTES] [--max-ranges N] [--verify-sig SIG --verify-key PUB... | --verify-bundle BUNDLE --keyring KEYRING] [--json] [--progress] [LIMITS]
+moonlibsync compose-delta DELTA1 DELTA2 [DELTA3...] -o OUT.delta [--json] [--progress] [LIMITS]
+moonlibsync x25519-keygen -o SECRET_OUT [--pub-out PUB_OUT] [--json]
+moonlibsync keyring-init --trust PUB_HEX_OR_FILE... [--revoke KEY_ID...] --quorum M -o KEYRING.json [--json]
+moonlibsync sign-combine SIG1.json [SIG2.json...] -o BUNDLE.json [--json]
+moonlibsync verify-quorum PAYLOAD BUNDLE.json --keyring KEYRING.json [--json] [--streaming] [--progress] [LIMITS]
+```
+
+以下保留 `0.6.0`–`0.1.0` 各阶段 CLI 手册明细。
+
+---
+
 # MoonLibSync 0.6.0 Native 单文件 CLI 手册
 
 0.6.0 在 100% 保持 0.1.0–0.5.0 全部 20 条子命令、参数语法、Schema 1/2/3 格式、退出码（`0` 成功 / `2` 用法 / `1` 文件/核心/认证错误）及无覆盖原子提交兼容的基础上，新增 **8 条子命令（总计 28 条）** 与多项安全/同步/易用性增强：
